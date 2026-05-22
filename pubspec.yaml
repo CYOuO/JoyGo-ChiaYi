@@ -1,0 +1,78 @@
+name: explore_chiayi
+description: 探索諸羅 - 嘉義旅遊 App
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Icons
+  cupertino_icons: ^1.0.6
+
+  # URL Launcher (for Google Maps)
+  url_launcher: ^6.2.5
+
+  # HTTP / Networking
+  http: ^1.2.0
+  dio: ^5.4.0
+
+  # Firebase (for later integration)
+  firebase_core: ^2.24.0
+  firebase_auth: ^4.16.0
+  cloud_firestore: ^4.14.0
+  firebase_storage: ^11.6.0
+
+  # Map
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
+
+  # Geolocation
+  geolocator: ^11.0.0
+  permission_handler: ^11.3.0
+
+  # Image & Camera
+  image_picker: ^1.0.7
+  camera: ^0.10.5+9
+  cached_network_image: ^3.3.1
+
+  # State management (simple)
+  provider: ^6.1.1
+
+  # Local storage
+  shared_preferences: ^2.2.2
+  sqflite: ^2.3.2
+  path_provider: ^2.1.2
+
+  # QR Code
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^4.0.0
+
+  # UI helpers
+  shimmer: ^3.0.0
+  lottie: ^3.1.0
+  fl_chart: ^0.67.0
+  intl: ^0.19.0
+
+flutter:
+  uses-material-design: true
+
+  # Fonts (add NotoSansTC TTF files to assets/fonts/)
+  # fonts:
+  #   - family: NotoSansTC
+  #     fonts:
+  #       - asset: assets/fonts/NotoSansTC-Regular.ttf
+  #       - asset: assets/fonts/NotoSansTC-Bold.ttf
+  #         weight: 700
+  #       - asset: assets/fonts/NotoSansTC-Black.ttf
+  #         weight: 900
+
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/data/

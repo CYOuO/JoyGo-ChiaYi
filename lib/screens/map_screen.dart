@@ -410,10 +410,13 @@ class _MapScreenState extends State<MapScreen> {
       final stops = await _fetchBusStops(busStopCfg)
           .timeout(const Duration(seconds: 30));
       if (mounted && stops.isNotEmpty) {
+        // 同名站點只保留第一個（避免不同路線在同一物理站點重複標記）
+        final seen    = <String>{};
+        final deduped = stops.where((p) => seen.add(p.name)).toList();
         setState(() {
-          _all = [..._all.where((p) => p.cat != _Cat.busStop), ...stops];
+          _all = [..._all.where((p) => p.cat != _Cat.busStop), ...deduped];
         });
-        debugPrint('[MapScreen] 公車站 → ${stops.length}站');
+        debugPrint('[MapScreen] 公車站 → ${stops.length}站（去重後 ${deduped.length}站）');
       }
     } catch (e) {
       debugPrint('[MapScreen] 公車站 ❌ $e');
@@ -1767,7 +1770,12 @@ class _MarkerPin extends StatelessWidget {
     final size      = isSelected ? 40.0 : 32.0;
     final fontSize  = isSelected ? 20.0 : 14.0;
 
-    return Column(
+    // OverflowBox 讓 easeOutBack 超出 Marker 邊界時不拋 RenderFlex overflow
+    return OverflowBox(
+      alignment: Alignment.topCenter,
+      maxWidth: double.infinity,
+      maxHeight: double.infinity,
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // ── Bubble ──────────────────────────────────────────
@@ -1811,7 +1819,8 @@ class _MarkerPin extends StatelessWidget {
           ),
         ),
       ],
-    );
+    ),   // Column
+    );   // OverflowBox
   }
 }
 

@@ -744,24 +744,53 @@ class _MapScreenState extends State<MapScreen> {
     _mapCtrl.move(places.first.pos, 15.5);
   }
 
-  // 從其他頁面（如首頁附近景點）跳到地圖並置中放大
+  // 從其他頁面（如首頁附近景點）跳到地圖、開啟圖層、選中 marker 並開 detail
   void _onFocusTarget() {
     final t = MapScreen.focusNotifier.value;
     if (t == null || !mounted) return;
-    // Switch to map view if in list mode
+
+    // 1. 切換到地圖模式
     if (_isListView) setState(() => _isListView = false);
-    // Enable matching category layer if specified and not already visible
+
+    // 2. 啟用對應圖層
     if (t.catKey != null) {
       final cat = MapScreen._catKeyMap[t.catKey!];
       if (cat != null && !_visible.contains(cat)) {
         setState(() => _visible.add(cat));
       }
     }
-    // Move after the next frame so the map widget is fully rendered
+
+    // 3. 找 _all 裡距離目標最近的地點（允許 ~55m 以內的浮點誤差）
+    _Place? target;
+    double  bestDist = double.infinity;
+    final   targetCat = t.catKey != null ? MapScreen._catKeyMap[t.catKey!] : null;
+    for (final p in _all) {
+      if (targetCat != null && p.cat != targetCat) continue;
+      final dLat = p.pos.latitude  - t.lat;
+      final dLng = p.pos.longitude - t.lng;
+      final dist = dLat * dLat + dLng * dLng;
+      if (dist < bestDist) { bestDist = dist; target = p; }
+    }
+    // 0.0005° ≈ 55m；超過的視為「無精確對應」
+    const kThreshold = 0.0005 * 0.0005;
+    if (bestDist > kThreshold) target = null;
+
+    // 4. 移動地圖並選中 marker（在下一 frame 確保地圖已渲染）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _mapCtrl.move(LatLng(t.lat, t.lng), 15.5);
+      if (!mounted) return;
+      _mapCtrl.move(LatLng(t.lat, t.lng), 15.5);
+
+      if (target != null) {
+        // 先放大選中 marker（視覺上很明顯）
+        setState(() => _selectedId = target!.id);
+        // 延遲後開 detail sheet（給動畫一點時間跑）
+        Future.delayed(const Duration(milliseconds: 450), () {
+          if (mounted) _showDetail(target!);
+        });
+      }
     });
-    // Reset so the same coordinates can trigger again next time
+
+    // 5. 重設 notifier 讓同樣座標下次還能觸發
     Future.microtask(() => MapScreen.focusNotifier.value = null);
   }
 

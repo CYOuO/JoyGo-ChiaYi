@@ -57,42 +57,42 @@ const kThemePresets = <ThemePreset>[
     primaryDark: Color(0xFF38006B),
     primaryMist: Color(0xFFF3E5F5),
   ),
-  // ── Pastel candy colors ────────────────────────────────────
+  // ── Pastel candy colors（飽和度稍加深，保留粉嫩感）───────────
   ThemePreset(
     name: '甜蜜桃',  emoji: '🍑',
-    primary:     Color(0xFFFFD3C2), // cutePeach
-    primaryDark: Color(0xFFE89A7E),
-    primaryMist: Color(0xFFFFF0E8),
+    primary:     Color(0xFFE07858), // 珊瑚橘
+    primaryDark: Color(0xFFC05030),
+    primaryMist: Color(0xFFFFEDE6),
   ),
   ThemePreset(
     name: '少女粉',  emoji: '🌸',
-    primary:     Color(0xFFFCC8D4), // cutePink
-    primaryDark: Color(0xFFE8859D),
-    primaryMist: Color(0xFFFFF0F6),
+    primary:     Color(0xFFD05878), // 玫瑰粉
+    primaryDark: Color(0xFFAA3055),
+    primaryMist: Color(0xFFFFF0F4),
   ),
   ThemePreset(
     name: '薰衣紫',  emoji: '💜',
-    primary:     Color(0xFFD8CCEC), // cuteLavender
-    primaryDark: Color(0xFFB89FD9),
-    primaryMist: Color(0xFFF8F5FF),
+    primary:     Color(0xFF9070C0), // 薰衣草紫
+    primaryDark: Color(0xFF6A4898),
+    primaryMist: Color(0xFFF4F0FC),
   ),
   ThemePreset(
     name: '夢幻綠',  emoji: '🌱',
-    primary:     Color(0xFFC2E8D5), // cuteMint
-    primaryDark: Color(0xFF8ABAA2),
-    primaryMist: Color(0xFFF0FDFB),
+    primary:     Color(0xFF58A880), // 薄荷綠
+    primaryDark: Color(0xFF38865E),
+    primaryMist: Color(0xFFEEFBF4),
   ),
   ThemePreset(
     name: '檸檬黃',  emoji: '🍋',
-    primary:     Color(0xFFFFE9A8), // cuteLemon
-    primaryDark: Color(0xFFE8D266),
-    primaryMist: Color(0xFFFFFEF0),
+    primary:     Color(0xFFB89020), // 芥末金
+    primaryDark: Color(0xFF906E00),
+    primaryMist: Color(0xFFFFF9E0),
   ),
   ThemePreset(
     name: '天空藍',  emoji: '☁️',
-    primary:     Color(0xFFC4E1F0), // cuteSky
-    primaryDark: Color(0xFF8EBDD8),
-    primaryMist: Color(0xFFF5FCFF),
+    primary:     Color(0xFF5090C0), // 晴空藍
+    primaryDark: Color(0xFF306898),
+    primaryMist: Color(0xFFEEF7FF),
   ),
 ];
 

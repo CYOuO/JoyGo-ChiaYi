@@ -29,6 +29,7 @@ class ExpenseItem {
   final String paidById;
   final List<String> splitMemberIds; // 參與分攤的人
   final DateTime date;
+  final String? tripId;
 
   ExpenseItem({
     required this.id,
@@ -39,7 +40,15 @@ class ExpenseItem {
     required this.paidById,
     required this.splitMemberIds,
     required this.date,
+    this.tripId,
   });
+}
+
+class _TripEntry {
+  final String id;
+  final String name;
+  final String icon;
+  _TripEntry({required this.id, required this.name, required this.icon});
 }
 
 class Settlement {
@@ -69,6 +78,14 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
+  // ── Trips ──
+  final List<_TripEntry> _trips = [
+    _TripEntry(id: 'trip1', name: '嘉義週末輕旅行', icon: '🗓️'),
+    _TripEntry(id: 'trip2', name: '親子阿里山一日遊', icon: '⛰️'),
+  ];
+  String? _selectedTripId;    // null = 全部
+  String? _selectedCategory;  // null = 全部分類
+
   // ── Members ──
   final List<Member> _members = [
     Member(id: 'm1', name: '我', emoji: '🙋'),
@@ -79,6 +96,16 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   // ── Expenses ──
   late List<ExpenseItem> _expenses;
+
+  List<ExpenseItem> get _filteredExpenses {
+    var list = _selectedTripId == null
+        ? _expenses
+        : _expenses.where((e) => e.tripId == _selectedTripId).toList();
+    if (_selectedCategory != null) {
+      list = list.where((e) => e.category == _selectedCategory).toList();
+    }
+    return list;
+  }
 
   @override
   void initState() {
@@ -94,49 +121,55 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         id: 'e1', icon: '🏠', title: '民宿住宿（兩晚）',
         category: '住宿', amount: 3600,
         paidById: 'm3', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 7),
+        date: DateTime(2025, 6, 7), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e2', icon: '🚗', title: '租車費用',
         category: '交通', amount: 1800,
         paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 7),
+        date: DateTime(2025, 6, 7), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e3', icon: '🎫', title: '阿里山門票',
         category: '門票', amount: 800,
         paidById: 'm2', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 8),
+        date: DateTime(2025, 5, 18), tripId: 'trip2',
       ),
       ExpenseItem(
         id: 'e4', icon: '🍜', title: '林聰明沙鍋魚頭午餐',
         category: '餐飲', amount: 680,
         paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 8),
+        date: DateTime(2025, 6, 8), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e5', icon: '🌙', title: '文化路夜市晚餐',
         category: '餐飲', amount: 520,
         paidById: 'm4', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 8),
+        date: DateTime(2025, 6, 8), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e6', icon: '🧃', title: '便利商店零食',
         category: '餐飲', amount: 240,
         paidById: 'm2', splitMemberIds: ['m1', 'm2', 'm3'],
-        date: DateTime(2025, 6, 9),
+        date: DateTime(2025, 6, 9), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e7', icon: '🎁', title: '嘉義伴手禮',
         category: '購物', amount: 960,
         paidById: 'm3', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 9),
+        date: DateTime(2025, 6, 9), tripId: 'trip1',
       ),
       ExpenseItem(
         id: 'e8', icon: '⛽', title: '加油費',
         category: '交通', amount: 450,
         paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 9),
+        date: DateTime(2025, 6, 9), tripId: 'trip1',
+      ),
+      ExpenseItem(
+        id: 'e9', icon: '🍱', title: '嘉義火雞肉飯午餐',
+        category: '餐飲', amount: 320,
+        paidById: 'm1', splitMemberIds: allIds,
+        date: DateTime(2025, 5, 18), tripId: 'trip2',
       ),
     ];
   }
@@ -150,11 +183,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   // ── Computed ──
 
   int get _totalAmount =>
-      _expenses.fold(0, (sum, e) => sum + e.amount);
+      _filteredExpenses.fold(0, (sum, e) => sum + e.amount);
 
   Map<String, int> get _memberTotals {
     final map = {for (final m in _members) m.id: 0};
-    for (final e in _expenses) {
+    for (final e in _filteredExpenses) {
       map[e.paidById] = (map[e.paidById] ?? 0) + e.amount;
     }
     return map;
@@ -162,7 +195,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   Map<String, int> get _memberShouldPay {
     final map = {for (final m in _members) m.id: 0};
-    for (final e in _expenses) {
+    for (final e in _filteredExpenses) {
       if (e.splitMemberIds.isEmpty) continue;
       final share = (e.amount / e.splitMemberIds.length).round();
       for (final mid in e.splitMemberIds) {
@@ -229,14 +262,98 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Color _catColor(String cat) =>
       _categoryColors[cat] ?? AppColors.textHint;
 
+  // ── 分類篩選列 ──
+  Widget _buildCategoryFilter() {
+    final cats = _categoryColors.keys.toList();
+    return Container(
+      color: AppColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _catChip(null, '全部', '📊'),
+            ...cats.map((c) => _catChip(c, c, '')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _catChip(String? cat, String label, String icon) {
+    final isSelected = _selectedCategory == cat;
+    final color = cat == null ? Theme.of(context).colorScheme.primary : _catColor(cat);
+    return GestureDetector(
+      onTap: () => setState(() => _selectedCategory = cat),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected ? color : color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+              color: isSelected ? color : color.withValues(alpha: 0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon.isNotEmpty) ...[
+            Text(icon, style: const TextStyle(fontSize: 13)),
+            const SizedBox(width: 4),
+          ] else ...[
+            Container(
+              width: 8, height: 8,
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : color,
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: isSelected ? Colors.white : color,
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
   // ── UI ──
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final primaryMist = Color.lerp(primary, Colors.white, 0.88)!;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: const Text('旅遊記帳'),
+        titleSpacing: 12,
+        title: GestureDetector(
+          onTap: () => _showTripPicker(context),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _selectedTripId == null
+                    ? '全部行程'
+                    : _trips
+                        .firstWhere((t) => t.id == _selectedTripId,
+                            orElse: () => _TripEntry(
+                                id: '', name: '全部行程', icon: '📋'))
+                        .name,
+                style: const TextStyle(
+                    fontWeight: FontWeight.w800, fontSize: 16),
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down_rounded, size: 20),
+            ],
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_add_alt_1_outlined),
@@ -263,7 +380,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddExpense(context),
-        backgroundColor: AppColors.primary,
+        backgroundColor: primary,
         foregroundColor: Colors.white,
         icon: const Icon(Icons.add_rounded),
         label: const Text('新增消費',
@@ -276,10 +393,112 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   // ════════════════════════════════
   // TAB 1 : EXPENSE LIST
   // ════════════════════════════════
+
+  void _showTripPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const Text('選擇行程',
+                style: TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            _tripPickerItem(null, '全部行程', '📋'),
+            ..._trips.map((t) => _tripPickerItem(t.id, t.name, t.icon)),
+            const Divider(height: 20),
+            Builder(builder: (bCtx) {
+              final p = Theme.of(bCtx).colorScheme.primary;
+              return ListTile(
+                leading: Icon(Icons.add_rounded, color: p),
+                title: Text('新增行程',
+                    style: TextStyle(color: p, fontWeight: FontWeight.w600)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAddTripDialog();
+                },
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tripPickerItem(String? id, String name, String icon) {
+    final isSelected = _selectedTripId == id;
+    final primary = Theme.of(context).colorScheme.primary;
+    return ListTile(
+      leading: Text(icon, style: const TextStyle(fontSize: 20)),
+      title: Text(name,
+          style: TextStyle(
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+            color: isSelected ? primary : AppColors.textPrimary,
+          )),
+      trailing: isSelected
+          ? Icon(Icons.check_rounded, color: primary)
+          : null,
+      onTap: () {
+        setState(() => _selectedTripId = id);
+        Navigator.pop(context);
+      },
+    );
+  }
+
+  void _showAddTripDialog() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('新增記帳行程', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '例如：墾丁三天兩夜'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () {
+              final name = ctrl.text.trim();
+              if (name.isNotEmpty) {
+                setState(() => _trips.add(_TripEntry(
+                  id: 'trip${DateTime.now().millisecondsSinceEpoch}',
+                  name: name, icon: '🗓️',
+                )));
+              }
+              Navigator.pop(context);
+            },
+            child: const Text('新增'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildExpenseListTab() {
     // Group by date
     final grouped = <String, List<ExpenseItem>>{};
-    for (final e in _expenses) {
+    for (final e in _filteredExpenses) {
       final key = '${e.date.year}/${e.date.month.toString().padLeft(2, '0')}/${e.date.day.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => []).add(e);
     }
@@ -292,15 +511,28 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         _buildSummaryStrip(),
         // List
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-            children: [
-              for (final dateKey in sortedKeys) ...[
-                _dateHeader(dateKey),
-                ...grouped[dateKey]!.map((e) => _expenseCard(e)),
-              ],
-            ],
-          ),
+          child: _filteredExpenses.isEmpty
+              ? Center(
+                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Text('💰', style: TextStyle(fontSize: 48)),
+                    const SizedBox(height: 12),
+                    Text(
+                      _selectedTripId == null ? '尚無任何消費紀錄' : '此行程尚無消費紀錄',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text('點下方「新增消費」開始記帳', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                  ]),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+                  children: [
+                    for (final dateKey in sortedKeys) ...[
+                      _dateHeader(dateKey),
+                      ...grouped[dateKey]!.map((e) => _expenseCard(e)),
+                    ],
+                  ],
+                ),
         ),
       ],
     );
@@ -314,7 +546,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Row(
         children: [
-          _stripStat('總花費', 'NT\$ $_totalAmount', AppColors.primary),
+          _stripStat('總花費', 'NT\$ $_totalAmount', Theme.of(context).colorScheme.primary),
           _vLine(),
           _stripStat('人數', '${_members.length} 人', AppColors.textSecondary),
           _vLine(),
@@ -356,7 +588,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             width: 3,
             height: 14,
             decoration: BoxDecoration(
-              color: AppColors.primary,
+              color: Theme.of(context).colorScheme.primary,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -513,7 +745,10 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     final balance = _memberBalance;
     final settlements = _settlements;
 
-    return ListView(
+    return Column(
+      children: [
+        _buildCategoryFilter(),
+        Expanded(child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // ── Header card ──
@@ -598,7 +833,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
         const SizedBox(height: 100),
       ],
-    );
+    )),  // Expanded + ListView
+      ],
+    );  // Column
   }
 
   Widget _memberBalanceRow(Member m, int bal) {
@@ -642,7 +879,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     color: absVal == 0
                         ? AppColors.textHint
                         : (isPositive
-                            ? AppColors.primary
+                            ? Theme.of(context).colorScheme.primary
                             : AppColors.error),
                     fontWeight: FontWeight.w600,
                   ),
@@ -677,7 +914,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               fontWeight: FontWeight.w800,
               fontSize: 13,
               color: bal > 0
-                  ? AppColors.primary
+                  ? Theme.of(context).colorScheme.primary
                   : bal < 0
                       ? AppColors.error
                       : AppColors.textHint,
@@ -696,7 +933,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                 height: 4,
                 width: 80 * ratio,
                 decoration: BoxDecoration(
-                  color: bal >= 0 ? AppColors.primary : AppColors.error,
+                  color: bal >= 0 ? Theme.of(context).colorScheme.primary : AppColors.error,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -790,24 +1027,27 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           const SizedBox(width: 10),
           GestureDetector(
             onTap: () => _markSettled(context, s, from, to),
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.primaryMist,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Text(
-                '標記\n完成',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
-                  height: 1.3,
+            child: Builder(builder: (bCtx) {
+              final p = Theme.of(bCtx).colorScheme.primary;
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: p.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ),
-            ),
+                child: Text(
+                  '標記\n完成',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: p,
+                    height: 1.3,
+                  ),
+                ),
+              );
+            }),
           ),
         ],
       ),
@@ -821,10 +1061,10 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         children: [
           const Text('🎉', style: TextStyle(fontSize: 40)),
           const SizedBox(height: 8),
-          const Text('大家都結清了！',
+          Text('大家都結清了！',
               style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  color: Theme.of(context).colorScheme.primary,
                   fontSize: 15)),
           const SizedBox(height: 4),
           const Text('不需要任何轉帳',
@@ -912,14 +1152,16 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Widget _balanceChip(int bal) {
     final isPositive = bal > 0;
     final isZero = bal == 0;
+    final primary = Theme.of(context).colorScheme.primary;
+    final mist = Color.lerp(primary, Colors.white, 0.88)!;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: isZero
             ? AppColors.surfaceMoss
             : isPositive
-                ? AppColors.primaryMist
-                : AppColors.error.withOpacity(0.1),
+                ? mist
+                : AppColors.error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
@@ -931,7 +1173,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           fontSize: 12,
           color: isZero
               ? AppColors.textHint
-              : (isPositive ? AppColors.primary : AppColors.error),
+              : (isPositive ? primary : AppColors.error),
         ),
       ),
     );
@@ -941,9 +1183,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   // TAB 3 : CHART
   // ════════════════════════════════
   Widget _buildChartTab() {
-    // Category breakdown
+    // Category breakdown — use _filteredExpenses to respect category filter
     final catTotals = <String, int>{};
-    for (final e in _expenses) {
+    for (final e in _filteredExpenses) {
       catTotals[e.category] =
           (catTotals[e.category] ?? 0) + e.amount;
     }
@@ -953,7 +1195,10 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     // Per-member totals
     final memberTotals = _memberTotals;
 
-    return ListView(
+    return Column(
+      children: [
+        _buildCategoryFilter(),
+        Expanded(child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // ── Category donut-style bars ──
@@ -1017,7 +1262,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                                 valueColor:
                                     AlwaysStoppedAnimation<
                                         Color>(
-                                  AppColors.primaryLight,
+                                  Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!,
                                 ),
                               ),
                             ),
@@ -1058,7 +1303,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
         const SizedBox(height: 100),
       ],
-    );
+    )),  // Expanded + ListView
+      ],
+    );  // Column
   }
 
   Widget _catBar(String cat, int amount) {
@@ -1140,7 +1387,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   curve: Curves.easeOut,
                   height: 80 * ratio + 4,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.7),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
                     borderRadius: const BorderRadius.vertical(
                         top: Radius.circular(6)),
                   ),
@@ -1169,6 +1416,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => _AddExpenseSheet(
         members: _members,
+        trips: _trips,
+        initialTripId: _selectedTripId,
         onAdd: (e) => setState(() => _expenses.insert(0, e)),
       ),
     );
@@ -1220,13 +1469,13 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     ],
                   ),
                 ),
-                Text(
+                Builder(builder: (bCtx) => Text(
                   'NT\$ ${e.amount}',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontWeight: FontWeight.w900,
                       fontSize: 22,
-                      color: AppColors.primary),
-                ),
+                      color: Theme.of(bCtx).colorScheme.primary),
+                )),
               ],
             ),
             const SizedBox(height: 16),
@@ -1253,15 +1502,18 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     (x) => x.id == mid,
                     orElse: () => Member(
                         id: '', name: '?', emoji: '?'));
-                return Chip(
-                  label: Text('${m.emoji} ${m.name}'),
-                  backgroundColor: AppColors.primaryMist,
-                  side: BorderSide.none,
-                  labelStyle: const TextStyle(
-                      color: AppColors.primary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600),
-                );
+                return Builder(builder: (bCtx) {
+                  final p = Theme.of(bCtx).colorScheme.primary;
+                  return Chip(
+                    label: Text('${m.emoji} ${m.name}'),
+                    backgroundColor: p.withValues(alpha: 0.12),
+                    side: BorderSide.none,
+                    labelStyle: TextStyle(
+                        color: p,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  );
+                });
               }).toList(),
             ),
             const SizedBox(height: 8),
@@ -1345,8 +1597,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               TextButton.icon(
                 onPressed: () =>
                     _showAddMember(context, setLocal),
-                icon: const Icon(Icons.person_add_outlined,
-                    color: AppColors.primary),
+                icon: Icon(Icons.person_add_outlined,
+                    color: Theme.of(ctx).colorScheme.primary),
                 label: const Text('新增旅伴'),
               ),
             ],
@@ -1388,12 +1640,12 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                       height: 40,
                       decoration: BoxDecoration(
                         color: selectedEmoji == e
-                            ? AppColors.primaryMist
+                            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
                             : AppColors.surfaceMoss,
                         shape: BoxShape.circle,
                         border: selectedEmoji == e
                             ? Border.all(
-                                color: AppColors.primary,
+                                color: Theme.of(context).colorScheme.primary,
                                 width: 2)
                             : null,
                       ),
@@ -1445,7 +1697,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       SnackBar(
         content: Text(
             '已標記 ${from.name} 轉帳 NT\$${s.amount} 給 ${to.name}'),
-        backgroundColor: AppColors.primary,
+        backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12)),
@@ -1500,10 +1752,13 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
 class _AddExpenseSheet extends StatefulWidget {
   final List<Member> members;
+  final List<_TripEntry> trips;
+  final String? initialTripId;
   final void Function(ExpenseItem) onAdd;
 
   const _AddExpenseSheet(
-      {required this.members, required this.onAdd});
+      {required this.members, required this.trips,
+       required this.onAdd, this.initialTripId});
 
   @override
   State<_AddExpenseSheet> createState() =>
@@ -1519,6 +1774,7 @@ class _AddExpenseSheetState
   late Set<String> _selectedSplitIds;
   String _selectedIcon = '🍜';
   bool _splitEvenly = true;
+  String? _selectedTripId;
 
   final _categories = [
     '餐飲', '住宿', '交通', '門票', '購物', '其他'
@@ -1536,6 +1792,7 @@ class _AddExpenseSheetState
         widget.members.isNotEmpty ? widget.members[0].id : '';
     _selectedSplitIds =
         widget.members.map((m) => m.id).toSet();
+    _selectedTripId = widget.initialTripId;
   }
 
   @override
@@ -1543,6 +1800,33 @@ class _AddExpenseSheetState
     _amountCtrl.dispose();
     _titleCtrl.dispose();
     super.dispose();
+  }
+
+  Widget _sheetTripChip(String? id, String name, String icon) {
+    final sel = _selectedTripId == id;
+    final primary = Theme.of(context).colorScheme.primary;
+    final mist = Color.lerp(primary, Colors.white, 0.88)!;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedTripId = id),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: sel ? mist : AppColors.surfaceMoss,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: sel ? primary : AppColors.divider, width: sel ? 1.5 : 1),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(icon, style: const TextStyle(fontSize: 13)),
+          const SizedBox(width: 5),
+          Text(name, style: TextStyle(
+            fontSize: 12, fontWeight: FontWeight.w600,
+            color: sel ? primary : AppColors.textSecondary,
+          )),
+        ]),
+      ),
+    );
   }
 
   void _submit() {
@@ -1559,6 +1843,7 @@ class _AddExpenseSheetState
       paidById: _selectedPayerId,
       splitMemberIds: _selectedSplitIds.toList(),
       date: DateTime.now(),
+      tripId: _selectedTripId,
     );
     widget.onAdd(e);
     Navigator.pop(context);
@@ -1566,6 +1851,9 @@ class _AddExpenseSheetState
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final primaryMist = Color.lerp(primary, Colors.white, 0.88)!;
+    final primaryLight = Color.lerp(primary, Colors.white, 0.35)!;
     return Padding(
       padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -1606,16 +1894,16 @@ class _AddExpenseSheetState
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryMist,
+                  color: primaryMist,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: Row(
                   children: [
-                    const Text('NT\$',
+                    Text('NT\$',
                         style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 22,
-                            color: AppColors.primary)),
+                            color: primary)),
                     const SizedBox(width: 10),
                     Expanded(
                       child: TextField(
@@ -1626,14 +1914,14 @@ class _AddExpenseSheetState
                           FilteringTextInputFormatter
                               .digitsOnly
                         ],
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontWeight: FontWeight.w900,
                             fontSize: 28,
-                            color: AppColors.primary),
-                        decoration: const InputDecoration(
+                            color: primary),
+                        decoration: InputDecoration(
                           hintText: '0',
                           hintStyle: TextStyle(
-                              color: AppColors.primaryLight,
+                              color: primaryLight,
                               fontSize: 28,
                               fontWeight: FontWeight.w300),
                           filled: false,
@@ -1664,6 +1952,22 @@ class _AddExpenseSheetState
 
               const SizedBox(height: 14),
 
+              // Trip selector
+              if (widget.trips.isNotEmpty) ...[
+                const _Label('所屬行程'),
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _sheetTripChip(null, '未指定', '📋'),
+                      ...widget.trips.map((t) => _sheetTripChip(t.id, t.name, t.icon)),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+
               // Icon picker
               const _Label('選擇圖示'),
               const SizedBox(height: 8),
@@ -1686,13 +1990,13 @@ class _AddExpenseSheetState
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
                           color: sel
-                              ? AppColors.primaryMist
+                              ? primaryMist
                               : AppColors.surfaceMoss,
                           borderRadius:
                               BorderRadius.circular(12),
                           border: sel
                               ? Border.all(
-                                  color: AppColors.primary,
+                                  color: primary,
                                   width: 1.5)
                               : null,
                         ),
@@ -1727,13 +2031,13 @@ class _AddExpenseSheetState
                           horizontal: 14, vertical: 8),
                       decoration: BoxDecoration(
                         color: sel
-                            ? AppColors.primary
+                            ? primary
                             : AppColors.surfaceMoss,
                         borderRadius:
                             BorderRadius.circular(20),
                         border: Border.all(
                           color: sel
-                              ? AppColors.primary
+                              ? primary
                               : AppColors.divider,
                         ),
                       ),
@@ -1773,13 +2077,13 @@ class _AddExpenseSheetState
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: sel
-                              ? AppColors.primaryMist
+                              ? primaryMist
                               : AppColors.surfaceMoss,
                           borderRadius:
                               BorderRadius.circular(12),
                           border: Border.all(
                             color: sel
-                                ? AppColors.primary
+                                ? primary
                                 : AppColors.divider,
                             width: sel ? 1.5 : 1,
                           ),
@@ -1797,7 +2101,7 @@ class _AddExpenseSheetState
                                 fontSize: 13,
                                 fontWeight: FontWeight.w700,
                                 color: sel
-                                    ? AppColors.primary
+                                    ? primary
                                     : AppColors.textSecondary,
                               ),
                             ),
@@ -1836,7 +2140,7 @@ class _AddExpenseSheetState
                             }
                           });
                         },
-                        activeColor: AppColors.primary,
+                        activeColor: primary,
                         materialTapTargetSize:
                             MaterialTapTargetSize.shrinkWrap,
                       ),
@@ -1868,13 +2172,13 @@ class _AddExpenseSheetState
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: sel
-                              ? AppColors.primaryMist
+                              ? primaryMist
                               : AppColors.surfaceMoss,
                           borderRadius:
                               BorderRadius.circular(12),
                           border: Border.all(
                             color: sel
-                                ? AppColors.primary
+                                ? primary
                                 : AppColors.divider,
                             width: sel ? 1.5 : 1,
                           ),
@@ -1883,10 +2187,10 @@ class _AddExpenseSheetState
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (sel)
-                              const Icon(
+                              Icon(
                                   Icons.check_circle_rounded,
                                   size: 14,
-                                  color: AppColors.primary),
+                                  color: primary),
                             if (sel)
                               const SizedBox(width: 4),
                             Text(m.emoji,
@@ -1898,7 +2202,7 @@ class _AddExpenseSheetState
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: sel
-                                        ? AppColors.primary
+                                        ? primary
                                         : AppColors.textSecondary)),
                           ],
                         ),

@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/app_settings_provider.dart';
 import '../models/dummy_data.dart';
 import '../widgets/common_widgets.dart';
+import 'calendar_screen.dart';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TRIP SCREEN
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 class TripScreen extends StatefulWidget {
-  const TripScreen({super.key});
+  /// When incremented, _TripScreenState jumps to the calendar tab (index 3).
+  final ValueNotifier<int>? calendarTrigger;
+  const TripScreen({super.key, this.calendarTrigger});
   @override
   State<TripScreen> createState() => _TripScreenState();
 }
@@ -37,11 +42,43 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    widget.calendarTrigger?.addListener(_onCalendarTrigger);
+  }
+
+  void _onCalendarTrigger() {
+    // Jump to tab 3 (行事曆) whenever the trigger fires
+    if (_tabController.index != 3) {
+      _tabController.animateTo(3);
+    } else {
+      // Already on tab 3 — no-op but the trigger value changed so we're fine
+      setState(() {}); // refresh if needed
+    }
+  }
+
+  /// Build the trip list for the calendar (extract date ranges from mock data).
+  List<({String title, DateTime date, DateTime? endDate})> get _tripsForCalendar {
+    final out = <({String title, DateTime date, DateTime? endDate})>[];
+    for (final t in _myTrips) {
+      final parsed = _parseDateRange(t.date);
+      if (parsed != null) out.add((title: t.title, date: parsed.$1, endDate: parsed.$2));
+    }
+    return out;
+  }
+
+  static (DateTime, DateTime?)? _parseDateRange(String s) {
+    // "2025-06-07 ～ 06-08"
+    final m = RegExp(r'(\d{4}-\d{2}-\d{2})').allMatches(s).toList();
+    if (m.isEmpty) return null;
+    final start = DateTime.tryParse(m.first.group(1)!);
+    if (start == null) return null;
+    final end = m.length > 1 ? DateTime.tryParse(m.last.group(1)!) : null;
+    return (start, end);
   }
 
   @override
   void dispose() {
+    widget.calendarTrigger?.removeListener(_onCalendarTrigger);
     _tabController.dispose();
     super.dispose();
   }
@@ -59,7 +96,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     setState(() => _candidates.add(_CandidateSpot(spot: s)));
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('已將「${s.name}」加入候選清單 ✓'),
-      backgroundColor: AppColors.primary,
+      backgroundColor: Theme.of(context).colorScheme.primary,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       action: SnackBarAction(
@@ -72,6 +109,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -79,21 +117,26 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         title: const Text('行程管理'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.auto_awesome_rounded, color: AppColors.primary),
+            icon: Icon(Icons.auto_awesome_rounded, color: primary),
             onPressed: () => setState(() => _showAIPanel = !_showAIPanel),
             tooltip: 'AI 行程助手',
           ),
           IconButton(
-            icon: const Icon(Icons.add_rounded, color: AppColors.primary),
+            icon: Icon(Icons.add_rounded, color: primary),
             onPressed: () => _showCreateTrip(context),
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '我的行程'),
-            Tab(text: '候選清單'),
-            Tab(text: '收藏景點'),
+          labelColor: primary,
+          indicatorColor: primary,
+          labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+          tabs: [
+            Tab(text: context.watch<AppSettingsProvider>().l10n.tripMyTrips),
+            Tab(text: context.watch<AppSettingsProvider>().l10n.tripCandidates),
+            Tab(text: context.watch<AppSettingsProvider>().l10n.tripSaved),
+            Tab(text: context.watch<AppSettingsProvider>().l10n.tripCalendar),
           ],
         ),
       ),
@@ -105,6 +148,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               _buildMyTripsTab(),
               _buildCandidatesTab(),
               _buildSavedSpotsTab(),
+              CalendarScreen(userTrips: _tripsForCalendar),
             ],
           ),
           if (_showAIPanel) _buildAIPanel(context),
@@ -162,22 +206,25 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
               child: Stack(children: [
                 Image.network(trip.cover, height: 130, width: double.infinity, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(height: 130, color: AppColors.primaryMist,
+                  errorBuilder: (_, __, ___) => Container(height: 130, color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!,
                     child: const Center(child: Text('🗺️', style: TextStyle(fontSize: 40))))),
                 Container(height: 130,
                   decoration: BoxDecoration(gradient: LinearGradient(
                     begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withOpacity(0.5)]))),
+                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.5)]))),
                 Positioned(top: 10, right: 10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: trip.isCompleted ? AppColors.primary : AppColors.accentStraw,
-                      borderRadius: BorderRadius.circular(20)),
-                    child: Text(trip.isCompleted ? '已完成' : '規劃中',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                        color: trip.isCompleted ? Colors.white : AppColors.primaryDark)),
-                  ),
+                  child: Builder(builder: (bCtx) {
+                    final p = Theme.of(bCtx).colorScheme.primary;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: trip.isCompleted ? p : AppColors.accentStraw,
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Text(trip.isCompleted ? '已完成' : '規劃中',
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                          color: trip.isCompleted ? Colors.white : Color.lerp(p, Colors.black, 0.3)!)),
+                    );
+                  }),
                 ),
                 Positioned(bottom: 10, left: 14,
                   child: Text(trip.title, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w800))),
@@ -194,7 +241,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     Text(trip.date, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                     const Spacer(),
                     Text('${trip.days}天 · ${trip.spots.length}個景點',
-                      style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w600)),
+                      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12, fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 10),
                   Wrap(spacing: 6, runSpacing: 4,
@@ -214,14 +261,24 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                     )),
                     const SizedBox(width: 8),
-                    Expanded(child: ElevatedButton.icon(
-                      onPressed: () => _showShareOptions(context),
-                      icon: const Icon(Icons.share_rounded, size: 15),
-                      label: const Text('分享'),
-                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                    )),
+                    Expanded(child: trip.isCompleted
+                      ? ElevatedButton.icon(
+                          onPressed: () => _showShareOptions(context),
+                          icon: const Icon(Icons.share_rounded, size: 15),
+                          label: const Text('分享'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        )
+                      : ElevatedButton.icon(
+                          onPressed: () => _markAsCompleted(trip),
+                          icon: const Icon(Icons.check_circle_outline_rounded, size: 15),
+                          label: const Text('標記完成'),
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                        ),
+                    ),
                   ]),
                 ],
               ),
@@ -241,16 +298,16 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           margin: const EdgeInsets.fromLTRB(16, 14, 16, 0),
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: AppColors.primaryMist,
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+            border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
           ),
           child: Row(children: [
             const Text('💡', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 10),
-            const Expanded(child: Text(
+            Expanded(child: Text(
               '長按拖移 ☰ 可調整順序，或點「加入景點」從地圖選取，\n再點「AI 幫我排程」自動最佳化！',
-              style: TextStyle(fontSize: 12, color: AppColors.primary, height: 1.5),
+              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.primary, height: 1.5),
             )),
           ]),
         ),
@@ -313,7 +370,6 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 icon: const Icon(Icons.check_rounded, size: 16),
                 label: const Text('轉為行程'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
@@ -343,12 +399,12 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           mainAxisSize: MainAxisSize.min,
           children: [
             // Order number
-            Container(
+            Builder(builder: (bCtx) => Container(
               width: 28, height: 28,
-              decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: Theme.of(bCtx).colorScheme.primary, borderRadius: BorderRadius.circular(8)),
               child: Center(child: Text('${index + 1}',
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13))),
-            ),
+            )),
             const SizedBox(width: 8),
             Text(catIcon, style: const TextStyle(fontSize: 22)),
           ],
@@ -428,17 +484,19 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   controller: scroll,
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   itemCount: DummyData.spots.length,
-                  itemBuilder: (_, i) {
+                  itemBuilder: (itemCtx, i) {
                     final s = DummyData.spots[i];
                     final already = _candidates.any((c) => c.spot.id == s.id);
                     final icon = s.category == 'restaurant' ? '🍜'
                         : s.category == 'youbike' ? '🚲' : '🏛️';
+                    final p = Theme.of(itemCtx).colorScheme.primary;
+                    final mist = Color.lerp(p, Colors.white, 0.88)!;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
-                        color: already ? AppColors.primaryMist : AppColors.surfaceWarm,
+                        color: already ? mist : AppColors.surfaceWarm,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: already ? AppColors.primary.withOpacity(0.3) : AppColors.divider),
+                        border: Border.all(color: already ? p.withValues(alpha: 0.3) : AppColors.divider),
                       ),
                       child: ListTile(
                         leading: Text(icon, style: const TextStyle(fontSize: 24)),
@@ -449,13 +507,16 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                             style: const TextStyle(fontSize: 11, color: AppColors.textHint),
                             maxLines: 1, overflow: TextOverflow.ellipsis),
                         ]),
-                        trailing: already
-                            ? const Icon(Icons.check_circle_rounded, color: AppColors.primary)
+                        trailing: Builder(builder: (bCtx) {
+                          final p = Theme.of(bCtx).colorScheme.primary;
+                          return already
+                            ? Icon(Icons.check_circle_rounded, color: p)
                             : Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(10)),
+                                decoration: BoxDecoration(color: p, borderRadius: BorderRadius.circular(10)),
                                 child: const Text('加入', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-                              ),
+                              );
+                        }),
                         onTap: already ? null : () {
                           _addToCandidate(s);
                           setState(() {});
@@ -511,11 +572,14 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     Row(children: [
                       GestureDetector(
                         onTap: () => _addToCandidate(s),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(color: AppColors.primaryMist, borderRadius: BorderRadius.circular(6)),
-                          child: const Text('＋加入候選', style: TextStyle(fontSize: 9, color: AppColors.primary, fontWeight: FontWeight.w700)),
-                        ),
+                        child: Builder(builder: (bCtx) {
+                          final p = Theme.of(bCtx).colorScheme.primary;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                            child: Text('＋加入候選', style: TextStyle(fontSize: 9, color: p, fontWeight: FontWeight.w700)),
+                          );
+                        }),
                       ),
                       const Spacer(),
                       const Icon(Icons.star_rounded, size: 11, color: AppColors.accentStraw),
@@ -551,9 +615,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(children: [
-              Container(padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: AppColors.primaryMist, borderRadius: BorderRadius.circular(12)),
-                child: const Text('✨', style: TextStyle(fontSize: 20))),
+              Builder(builder: (bCtx) => Container(padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Theme.of(bCtx).colorScheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+                child: const Text('✨', style: TextStyle(fontSize: 20)))),
               const SizedBox(width: 12),
               const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('AI 行程助手', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.textPrimary)),
@@ -582,9 +646,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                       children: _candidates.asMap().entries.map((e) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         child: Row(children: [
-                          Container(width: 20, height: 20,
-                            decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
-                            child: Center(child: Text('${e.key+1}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)))),
+                          Builder(builder: (bCtx) => Container(width: 20, height: 20,
+                            decoration: BoxDecoration(color: Theme.of(bCtx).colorScheme.primary, shape: BoxShape.circle),
+                            child: Center(child: Text('${e.key+1}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))))),
                           const SizedBox(width: 8),
                           Text(e.value.spot.name, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
                         ]),
@@ -602,9 +666,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: isSel ? AppColors.primary : AppColors.surfaceMoss,
+                          color: isSel ? Theme.of(context).colorScheme.primary : AppColors.surfaceMoss,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: isSel ? AppColors.primary : AppColors.divider)),
+                          border: Border.all(color: isSel ? Theme.of(context).colorScheme.primary : AppColors.divider)),
                         child: Text(e.value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
                           color: isSel ? Colors.white : AppColors.textSecondary)),
                       ),
@@ -631,14 +695,14 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.primaryMist,
+                    color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.2))),
+                    border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2))),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Row(children: [
-                      Text('🤖', style: TextStyle(fontSize: 15)),
-                      SizedBox(width: 6),
-                      Text('AI 建議預覽', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.primary, fontSize: 13)),
+                    Row(children: [
+                      const Text('🤖', style: TextStyle(fontSize: 15)),
+                      const SizedBox(width: 6),
+                      Text('AI 建議預覽', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary, fontSize: 13)),
                     ]),
                     const SizedBox(height: 10),
                     Text(
@@ -684,7 +748,17 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     _tabController.animateTo(0);
     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
       content: const Text('已成功建立行程 🎉'),
-      backgroundColor: AppColors.primary,
+      backgroundColor: Theme.of(ctx).colorScheme.primary,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  void _markAsCompleted(_MockTrip trip) {
+    setState(() => trip.isCompleted = true);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('「${trip.title}」已標記為完成 ✅'),
+      backgroundColor: Theme.of(context).colorScheme.primary,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
@@ -742,9 +816,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           const Text('分享行程', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _shareOpt('📱', 'QR Code\n分享', AppColors.primary),
+            _shareOpt('📱', 'QR Code\n分享', Theme.of(context).colorScheme.primary),
             _shareOpt('👥', '發布到\n社群', AppColors.accentTerra),
-            _shareOpt('🔗', '複製\n連結', AppColors.primaryLight),
+            _shareOpt('🔗', '複製\n連結', const Color(0xFF8FBF8F)),
             _shareOpt('✏️', '邀請\n共編', AppColors.accentSand),
           ]),
           const SizedBox(height: 12),
@@ -756,7 +830,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   Widget _shareOpt(String icon, String label, Color color) => GestureDetector(
     child: Column(children: [
       Container(width: 58, height: 58,
-        decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16)),
         child: Center(child: Text(icon, style: const TextStyle(fontSize: 26)))),
       const SizedBox(height: 7),
       Text(label, textAlign: TextAlign.center,
@@ -770,7 +844,7 @@ class _MockTrip {
   final String title, date, cover;
   final List<String> spots;
   final int days;
-  final bool isCompleted;
+  bool isCompleted;
   _MockTrip({required this.title, required this.date, required this.spots,
              required this.days, required this.isCompleted, required this.cover});
 }
@@ -794,6 +868,7 @@ class _TripDetailPageState extends State<_TripDetailPage> {
   @override
   Widget build(BuildContext context) {
     final trip = widget.trip;
+    final primary = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
@@ -801,7 +876,7 @@ class _TripDetailPageState extends State<_TripDetailPage> {
           SliverAppBar(
             expandedHeight: 200,
             pinned: true,
-            backgroundColor: AppColors.primary,
+            backgroundColor: primary,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
               onPressed: () => Navigator.pop(context)),
@@ -870,7 +945,7 @@ class _TripDetailPageState extends State<_TripDetailPage> {
             onPressed: () {},
             icon: const Icon(Icons.qr_code_rounded, size: 16),
             label: const Text('QR 共同編輯'),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
+            style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
           )),
@@ -889,6 +964,7 @@ class _TripDetailPageState extends State<_TripDetailPage> {
   Widget _div() => Container(width: 1, height: 30, color: AppColors.divider);
 
   Widget _buildTimeline() {
+    final primary = Theme.of(context).colorScheme.primary;
     final steps = widget.trip.spots.asMap().entries.map((e) =>
       <String,String>{'time': _timeSlot(e.key), 'name': e.value, 'icon': '📍', 'cost': '', 'note': ''}
     ).toList();
@@ -901,10 +977,10 @@ class _TripDetailPageState extends State<_TripDetailPage> {
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Column(children: [
             Container(width: 30, height: 30,
-              decoration: BoxDecoration(color: AppColors.primaryMist, shape: BoxShape.circle,
-                border: Border.all(color: AppColors.primary, width: 2)),
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), shape: BoxShape.circle,
+                border: Border.all(color: primary, width: 2)),
               child: Center(child: Text(s['icon']!, style: const TextStyle(fontSize: 13)))),
-            if (!isLast) Container(width: 2, height: 72, color: AppColors.primary.withOpacity(0.25)),
+            if (!isLast) Container(width: 2, height: 72, color: primary.withValues(alpha: 0.25)),
           ]),
           const SizedBox(width: 12),
           Expanded(
@@ -923,11 +999,11 @@ class _TripDetailPageState extends State<_TripDetailPage> {
                       onTap: () => _showTimePicker(context, i, s),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: AppColors.primaryMist, borderRadius: BorderRadius.circular(8)),
+                        decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.access_time_rounded, size: 11, color: AppColors.primary),
+                          Icon(Icons.access_time_rounded, size: 11, color: primary),
                           const SizedBox(width: 3),
-                          Text(s['time']!, style: const TextStyle(color: AppColors.primary, fontSize: 11, fontWeight: FontWeight.w700)),
+                          Text(s['time']!, style: TextStyle(color: primary, fontSize: 11, fontWeight: FontWeight.w700)),
                         ]),
                       ),
                     ),
@@ -979,6 +1055,8 @@ class _AIDaysSliderState extends State<_AIDaysSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final mist = Color.lerp(primary, Colors.white, 0.88)!;
     return Column(children: [
       Row(children: [
         const Text('1天', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
@@ -989,7 +1067,7 @@ class _AIDaysSliderState extends State<_AIDaysSlider> {
             max: 14,
             divisions: 13,
             label: '${_days.round()} 天',
-            activeColor: AppColors.primary,
+            activeColor: primary,
             onChanged: (v) => setState(() => _days = v),
           ),
         ),
@@ -998,14 +1076,14 @@ class _AIDaysSliderState extends State<_AIDaysSlider> {
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.primaryMist,
+          color: mist,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.primary),
+          Icon(Icons.calendar_today_rounded, size: 14, color: primary),
           const SizedBox(width: 6),
           Text('已選擇：${_days.round()} 天',
-            style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary, fontSize: 14)),
+            style: TextStyle(fontWeight: FontWeight.w800, color: primary, fontSize: 14)),
         ]),
       ),
     ]);
@@ -1062,13 +1140,10 @@ extension _TripDetailEdit on _TripDetailPageState {
       context: ctx,
       initialTime: const TimeOfDay(hour: 9, minute: 0),
       helpText: '設定到達時間',
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(primary: AppColors.primary)),
-        child: child!,
-      ),
+      builder: (ctx, child) => child!,
     );
     if (picked != null) {
+      // ignore: invalid_use_of_protected_member
       setState(() {
         s['time'] = '${picked.hour.toString().padLeft(2,'0')}:${picked.minute.toString().padLeft(2,'0')}';
       });

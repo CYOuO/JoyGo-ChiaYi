@@ -81,10 +81,10 @@ class _WeatherScreenState extends State<WeatherScreen>
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFF7AB8CC), Color(0xFF5B8A5F)],
+              colors: [const Color(0xFF7AB8CC), Theme.of(context).colorScheme.primary],
             ),
             borderRadius: BorderRadius.circular(24),
             boxShadow: [BoxShadow(color: const Color(0xFF7AB8CC).withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 6))],
@@ -131,10 +131,10 @@ class _WeatherScreenState extends State<WeatherScreen>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(children: [
-                Icon(Icons.calendar_today_rounded, size: 15, color: AppColors.primary),
-                SizedBox(width: 6),
-                Text('7 天天氣預報', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
+              Row(children: [
+                Icon(Icons.calendar_today_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                const Text('7 天天氣預報', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
               ]),
               const SizedBox(height: 14),
               ...data.asMap().entries.map((e) => _forecastRow(e.key, e.value)),
@@ -154,7 +154,7 @@ class _WeatherScreenState extends State<WeatherScreen>
         Row(children: [
           Expanded(child: _infoCard('🌅', '日出日落', '05:15 / 18:45', '日照時間 13小時30分', AppColors.accentStraw)),
           const SizedBox(width: 12),
-          Expanded(child: _infoCard('🌊', '天氣警報', '無', '目前無特殊天氣警報', AppColors.primary)),
+          Expanded(child: _infoCard('🌊', '天氣警報', '無', '目前無特殊天氣警報', Theme.of(context).colorScheme.primary)),
         ]),
         const SizedBox(height: 40),
       ],
@@ -184,7 +184,7 @@ class _WeatherScreenState extends State<WeatherScreen>
             style: TextStyle(
               fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
               fontSize: 13,
-              color: isToday ? AppColors.primary : AppColors.textSecondary,
+              color: isToday ? Theme.of(context).colorScheme.primary : AppColors.textSecondary,
             ))),
         const SizedBox(width: 10),
         Text(d['icon'] as String, style: const TextStyle(fontSize: 18)),

@@ -155,7 +155,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
   }
 
   Color _catColor(String cat) =>
-      (_catConfig[cat]?['color'] as Color?) ?? AppColors.primary;
+      (_catConfig[cat]?['color'] as Color?) ?? Theme.of(context).colorScheme.primary;
   String _catEmoji(String cat) =>
       (_catConfig[cat]?['emoji'] as String?) ?? '🐾';
 
@@ -195,10 +195,10 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
         ]),
       ),
       body: _loading
-          ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text('🐾', style: TextStyle(fontSize: 48)),
-              SizedBox(height: 16),
-              CircularProgressIndicator(color: AppColors.primary),
+          ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Text('🐾', style: TextStyle(fontSize: 48)),
+              const SizedBox(height: 16),
+              CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
               SizedBox(height: 12),
               Text('載入寵物友善店家...', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             ]))
@@ -413,14 +413,14 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
                 decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(12)),
                 child: IconButton(
                   onPressed: () => _launchPhone(s.phone),
-                  icon: const Icon(Icons.phone_outlined, color: AppColors.primary, size: 20)),
+                  icon: Icon(Icons.phone_outlined, color: Theme.of(context).colorScheme.primary, size: 20)),
               ),
               const SizedBox(width: 8),
               Container(
                 decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(12)),
                 child: IconButton(
                   onPressed: () => _showDetail(s),
-                  icon: const Icon(Icons.open_in_new_rounded, color: AppColors.primary, size: 20)),
+                  icon: Icon(Icons.open_in_new_rounded, color: Theme.of(context).colorScheme.primary, size: 20)),
               ),
             ]),
           ),
@@ -561,7 +561,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
                   decoration: BoxDecoration(border: Border.all(color: AppColors.divider), borderRadius: BorderRadius.circular(12)),
                   child: IconButton(
                     onPressed: () { Navigator.pop(ctx); _launchPhone(s.phone); },
-                    icon: const Icon(Icons.phone_outlined, color: AppColors.primary)),
+                    icon: Icon(Icons.phone_outlined, color: Theme.of(context).colorScheme.primary)),
                 ),
               ]),
             ],
@@ -590,7 +590,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
   );
 
   Widget _detailRow(IconData icon, String val) => Row(children: [
-    Icon(icon, size: 14, color: AppColors.primary),
+    Icon(icon, size: 14, color: Theme.of(context).colorScheme.primary),
     const SizedBox(width: 8),
     Expanded(child: Text(val, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
   ]);

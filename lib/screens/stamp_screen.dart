@@ -1,6 +1,12 @@
+﻿import 'dart:async';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import '../theme/app_theme.dart';
 import '../models/dummy_data.dart';
+import 'camera_screen.dart';
 
 class StampScreen extends StatefulWidget {
   const StampScreen({super.key});
@@ -12,22 +18,92 @@ class StampScreen extends StatefulWidget {
 class _StampScreenState extends State<StampScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final Set<String> _visitedSpots = {'1', '2', '5'};
+  final MapController _miniMapCtrl = MapController();
+
+  // Map<spotId, visitCount> — visit count drives stamp color depth
+  final Map<String, int> _visitedSpots = {'1': 2, '2': 1, '5': 4};
+
+  // GPS auto check-in
+  StreamSubscription<Position>? _posStream;
+  Position? _stampPos;
+  final Map<String, DateTime> _lastCheckinTime = {};
+
+  // 可拖曳相機按鈕（相對右下角的偏移）
+  Offset _cameraFabOffset = const Offset(16, 16);
+
+  static const _kCheckinRadius = 100.0; // metres
+  static const _kCheckinCooldown = Duration(minutes: 5);
+
+  // Chiayi bounds
+  static final _chiayiBounds = LatLngBounds(
+    const LatLng(23.25, 120.10),
+    const LatLng(23.75, 121.00),
+  );
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
+    _startLocationWatch();
   }
 
   @override
   void dispose() {
+    _posStream?.cancel();
+    _miniMapCtrl.dispose();
     _tabController.dispose();
     super.dispose();
   }
 
+  // ── GPS auto check-in ──────────────────────────────────────
+
+  Future<void> _startLocationWatch() async {
+    LocationPermission perm = await Geolocator.checkPermission();
+    if (perm == LocationPermission.denied) {
+      perm = await Geolocator.requestPermission();
+    }
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) return;
+
+    _posStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen(_checkAutoCheckin);
+  }
+
+  void _checkAutoCheckin(Position pos) {
+    if (!mounted) return;
+    setState(() => _stampPos = pos);
+    final now = DateTime.now();
+
+    for (final spot in DummyData.spots) {
+      final dist = Geolocator.distanceBetween(
+          pos.latitude, pos.longitude, spot.lat, spot.lng);
+      if (dist > _kCheckinRadius) continue;
+
+      final last = _lastCheckinTime[spot.id];
+      if (last != null && now.difference(last) < _kCheckinCooldown) continue;
+
+      // ✅ Auto check-in!
+      _lastCheckinTime[spot.id] = now;
+      final newCount = (_visitedSpots[spot.id] ?? 0) + 1;
+      setState(() => _visitedSpots[spot.id] = newCount);
+
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('🎉「${spot.name}」自動打卡成功！第 $newCount 次造訪'),
+        backgroundColor: _getStampColor(newCount),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
+      ));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -44,22 +120,63 @@ class _StampScreenState extends State<StampScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          labelColor: AppColors.primary,
+          labelColor: primary,
           unselectedLabelColor: AppColors.textHint,
-          indicatorColor: AppColors.primary,
+          indicatorColor: primary,
           tabs: const [
             Tab(text: '景點印章'),
             Tab(text: '成就徽章'),
+            Tab(text: '小地圖'),
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildStampTab(),
-          _buildAchievementTab(),
-        ],
-      ),
+      body: LayoutBuilder(builder: (ctx, constraints) {
+        return Stack(children: [
+          TabBarView(
+            controller: _tabController,
+            children: [
+              _buildStampTab(),
+              _buildAchievementTab(),
+              _buildMiniMapTab(),
+            ],
+          ),
+          // ── 可拖曳相機按鈕（所有 tab 共用）──────────────────
+          Positioned(
+            right: _cameraFabOffset.dx,
+            bottom: _cameraFabOffset.dy,
+            child: GestureDetector(
+              onTap: () => Navigator.push(ctx,
+                  MaterialPageRoute(builder: (_) => const CameraScreen())),
+              onPanUpdate: (d) {
+                setState(() {
+                  final newDx = (_cameraFabOffset.dx - d.delta.dx)
+                      .clamp(8.0, constraints.maxWidth - 60);
+                  final newDy = (_cameraFabOffset.dy - d.delta.dy)
+                      .clamp(8.0, constraints.maxHeight - 60);
+                  _cameraFabOffset = Offset(newDx, newDy);
+                });
+              },
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: primary.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.camera_alt_rounded,
+                    color: Colors.white, size: 24),
+              ),
+            ),
+          ),
+        ]);
+      }),
     );
   }
 
@@ -78,8 +195,9 @@ class _StampScreenState extends State<StampScreen>
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppColors.primary, AppColors.primaryLight],
+                  gradient: LinearGradient(
+                    colors: [Theme.of(context).colorScheme.primary,
+                             Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!],
                   ),
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -155,11 +273,11 @@ class _StampScreenState extends State<StampScreen>
             delegate: SliverChildBuilderDelegate(
               (context, index) {
                 final spot = spots[index];
-                final isVisited = _visitedSpots.contains(spot.id);
-                final visitCount = isVisited ? 2 : 0;
+                final visitCount = _visitedSpots[spot.id] ?? 0;
+                final isVisited = visitCount > 0;
 
                 return GestureDetector(
-                  onTap: () => _showStampDetail(context, spot, isVisited),
+                  onTap: () => _showStampDetail(context, spot, visitCount),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 300),
                     decoration: BoxDecoration(
@@ -348,7 +466,7 @@ class _StampScreenState extends State<StampScreen>
           children: [
             _achieveStat('已解鎖', '${achievements.where((a) => a.isUnlocked).length}', AppColors.stampGold),
             const SizedBox(width: 12),
-            _achieveStat('進行中', '${achievements.where((a) => !a.isUnlocked).length}', AppColors.primary),
+            _achieveStat('進行中', '${achievements.where((a) => !a.isUnlocked).length}', Theme.of(context).colorScheme.primary),
             const SizedBox(width: 12),
             _achieveStat('總成就', '${achievements.length}', AppColors.textHint),
           ],
@@ -520,7 +638,7 @@ class _StampScreenState extends State<StampScreen>
                     value: achievement.progress / achievement.total,
                     backgroundColor: AppColors.surfaceMoss,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      achievement.isUnlocked ? rarityColor : AppColors.primary,
+                      achievement.isUnlocked ? rarityColor : Theme.of(context).colorScheme.primary,
                     ),
                     minHeight: 6,
                   ),
@@ -544,7 +662,21 @@ class _StampScreenState extends State<StampScreen>
     );
   }
 
-  void _showStampDetail(BuildContext context, Spot spot, bool isVisited) {
+  void _showStampDetail(BuildContext context, Spot spot, int visitCount) {
+    final isVisited = visitCount > 0;
+    final stampColor = _getStampColor(visitCount);
+
+    // Calculate current distance to spot (if location known)
+    double? _rawDist;
+    String? distLabel;
+    if (_stampPos != null) {
+      _rawDist = Geolocator.distanceBetween(
+        _stampPos!.latitude, _stampPos!.longitude, spot.lat, spot.lng);
+      distLabel = _rawDist < 1000
+          ? '距你 ${_rawDist.toStringAsFixed(0)} 公尺'
+          : '距你 ${(_rawDist / 1000).toStringAsFixed(1)} 公里';
+    }
+
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -560,79 +692,320 @@ class _StampScreenState extends State<StampScreen>
                   height: 80,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.stampBronze, width: 3),
-                    color: AppColors.stampBronze.withOpacity(0.1),
+                    border: Border.all(color: stampColor, width: 3),
+                    color: stampColor.withOpacity(0.1),
                   ),
-                  child: Center(
-                    child: Text(_spotEmoji(spot.category),
-                        style: const TextStyle(fontSize: 36)),
-                  ),
+                  child: Center(child: Text(_spotEmoji(spot.category),
+                      style: const TextStyle(fontSize: 36))),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  '✓ 已踩點成功！',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
+                Text('✓ 已踩點 $visitCount 次',
+                  style: TextStyle(color: stampColor, fontWeight: FontWeight.w700, fontSize: 16)),
               ] else ...[
                 const Text('🔒', style: TextStyle(fontSize: 48)),
                 const SizedBox(height: 12),
-                const Text(
-                  '尚未踩點',
-                  style: TextStyle(
-                    color: AppColors.textHint,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                  ),
-                ),
+                const Text('尚未踩點',
+                  style: TextStyle(color: AppColors.textHint, fontWeight: FontWeight.w700, fontSize: 16)),
               ],
               const SizedBox(height: 8),
-              Text(
-                spot.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
-                  color: AppColors.textPrimary,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              Text(spot.name,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary),
+                textAlign: TextAlign.center),
               const SizedBox(height: 4),
-              Text(
-                spot.address,
-                style: const TextStyle(
-                  color: AppColors.textHint,
-                  fontSize: 12,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              Text(spot.address,
+                style: const TextStyle(color: AppColors.textHint, fontSize: 12),
+                textAlign: TextAlign.center),
+              if (distLabel != null) ...[
+                const SizedBox(height: 6),
+                Text(distLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: (_rawDist != null && _rawDist < _kCheckinRadius)
+                        ? Theme.of(context).colorScheme.primary
+                        : AppColors.textHint,
+                    fontWeight: FontWeight.w600,
+                  )),
+              ],
               const SizedBox(height: 20),
-              if (!isVisited)
-                ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() => _visitedSpots.add(spot.id));
-                    Navigator.pop(context);
-                  },
-                  icon: const Icon(Icons.camera_alt_rounded),
-                  label: const Text('前往打卡'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(double.infinity, 44),
+              // GPS auto check-in notice
+              Builder(builder: (bCtx) {
+                final p = Theme.of(bCtx).colorScheme.primary;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: p.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: p.withValues(alpha: 0.2)),
                   ),
-                ),
-              if (isVisited)
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('關閉'),
-                ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.gps_fixed_rounded, size: 16, color: p),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '走到景點 100 公尺範圍內，\nApp 將自動幫你打卡！',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: p,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(minimumSize: const Size(double.infinity, 40)),
+                child: const Text('關閉'),
+              ),
             ],
           ),
         ),
       ),
     );
   }
+
+  Widget _buildMiniMapTab() {
+    final spots = DummyData.spots;
+
+    // 嘉義市中心作為初始中心
+    const center = LatLng(23.4801, 120.4515);
+
+    return Column(
+      children: [
+        // ── 圖例 ──────────────────────────────────────────
+        Container(
+          color: AppColors.surface,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: Row(children: [
+            _legendItem(Colors.grey.shade400, '未踩點'),
+            const SizedBox(width: 12),
+            _legendItem(AppColors.stampBronze, '1-2次'),
+            const SizedBox(width: 12),
+            _legendItem(AppColors.stampSilver, '3-4次'),
+            const SizedBox(width: 12),
+            _legendItem(AppColors.stampGold, '5次+'),
+            const Spacer(),
+            // GPS 狀態（點擊跳到自己位置）
+            GestureDetector(
+              onTap: _stampPos != null
+                  ? () => _miniMapCtrl.move(
+                      LatLng(_stampPos!.latitude, _stampPos!.longitude),
+                      15.5)
+                  : null,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(
+                  _stampPos != null
+                      ? Icons.gps_fixed_rounded
+                      : Icons.gps_not_fixed_rounded,
+                  size: 14,
+                  color: _stampPos != null
+                      ? Theme.of(context).colorScheme.primary
+                      : AppColors.textHint,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  _stampPos != null ? '定位' : '...',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: _stampPos != null
+                        ? Theme.of(context).colorScheme.primary
+                        : AppColors.textHint,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+
+        // ── 可互動集章地圖（可愛色調）────────────────────────
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.12),
+                        blurRadius: 16,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: FlutterMap(
+                      mapController: _miniMapCtrl,
+                      options: MapOptions(
+                        initialCenter: center,
+                        initialZoom: 12.5,
+                        minZoom: 10.0,
+                        maxZoom: 18.0,
+                        cameraConstraint: CameraConstraint.containCenter(
+                          bounds: _chiayiBounds,
+                        ),
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.all,
+                        ),
+                      ),
+                      children: [
+                        // CartoDB Voyager — 清新自然風格
+                        TileLayer(
+                          urlTemplate:
+                              'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+                          userAgentPackageName:
+                              'com.chiayicity.explore_chiayi',
+                          maxZoom: 19,
+                        ),
+                        // 景點 Markers
+                        MarkerLayer(
+                          markers: spots.map((spot) {
+                            final count = _visitedSpots[spot.id] ?? 0;
+                            final color = count > 0
+                                ? _getStampColor(count)
+                                : Colors.grey.shade400;
+                            return Marker(
+                              point: LatLng(spot.lat, spot.lng),
+                              width: 48,
+                              height: 56,
+                              alignment: Alignment.topCenter,
+                              child: GestureDetector(
+                                onTap: () =>
+                                    _showStampDetail(context, spot, count),
+                                child: _StampMarker(
+                                  emoji: _spotEmoji(spot.category),
+                                  color: color,
+                                  count: count,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        // 使用者位置藍點
+                        if (_stampPos != null)
+                          MarkerLayer(markers: [
+                            Marker(
+                              point: LatLng(
+                                  _stampPos!.latitude, _stampPos!.longitude),
+                              width: 20,
+                              height: 20,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade500,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: Colors.white, width: 2.5),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color:
+                                          Colors.blue.withValues(alpha: 0.4),
+                                      blurRadius: 8,
+                                    )
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ]),
+                      ],
+                    ),
+                  ),
+                ),
+
+          ),
+        ),
+
+        // ── 景點卡片橫列（點擊跳到地圖標記）──────────────────
+        Container(
+          height: 116,
+          color: AppColors.surface,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            itemCount: spots.length,
+            itemBuilder: (_, i) {
+              final spot  = spots[i];
+              final count = _visitedSpots[spot.id] ?? 0;
+              final color = count > 0
+                  ? _getStampColor(count)
+                  : Colors.grey.shade400;
+              return GestureDetector(
+                onTap: () {
+                  // 跳到地圖上的標記
+                  _miniMapCtrl.move(LatLng(spot.lat, spot.lng), 15.5);
+                },
+                onLongPress: () => _showStampDetail(context, spot, count),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  width: 78,
+                  margin: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: color.withValues(
+                        alpha: count > 0 ? 0.12 : 0.06),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: color.withValues(
+                            alpha: count > 0 ? 0.5 : 0.25)),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      count > 0
+                          ? Text(_spotEmoji(spot.category),
+                              style: const TextStyle(fontSize: 20))
+                          : ColorFiltered(
+                              colorFilter: const ColorFilter.matrix([
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0.2126, 0.7152, 0.0722, 0, 0,
+                                0, 0, 0, 0.6, 0,
+                              ]),
+                              child: Text(_spotEmoji(spot.category),
+                                  style: const TextStyle(fontSize: 20)),
+                            ),
+                      const SizedBox(height: 3),
+                      Text(
+                        spot.name,
+                        style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: color),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (count > 0)
+                        Text('×$count',
+                            style: TextStyle(
+                                fontSize: 9,
+                                color: color,
+                                fontWeight: FontWeight.w800)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _legendItem(Color color, String label) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(width: 12, height: 12,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 4),
+      Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+    ],
+  );
+
 
   void _showHowTo(BuildContext context) {
     showModalBottomSheet(
@@ -694,4 +1067,119 @@ class _StampScreenState extends State<StampScreen>
       ),
     );
   }
+}
+
+// ── 集章地圖 Marker（可愛印章風格）──────────────────────────
+class _StampMarker extends StatelessWidget {
+  final String emoji;
+  final Color  color;
+  final int    count;
+  const _StampMarker({
+    required this.emoji,
+    required this.color,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final visited    = count > 0;
+    final lightColor = Color.lerp(color, Colors.white, visited ? 0.72 : 0.88)!;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 主圓形
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: lightColor,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: visited ? color : Colors.grey.shade300,
+                  width: visited ? 2.5 : 1.5,
+                ),
+                boxShadow: visited
+                    ? [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.35),
+                          blurRadius: 6,
+                          offset: const Offset(0, 3),
+                        )
+                      ]
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.10),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        )
+                      ],
+              ),
+              alignment: Alignment.center,
+              child: visited
+                  ? Text(emoji,
+                      style: const TextStyle(fontSize: 18, height: 1))
+                  : ColorFiltered(
+                      colorFilter: const ColorFilter.matrix([
+                        0.21, 0.72, 0.07, 0, 0,
+                        0.21, 0.72, 0.07, 0, 0,
+                        0.21, 0.72, 0.07, 0, 0,
+                        0, 0, 0, 0.5, 0,
+                      ]),
+                      child: Text(emoji,
+                          style: const TextStyle(fontSize: 18, height: 1)),
+                    ),
+            ),
+            // 次數 Badge
+            if (count > 0)
+              Positioned(
+                top: -3, right: -3,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: Text(
+                    '×$count',
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        // 針尖
+        CustomPaint(
+          size: const Size(8, 5),
+          painter: _StampPinTail(
+              color: visited ? color : Colors.grey.shade400),
+        ),
+      ],
+    );
+  }
+}
+
+class _StampPinTail extends CustomPainter {
+  final Color color;
+  const _StampPinTail({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = ui.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+  @override
+  bool shouldRepaint(covariant _StampPinTail old) => old.color != color;
 }

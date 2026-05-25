@@ -92,13 +92,13 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   onTap: () => _showFilter(context),
                   child: Row(
                     children: [
-                      const Icon(Icons.sort_rounded,
-                          size: 16, color: AppColors.primary),
+                      Icon(Icons.sort_rounded,
+                          size: 16, color: Theme.of(context).colorScheme.primary),
                       const SizedBox(width: 4),
-                      const Text(
+                      Text(
                         '評分最高',
                         style: TextStyle(
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
                         ),
@@ -166,11 +166,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   label: Text(s),
                   selected: isSelected,
                   onSelected: (_) {},
-                  selectedColor: AppColors.primary.withOpacity(0.15),
-                  checkmarkColor: AppColors.primary,
+                  selectedColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                  checkmarkColor: Theme.of(context).colorScheme.primary,
                   labelStyle: TextStyle(
                     color:
-                        isSelected ? AppColors.primary : AppColors.textSecondary,
+                        isSelected ? Theme.of(context).colorScheme.primary : AppColors.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
                 );
@@ -191,14 +191,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
               max: 20,
               divisions: 19,
               label: '5 km',
-              activeColor: AppColors.primary,
               onChanged: (_) {},
             ),
             const SizedBox(height: 12),
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
                 minimumSize: const Size(double.infinity, 48),
               ),
               child: const Text('套用篩選'),
@@ -329,8 +327,8 @@ class _SpotListCardState extends State<_SpotListCard> {
                     ),
                     Text(
                       _categoryLabel(widget.spot.category),
-                      style: const TextStyle(
-                        color: AppColors.primary,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -351,8 +349,8 @@ class _SpotListCardState extends State<_SpotListCard> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    const Icon(Icons.location_on_rounded,
-                        size: 13, color: AppColors.primary),
+                    Icon(Icons.location_on_rounded,
+                        size: 13, color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 4),
                     Expanded(
                       child: Text(
@@ -380,13 +378,10 @@ class _SpotListCardState extends State<_SpotListCard> {
                     Expanded(
                       child: OutlinedButton.icon(
                         onPressed: () {},
-                        icon: const Icon(Icons.add_rounded,
-                            size: 15, color: AppColors.primary),
+                        icon: const Icon(Icons.add_rounded, size: 15),
                         label: const Text('加入行程',
-                            style: TextStyle(
-                                color: AppColors.primary, fontSize: 13)),
+                            style: TextStyle(fontSize: 13)),
                         style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.primary),
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),
@@ -400,7 +395,6 @@ class _SpotListCardState extends State<_SpotListCard> {
                         icon: const Icon(Icons.directions_rounded, size: 15),
                         label: const Text('導航', style: TextStyle(fontSize: 13)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),

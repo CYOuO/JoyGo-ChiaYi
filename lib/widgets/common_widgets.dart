@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 
 // ===== SPOT CARD =====
@@ -127,7 +128,7 @@ class _SpotCardState extends State<SpotCard>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppColors.primary,
+                        color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
@@ -152,7 +153,7 @@ class _SpotCardState extends State<SpotCard>
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
+                                  color: Colors.black.withValues(alpha: 0.1),
                                   blurRadius: 4,
                                 ),
                               ],
@@ -241,13 +242,14 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Row(
       children: [
         Container(
           width: 4,
           height: 20,
           decoration: BoxDecoration(
-            color: AppColors.primary,
+            color: primary,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -266,9 +268,9 @@ class SectionHeader extends StatelessWidget {
             onTap: onAction,
             child: Text(
               actionText!,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.primary,
+                color: primary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -295,6 +297,9 @@ class CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    // ignore: unused_local_variable
+    final mist    = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -302,16 +307,16 @@ class CategoryChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : AppColors.surface,
+          color: isSelected ? primary : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.surfaceMoss,
+            color: isSelected ? primary : AppColors.surfaceMoss,
             width: 1.5,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.3),
+                    color: primary.withValues(alpha: 0.3),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   )
@@ -380,6 +385,255 @@ class ChiayiAppBar extends StatelessWidget implements PreferredSizeWidget {
           height: 1,
           color: AppColors.surfaceMoss,
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  愛心評分 + 備註區塊（任何地點詳細頁共用）
+//  Persists to SharedPreferences keyed by placeId.
+// ═══════════════════════════════════════════════════════════
+
+class SpotRatingSection extends StatefulWidget {
+  final String placeId;
+  const SpotRatingSection({super.key, required this.placeId});
+
+  @override
+  State<SpotRatingSection> createState() => _SpotRatingSectionState();
+}
+
+class _SpotRatingSectionState extends State<SpotRatingSection> {
+  int  _rating  = 0; // 0 = unrated, 1–5
+  final _noteCtrl = TextEditingController();
+  bool _saved   = false;
+  bool _loading = true;
+
+  String get _rKey => 'spot_rating_${widget.placeId}';
+  String get _nKey => 'spot_note_${widget.placeId}';
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _rating        = prefs.getInt(_rKey) ?? 0;
+      _noteCtrl.text = prefs.getString(_nKey) ?? '';
+      _loading       = false;
+    });
+  }
+
+  Future<void> _save() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rating > 0) {
+      await prefs.setInt(_rKey, _rating);
+    } else {
+      await prefs.remove(_rKey);
+    }
+    final note = _noteCtrl.text.trim();
+    if (note.isNotEmpty) {
+      await prefs.setString(_nKey, note);
+    } else {
+      await prefs.remove(_nKey);
+    }
+    if (!mounted) return;
+    setState(() => _saved = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _saved = false);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 28),
+        // ── 評分標題
+        Row(children: [
+          const Icon(Icons.favorite_rounded, size: 15, color: AppColors.error),
+          const SizedBox(width: 6),
+          const Text('我的評分',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary)),
+          if (_rating > 0) ...[
+            const Spacer(),
+            GestureDetector(
+              onTap: () => setState(() { _rating = 0; _saved = false; }),
+              child: const Text('清除',
+                  style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+            ),
+          ],
+        ]),
+        const SizedBox(height: 10),
+        // ── 5顆愛心
+        Row(children: List.generate(5, (i) => GestureDetector(
+          onTap: () => setState(() {
+            _rating = (_rating == i + 1) ? 0 : i + 1; // tap same → clear
+            _saved = false;
+          }),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, anim) =>
+                  ScaleTransition(scale: anim, child: child),
+              child: Icon(
+                _rating > i
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                key: ValueKey('heart_${i}_${_rating > i}'),
+                color: _rating > i ? AppColors.error : AppColors.textHint,
+                size: 30,
+              ),
+            ),
+          ),
+        ))),
+        const SizedBox(height: 14),
+        // ── 備註標題
+        Row(children: [
+          const Icon(Icons.edit_note_rounded, size: 15, color: AppColors.textSecondary),
+          const SizedBox(width: 6),
+          const Text('備註',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                  color: AppColors.textSecondary)),
+        ]),
+        const SizedBox(height: 8),
+        // ── 備註輸入框
+        TextField(
+          controller: _noteCtrl,
+          maxLines: 3,
+          minLines: 2,
+          onChanged: (_) { if (_saved) setState(() => _saved = false); },
+          decoration: InputDecoration(
+            hintText: '記下你的感想、提醒或重要資訊…',
+            hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
+            filled: true,
+            fillColor: AppColors.surfaceWarm,
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.divider),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: primary, width: 1.5),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: AppColors.divider),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        // ── 儲存按鈕
+        SizedBox(
+          width: double.infinity,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: ElevatedButton.icon(
+              key: ValueKey(_saved),
+              onPressed: _save,
+              icon: Icon(
+                  _saved ? Icons.check_circle_rounded : Icons.save_outlined,
+                  size: 16),
+              label: Text(_saved ? '已儲存' : '儲存評分與備註'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _saved ? const Color(0xFF2E7D32) : primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TapFeedback — iOS-style scale-down press feedback
+//  Replace GestureDetector with this widget and pass onTap
+//  here; the child scales to pressedScale on touch-down and
+//  springs back to 1.0 on release.
+// ═══════════════════════════════════════════════════════════
+
+class TapFeedback extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  /// Scale applied while finger is down (default 0.95 ≈ iOS)
+  final double pressedScale;
+
+  const TapFeedback({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.pressedScale = 0.95,
+  });
+
+  @override
+  State<TapFeedback> createState() => _TapFeedbackState();
+}
+
+class _TapFeedbackState extends State<TapFeedback>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 90),
+      reverseDuration: const Duration(milliseconds: 220),
+    );
+    _scale = Tween<double>(begin: 1.0, end: widget.pressedScale).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeIn),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _down(TapDownDetails _) => _ctrl.forward();
+  void _up(TapUpDetails _)     => _ctrl.reverse();
+  void _cancel()               => _ctrl.reverse();
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: _down,
+      onTapUp: _up,
+      onTapCancel: _cancel,
+      child: AnimatedBuilder(
+        animation: _scale,
+        builder: (_, child) =>
+            Transform.scale(scale: _scale.value, child: child),
+        child: widget.child,
       ),
     );
   }

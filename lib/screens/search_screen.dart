@@ -71,7 +71,7 @@ class _SearchScreenState extends State<SearchScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消', style: TextStyle(color: AppColors.primary)),
+            child: Text('取消', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
       ),
@@ -94,9 +94,9 @@ class _SearchScreenState extends State<SearchScreen> {
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                         decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : AppColors.surfaceMoss,
+                          color: sel ? Theme.of(context).colorScheme.primary : AppColors.surfaceMoss,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: sel ? AppColors.primary : AppColors.divider),
+                          border: Border.all(color: sel ? Theme.of(context).colorScheme.primary : AppColors.divider),
                         ),
                         child: Text(f,
                           style: TextStyle(
@@ -167,7 +167,7 @@ class _SearchScreenState extends State<SearchScreen> {
           spacing: 8, runSpacing: 8,
           children: _hotSearches.asMap().entries.map((entry) {
             final colors = [AppColors.error, AppColors.accentTerra, AppColors.accentSand,
-                            AppColors.primary, AppColors.accentSky, AppColors.textHint];
+                            Theme.of(context).colorScheme.primary, AppColors.accentSky, AppColors.textHint];
             final c = colors[entry.key % colors.length];
             return GestureDetector(
               onTap: () { _ctrl.text = entry.value; setState(() => _query = entry.value); },
@@ -272,7 +272,7 @@ class _SearchScreenState extends State<SearchScreen> {
       if (idx > start) spans.add(TextSpan(text: text.substring(start, idx)));
       spans.add(TextSpan(
         text: text.substring(idx, idx + query.length),
-        style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w900),
+        style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w900),
       ));
       start = idx + query.length;
     }

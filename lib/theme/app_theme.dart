@@ -43,21 +43,28 @@ class AppColors {
 }
 
 class AppTheme {
-  static ThemeData get lightTheme {
+  /// Build theme from a custom primary color (for dynamic theming).
+  static ThemeData buildTheme(Color primarySeed) => _build(primarySeed);
+
+  /// Default light theme.
+  static ThemeData get lightTheme => _build(AppColors.primary);
+
+  static ThemeData _build(Color primary) {
+    final mist = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
+
     return ThemeData(
       useMaterial3: true,
       colorScheme: ColorScheme.fromSeed(
-        seedColor: AppColors.primary,
-        primary: AppColors.primary,
+        seedColor: primary,
+        primary:   primary,
         secondary: AppColors.accentTerra,
-        surface: AppColors.surface,
-        background: AppColors.background,
+        surface:   AppColors.surface,
         brightness: Brightness.light,
       ),
       scaffoldBackgroundColor: AppColors.background,
       fontFamily: 'NotoSansTC',
 
-      // AppBar：白底無陰影，細分隔線
+      // ── AppBar
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimary,
@@ -74,35 +81,39 @@ class AppTheme {
         iconTheme: IconThemeData(color: AppColors.textPrimary, size: 22),
       ),
 
-      // Bottom nav
-      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      // ── BottomNavigationBar (legacy — our custom nav overrides this)
+      bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: AppColors.surface,
-        selectedItemColor: AppColors.primary,
+        selectedItemColor: primary,
         unselectedItemColor: AppColors.textHint,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
-        selectedLabelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
-        unselectedLabelStyle: TextStyle(fontSize: 11),
+        selectedLabelStyle:
+            const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+        unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
 
-      // Card：圓角20，極淡陰影
-      cardTheme: CardThemeData(
+      // ── Card
+      cardTheme: const CardThemeData(
         color: AppColors.surfaceWarm,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(20))),
         shadowColor: AppColors.cardShadow,
         margin: EdgeInsets.zero,
       ),
 
-      // ElevatedButton
+      // ── ElevatedButton
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
+          backgroundColor: primary,
           foregroundColor: Colors.white,
           elevation: 0,
           shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14)),
+          padding:
+              const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
           textStyle: const TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
@@ -111,26 +122,30 @@ class AppTheme {
         ),
       ),
 
-      // OutlinedButton
+      // ── OutlinedButton
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          side: const BorderSide(color: AppColors.primary, width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-          textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          foregroundColor: primary,
+          side: BorderSide(color: primary, width: 1.5),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14)),
+          padding:
+              const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+          textStyle:
+              const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
 
-      // TextButton
+      // ── TextButton
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-          foregroundColor: AppColors.primary,
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          foregroundColor: primary,
+          textStyle:
+              const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
         ),
       ),
 
-      // Input
+      // ── Input
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceMoss,
@@ -140,78 +155,107 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.divider, width: 1),
+          borderSide:
+              const BorderSide(color: AppColors.divider, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide: BorderSide(color: primary, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 14),
-        labelStyle: const TextStyle(color: AppColors.textSecondary),
-        floatingLabelStyle: const TextStyle(color: AppColors.primary),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        hintStyle:
+            const TextStyle(color: AppColors.textHint, fontSize: 14),
+        labelStyle:
+            const TextStyle(color: AppColors.textSecondary),
+        floatingLabelStyle: TextStyle(color: primary),
       ),
 
-      // Chip
+      // ── Chip
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceMoss,
-        selectedColor: AppColors.primaryMist,
+        selectedColor: mist,
         labelStyle: const TextStyle(
           fontSize: 12,
           color: AppColors.textSecondary,
           fontWeight: FontWeight.w600,
         ),
         side: const BorderSide(color: AppColors.divider),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(20))),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       ),
 
-      // Divider
+      // ── Divider
       dividerTheme: const DividerThemeData(
         color: AppColors.divider,
         thickness: 1,
         space: 1,
       ),
 
-      // Progress indicator — override Flutter's default blue
-      progressIndicatorTheme: const ProgressIndicatorThemeData(
-        color: AppColors.primary,
-        circularTrackColor: AppColors.primaryMist,
-        linearTrackColor: AppColors.primaryMist,
+      // ── Progress indicator
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: primary,
+        circularTrackColor: mist,
+        linearTrackColor: mist,
       ),
 
-      // Switch
+      // ── Switch
       switchTheme: SwitchThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (s) => s.contains(WidgetState.selected) ? AppColors.primary : Colors.white,
+          (s) => s.contains(WidgetState.selected) ? primary : Colors.white,
         ),
         trackColor: WidgetStateProperty.resolveWith(
-          (s) => s.contains(WidgetState.selected)
-              ? AppColors.primaryLight
-              : AppColors.divider,
+          (s) => s.contains(WidgetState.selected) ? mist : AppColors.divider,
         ),
       ),
 
-      // Slider
-      sliderTheme: const SliderThemeData(
-        activeTrackColor: AppColors.primary,
+      // ── Slider
+      sliderTheme: SliderThemeData(
+        activeTrackColor:   primary,
         inactiveTrackColor: AppColors.divider,
-        thumbColor: AppColors.primary,
-        overlayColor: Color(0x205B8A5F),
+        thumbColor:         primary,
+        overlayColor:       primary.withValues(alpha: 0.12),
       ),
 
-      // TabBar
-      tabBarTheme: const TabBarThemeData(
-        labelColor: AppColors.primary,
-        unselectedLabelColor: AppColors.textHint,
-        indicatorColor: AppColors.primary,
-        indicatorSize: TabBarIndicatorSize.label,
-        labelStyle: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-        unselectedLabelStyle: TextStyle(fontWeight: FontWeight.w400, fontSize: 14),
+      // ── TabBar
+      tabBarTheme: TabBarThemeData(
+        labelColor:            primary,
+        unselectedLabelColor:  AppColors.textHint,
+        indicatorColor:        primary,
+        indicatorSize:         TabBarIndicatorSize.label,
+        labelStyle: const TextStyle(
+            fontWeight: FontWeight.w700, fontSize: 14),
+        unselectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w400, fontSize: 14),
         dividerColor: AppColors.divider,
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────
+// BuildContext color helpers
+// Usage: context.appPrimary, context.appMist
+// These read the LIVE theme from MaterialApp so they update when the
+// user switches theme preset — unlike the static AppColors.primary const.
+// ─────────────────────────────────────────
+extension AppThemeX on BuildContext {
+  /// Current theme primary color (updates with preset changes).
+  Color get appPrimary => Theme.of(this).colorScheme.primary;
+
+  /// Soft mist tint — 88 % white blend of appPrimary.
+  Color get appMist =>
+      Color.lerp(appPrimary, Colors.white, 0.88) ?? AppColors.primaryMist;
+
+  /// Darker shade — 20 % black blend.
+  Color get appPrimaryDark =>
+      Color.lerp(appPrimary, Colors.black, 0.20) ?? AppColors.primaryDark;
+
+  /// On-primary text color (white for dark backgrounds).
+  Color get appOnPrimary => ThemeData.estimateBrightnessForColor(appPrimary) == Brightness.dark
+      ? Colors.white
+      : Colors.black87;
 }
 
 // ─────────────────────────────────────────

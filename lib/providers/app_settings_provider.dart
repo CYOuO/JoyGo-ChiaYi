@@ -1,0 +1,213 @@
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// ═══════════════════════════════════════════════════════════
+//  Theme Presets
+//  Colors are slightly deeper than the calendar event dots so the
+//  active nav/button colour stays visually distinct.
+// ═══════════════════════════════════════════════════════════
+
+class ThemePreset {
+  final String name;
+  final String emoji;
+  final Color  primary;
+  final Color  primaryDark;
+  final Color  primaryMist;
+  const ThemePreset({
+    required this.name,   required this.emoji,
+    required this.primary, required this.primaryDark, required this.primaryMist,
+  });
+}
+
+// Calendar category colors (reference):
+//   政府活動 #26C6DA (cyan) → 嘉義青 deeper
+//   政府新聞 #42A5F5 (blue) → 嘉義藍 deeper
+//   個人行程 #66BB6A (green)→ 嘉義綠 deeper
+//   個人活動 #FFA726 (orange)→ 嘉義橙 deeper
+//   bonus:  deep purple      → 嘉義紫
+
+const kThemePresets = <ThemePreset>[
+  ThemePreset(
+    name: '嘉義青',  emoji: '🌊',
+    primary:     Color(0xFF00838F), // deep cyan-teal
+    primaryDark: Color(0xFF006064),
+    primaryMist: Color(0xFFE0F7FA),
+  ),
+  ThemePreset(
+    name: '嘉義藍',  emoji: '🌌',
+    primary:     Color(0xFF1565C0), // deep blue
+    primaryDark: Color(0xFF003C8F),
+    primaryMist: Color(0xFFE3F2FD),
+  ),
+  ThemePreset(
+    name: '嘉義綠',  emoji: '🌿',
+    primary:     Color(0xFF5B8A5F), // original sage green
+    primaryDark: Color(0xFF3D6B42),
+    primaryMist: Color(0xFFEDF2ED),
+  ),
+  ThemePreset(
+    name: '嘉義橙',  emoji: '🍊',
+    primary:     Color(0xFFE65100), // deep burnt orange
+    primaryDark: Color(0xFFBF360C),
+    primaryMist: Color(0xFFFBE9E7),
+  ),
+  ThemePreset(
+    name: '嘉義紫',  emoji: '💜',
+    primary:     Color(0xFF6A1B9A), // deep purple
+    primaryDark: Color(0xFF38006B),
+    primaryMist: Color(0xFFF3E5F5),
+  ),
+];
+
+// ═══════════════════════════════════════════════════════════
+//  Localisation helper  (zh / en / ja)
+// ═══════════════════════════════════════════════════════════
+class AppL10n {
+  final String langCode;
+  const AppL10n(this.langCode);
+
+  // ── Bottom nav
+  String get navHome      => _t({'zh':'首頁',  'en':'Home',    'ja':'ホーム'});
+  String get navMap       => _t({'zh':'地圖',  'en':'Map',     'ja':'マップ'});
+  String get navTrip      => _t({'zh':'行程',  'en':'Trip',    'ja':'旅程'});
+  String get navExpense   => _t({'zh':'分帳',  'en':'Split',   'ja':'割り勘'});
+  String get navCommunity => _t({'zh':'社群',  'en':'Social',  'ja':'コミュニティ'});
+  String get navStamp     => _t({'zh':'集章',  'en':'Stamps',  'ja':'スタンプ'});
+
+  // ── App-level
+  String get appTitle     => _t({'zh':'探索諸羅',  'en':'Explore Chiayi', 'ja':'諸羅探索'});
+  String get settings     => _t({'zh':'設定',      'en':'Settings',       'ja':'設定'});
+  String get themeColor   => _t({'zh':'主題顏色',  'en':'Theme Color',    'ja':'テーマカラー'});
+  String get language     => _t({'zh':'語言',      'en':'Language',       'ja':'言語'});
+
+  // ── Common actions
+  String get save         => _t({'zh':'儲存', 'en':'Save',   'ja':'保存'});
+  String get cancel       => _t({'zh':'取消', 'en':'Cancel', 'ja':'キャンセル'});
+  String get confirm      => _t({'zh':'確認', 'en':'OK',     'ja':'確認'});
+  String get edit         => _t({'zh':'編輯', 'en':'Edit',   'ja':'編集'});
+  String get delete       => _t({'zh':'刪除', 'en':'Delete', 'ja':'削除'});
+  String get share        => _t({'zh':'分享', 'en':'Share',  'ja':'シェア'});
+  String get close        => _t({'zh':'關閉', 'en':'Close',  'ja':'閉じる'});
+  String get add          => _t({'zh':'新增', 'en':'Add',    'ja':'追加'});
+  String get search       => _t({'zh':'搜尋', 'en':'Search', 'ja':'検索'});
+  String get filter       => _t({'zh':'篩選', 'en':'Filter', 'ja':'フィルター'});
+  String get clearAll     => _t({'zh':'清除全部', 'en':'Clear All', 'ja':'すべてクリア'});
+  String get loading      => _t({'zh':'載入中…', 'en':'Loading…', 'ja':'読み込み中…'});
+  String get retry        => _t({'zh':'重試', 'en':'Retry', 'ja':'再試行'});
+  String get noData       => _t({'zh':'暫無資料', 'en':'No data', 'ja':'データなし'});
+  String get comingSoon   => _t({'zh':'敬請期待', 'en':'Coming Soon', 'ja':'近日公開'});
+  String get done         => _t({'zh':'完成', 'en':'Done', 'ja':'完了'});
+
+  // ── Home screen
+  String get homeGreeting       => _t({'zh':'嘉義・在地旅遊全攻略', 'en':'Your Chiayi Travel Guide', 'ja':'嘉義旅行ガイド'});
+  String get homeQuickAccess    => _t({'zh':'快速入口', 'en':'Quick Access', 'ja':'クイックアクセス'});
+  String get homeNearbySpots    => _t({'zh':'附近景點', 'en':'Nearby Spots', 'ja':'近くの観光地'});
+  String get homeHotFood        => _t({'zh':'人氣美食', 'en':'Popular Food', 'ja':'人気グルメ'});
+  String get homeLatestNews     => _t({'zh':'嘉義消息', 'en':'Chiayi News', 'ja':'嘉義ニュース'});
+  String get homeLatestEvents   => _t({'zh':'近期活動', 'en':'Upcoming Events', 'ja':'近日のイベント'});
+  String get homeTransport      => _t({'zh':'交通動態', 'en':'Transport', 'ja':'交通情報'});
+
+  // ── Map screen
+  String get mapSearch          => _t({'zh':'搜尋名稱或地址', 'en':'Search name or address', 'ja':'名前または住所を検索'});
+  String get mapLayerControl    => _t({'zh':'圖層控制', 'en':'Layer Control', 'ja':'レイヤー管理'});
+  String get mapDetailFilter    => _t({'zh':'細節篩選', 'en':'Detail Filter', 'ja':'詳細フィルター'});
+  String get mapShowAll         => _t({'zh':'全部顯示', 'en':'Show All', 'ja':'すべて表示'});
+  String get mapHideAll         => _t({'zh':'全部隱藏', 'en':'Hide All', 'ja':'すべて非表示'});
+  String get mapNoResult        => _t({'zh':'目前沒有符合條件的地點', 'en':'No matching places', 'ja':'条件に合う場所なし'});
+
+  // ── Trip screen
+  String get tripManage         => _t({'zh':'行程管理', 'en':'Trip Planner', 'ja':'旅程管理'});
+  String get tripMyTrips        => _t({'zh':'我的行程', 'en':'My Trips',    'ja':'マイ旅程'});
+  String get tripCandidates     => _t({'zh':'候選清單', 'en':'Candidates',  'ja':'候補リスト'});
+  String get tripSaved          => _t({'zh':'收藏景點', 'en':'Saved Spots', 'ja':'お気に入り'});
+  String get tripCalendar       => _t({'zh':'行事曆',   'en':'Calendar',    'ja':'カレンダー'});
+  String get tripPlanning       => _t({'zh':'規劃中', 'en':'Planning', 'ja':'計画中'});
+  String get tripCompleted      => _t({'zh':'已完成', 'en':'Completed', 'ja':'完了済み'});
+  String get tripTotalSpots     => _t({'zh':'總景點', 'en':'Total Spots', 'ja':'合計スポット'});
+
+  // ── Calendar screen
+  String get calGovEvent        => _t({'zh':'政府活動', 'en':'Gov Event',    'ja':'公式イベント'});
+  String get calGovNews         => _t({'zh':'政府新聞', 'en':'Gov News',     'ja':'公式ニュース'});
+  String get calUserTrip        => _t({'zh':'個人行程', 'en':'My Trip',      'ja':'マイ旅程'});
+  String get calPersonal        => _t({'zh':'個人活動', 'en':'Personal',     'ja':'個人予定'});
+  String get calAddEvent        => _t({'zh':'新增活動', 'en':'Add Event',    'ja':'予定を追加'});
+  String get calNoEvent         => _t({'zh':'當天沒有活動', 'en':'No events', 'ja':'予定なし'});
+  String get calEventTitle      => _t({'zh':'活動名稱', 'en':'Event Name',   'ja':'イベント名'});
+  String get calEventDate       => _t({'zh':'日期',     'en':'Date',         'ja':'日付'});
+  String get calEventNote       => _t({'zh':'備註',     'en':'Notes',        'ja':'メモ'});
+
+  // ── Community screen
+  String get commTitle          => _t({'zh':'旅遊社群', 'en':'Community',   'ja':'コミュニティ'});
+  String get commPopular        => _t({'zh':'熱門貼文', 'en':'Popular',     'ja':'人気投稿'});
+  String get commFollowing      => _t({'zh':'追蹤中',   'en':'Following',   'ja':'フォロー中'});
+  String get commNearby         => _t({'zh':'附近',     'en':'Nearby',      'ja':'近く'});
+
+  // ── Stamp screen
+  String get stampTitle         => _t({'zh':'集章成就',    'en':'Stamps',        'ja':'スタンプ'});
+  String get stampSpots         => _t({'zh':'景點印章',    'en':'Spot Stamps',   'ja':'スポット印章'});
+  String get stampAchievements  => _t({'zh':'成就徽章',    'en':'Achievements',  'ja':'実績バッジ'});
+  String get stampMiniMap       => _t({'zh':'小地圖',      'en':'Mini Map',      'ja':'ミニマップ'});
+
+  // ── Expense screen
+  String get expTitle           => _t({'zh':'旅遊分帳',  'en':'Trip Expense',  'ja':'旅費精算'});
+
+  // ── Weekdays  (Sunday-first)
+  List<String> get weekdayShort => langCode == 'en'
+      ? ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+      : langCode == 'ja'
+          ? ['日', '月', '火', '水', '木', '金', '土']
+          : ['日', '一', '二', '三', '四', '五', '六'];
+
+  // ── Month names
+  String monthName(int month) {
+    if (langCode == 'en') {
+      const m = ['Jan','Feb','Mar','Apr','May','Jun',
+                  'Jul','Aug','Sep','Oct','Nov','Dec'];
+      return m[(month - 1).clamp(0, 11)];
+    }
+    if (langCode == 'ja') return '$month月';
+    return '$month月';
+  }
+
+  // ── Language name options
+  static const langOptions = <({String code, String native, String emoji})>[
+    (code: 'zh', native: '繁體中文', emoji: '🇹🇼'),
+    (code: 'en', native: 'English',  emoji: '🇺🇸'),
+    (code: 'ja', native: '日本語',  emoji: '🇯🇵'),
+  ];
+
+  String _t(Map<String, String> map) => map[langCode] ?? map['zh']!;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Provider
+// ═══════════════════════════════════════════════════════════
+class AppSettingsProvider extends ChangeNotifier {
+  static const _kThemeKey = 'settings_theme_index';
+
+  int _themeIndex = 2; // default: 嘉義綠
+
+  int get themeIndex => _themeIndex;
+
+  ThemePreset get currentTheme => kThemePresets[_themeIndex];
+  // Language is always 繁體中文
+  AppL10n get l10n => const AppL10n('zh');
+
+  AppSettingsProvider() { _load(); }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    _themeIndex = (prefs.getInt(_kThemeKey) ?? 2)  // default: 嘉義綠
+        .clamp(0, kThemePresets.length - 1);
+    notifyListeners();
+  }
+
+  Future<void> setTheme(int index) async {
+    final i = index.clamp(0, kThemePresets.length - 1);
+    if (i == _themeIndex) return;
+    _themeIndex = i;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kThemeKey, i);
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "152569932828",
+    "project_id": "joygo-chiayi",
+    "storage_bucket": "joygo-chiayi.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:152569932828:android:5e5ad147c149953f6503d9",
+        "android_client_info": {
+          "package_name": "com.example.chiayicity_claudep_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAM9pwEYM7L-FPDYRD-ubA2lGzuEHWsjs4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

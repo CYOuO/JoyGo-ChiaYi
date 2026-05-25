@@ -355,5 +355,15 @@ class DummyData {
       total: 20,
       rarity: 'special',
     ),
+    Achievement(
+      id: '8',
+      title: '雞肉飯巡禮',
+      description: '吃滿30間嘉義雞肉飯',
+      icon: '🍗',
+      isUnlocked: false,
+      progress: 3,
+      total: 30,
+      rarity: 'gold',
+    ),
   ];
 }

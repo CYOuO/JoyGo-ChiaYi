@@ -14,8 +14,12 @@ class _CommunityScreenState extends State<CommunityScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final Set<String> _likedTrips = {};
+  final Set<String> _followedUsers = {};
   RangeValues _budgetRange = const RangeValues(0, 3000);  // 預算範圍篩選（元/人）
   static const double _budgetMax = 3000;
+  bool _isSearching = false;
+  String _searchQuery = '';
+  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -26,30 +30,57 @@ class _CommunityScreenState extends State<CommunityScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: const Text(
-          '旅遊社群',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
-        actions: [
+        title: _isSearching
+            ? TextField(
+                controller: _searchCtrl,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: '搜尋景點名稱，篩選行程…',
+                  hintStyle: const TextStyle(fontSize: 14),
+                  border: InputBorder.none,
+                  filled: false,
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _searchQuery = '');
+                          })
+                      : null,
+                ),
+                onChanged: (v) => setState(() => _searchQuery = v),
+              )
+            : const Text('旅遊社群', style: TextStyle(fontWeight: FontWeight.w800)),
+        leading: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () {
+                  _searchCtrl.clear();
+                  setState(() { _isSearching = false; _searchQuery = ''; });
+                })
+            : null,
+        actions: _isSearching ? [] : [
           IconButton(
             icon: const Icon(Icons.search_rounded, color: AppColors.textPrimary),
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen())),
+            onPressed: () => setState(() => _isSearching = true),
           ),
         ],
         bottom: TabBar(
           controller: _tabController,
-          labelColor: AppColors.primary,
+          labelColor: primary,
           unselectedLabelColor: AppColors.textHint,
-          indicatorColor: AppColors.primary,
+          indicatorColor: primary,
           tabs: const [
             Tab(text: '探索'),
             Tab(text: '追蹤中'),
@@ -69,6 +100,7 @@ class _CommunityScreenState extends State<CommunityScreen>
   }
 
   Widget _buildExploreTab() {
+    final primary = Theme.of(context).colorScheme.primary;
     final trips = DummyData.communityTrips;
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -87,10 +119,10 @@ class _CommunityScreenState extends State<CommunityScreen>
                 margin: const EdgeInsets.only(right: 8),
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : AppColors.surface,
+                  color: isSelected ? primary : AppColors.surface,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.surfaceMoss,
+                    color: isSelected ? primary : AppColors.surfaceMoss,
                   ),
                 ),
                 child: Text(
@@ -161,24 +193,120 @@ class _CommunityScreenState extends State<CommunityScreen>
 
         const SizedBox(height: 16),
 
-        // Trip cards (budget filtered)
-        ...trips.where((t) =>
-          t.budget >= _budgetRange.start &&
-          (t.budget <= _budgetRange.end || _budgetRange.end >= _budgetMax)
-        ).map((trip) => _buildCommunityCard(trip)),
+        // Trip cards (budget + spot search filtered)
+        ...() {
+          final q = _searchQuery.trim().toLowerCase();
+          final filtered = trips.where((t) {
+            final budgetOk = t.budget >= _budgetRange.start &&
+                (t.budget <= _budgetRange.end || _budgetRange.end >= _budgetMax);
+            if (!budgetOk) return false;
+            if (q.isEmpty) return true;
+            return t.spotIds.any((id) {
+              final spot = DummyData.spots.firstWhere(
+                  (s) => s.id == id, orElse: () => DummyData.spots[0]);
+              return spot.name.toLowerCase().contains(q);
+            });
+          }).toList();
+          if (filtered.isEmpty && q.isNotEmpty) {
+            return [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: Center(child: Column(children: [
+                  const Text('🔍', style: TextStyle(fontSize: 40)),
+                  const SizedBox(height: 12),
+                  Text('找不到包含「$_searchQuery」的行程',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
+                  const SizedBox(height: 6),
+                  const Text('試試其他景點名稱', style: TextStyle(color: AppColors.textHint)),
+                ])),
+              ),
+            ] as Iterable<Widget>;
+          }
+          return filtered.map((trip) => _buildCommunityCard(trip));
+        }(),
       ],
     );
   }
 
+  void _showUserProfile(BuildContext context, TripPlan trip) {
+    final isFollowed = _followedUsers.contains(trip.creatorName);
+    final publishedTrips = DummyData.communityTrips
+        .where((t) => t.creatorName == trip.creatorName)
+        .length;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final followed = _followedUsers.contains(trip.creatorName);
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
+              CircleAvatar(radius: 38, backgroundImage: NetworkImage(trip.creatorAvatar),
+                backgroundColor: AppColors.surfaceMoss),
+              const SizedBox(height: 12),
+              Text(trip.creatorName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: AppColors.textPrimary)),
+              const SizedBox(height: 16),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                _profileStat('追蹤者', '${128 + (followed ? 1 : 0)}'),
+                Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                _profileStat('追蹤中', '34'),
+                Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                _profileStat('已發布行程', '$publishedTrips'),
+              ]),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      if (followed) {
+                        _followedUsers.remove(trip.creatorName);
+                      } else {
+                        _followedUsers.add(trip.creatorName);
+                      }
+                    });
+                    setLocal(() {});
+                  },
+                  icon: Icon(followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
+                  label: Text(followed ? '取消追蹤' : '追蹤'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: followed ? AppColors.textHint : Theme.of(ctx).colorScheme.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _profileStat(String label, String value) => Column(children: [
+    Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
+    const SizedBox(height: 2),
+    Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+  ]);
+
   Widget _buildFeaturedBanner() {
+    final primary = Theme.of(context).colorScheme.primary;
+    final primaryDark = Color.lerp(primary, Colors.black, 0.25) ?? primary;
     return Container(
       height: 160,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [AppColors.primary, AppColors.primaryLight],
+          colors: [primary, primaryDark],
         ),
       ),
       child: Stack(
@@ -267,14 +395,19 @@ class _CommunityScreenState extends State<CommunityScreen>
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
             child: Row(
               children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundImage: NetworkImage(trip.creatorAvatar),
-                  backgroundColor: AppColors.surfaceMoss,
+                GestureDetector(
+                  onTap: () => _showUserProfile(context, trip),
+                  child: CircleAvatar(
+                    radius: 20,
+                    backgroundImage: NetworkImage(trip.creatorAvatar),
+                    backgroundColor: AppColors.surfaceMoss,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
+                  child: GestureDetector(
+                    onTap: () => _showUserProfile(context, trip),
+                    child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -301,18 +434,19 @@ class _CommunityScreenState extends State<CommunityScreen>
                         ),
                       ]),
                     ],
+                    ),
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text(
+                  child: Text(
                     '套用行程',
                     style: TextStyle(
-                      color: AppColors.primary,
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
@@ -422,7 +556,7 @@ class _CommunityScreenState extends State<CommunityScreen>
                     const Spacer(),
                     GestureDetector(
                       onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已加入收藏'), backgroundColor: AppColors.primary,
+                        SnackBar(content: const Text('已加入收藏'), backgroundColor: Theme.of(context).colorScheme.primary,
                           behavior: SnackBarBehavior.floating)),
                       child: const Icon(Icons.bookmark_border_rounded, size: 20, color: AppColors.textHint),
                     ),
@@ -459,7 +593,6 @@ class _CommunityScreenState extends State<CommunityScreen>
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () => _tabController.animateTo(0),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
             child: const Text('探索社群'),
           ),
         ],
@@ -492,7 +625,6 @@ class _CommunityScreenState extends State<CommunityScreen>
             onPressed: () {},
             icon: const Icon(Icons.add_rounded),
             label: const Text('發布行程'),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary),
           ),
         ],
       ),
@@ -611,7 +743,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           border: Border.all(color: AppColors.divider),
                         ),
                         child: Row(children: [
-                          Container(width: 26, height: 26, decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                          Container(width: 26, height: 26, decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
                             child: Center(child: Text('${e.key+1}', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w800)))),
                           const SizedBox(width: 10),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -664,8 +796,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(color: AppColors.primaryMist, borderRadius: BorderRadius.circular(8)),
-                        child: Text('${_comments.length}', style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w700)),
+                        decoration: BoxDecoration(color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!, borderRadius: BorderRadius.circular(8)),
+                        child: Text('${_comments.length}', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12, fontWeight: FontWeight.w700)),
                       ),
                     ]),
                     const SizedBox(height: 12),
@@ -684,7 +816,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               border: Border(top: BorderSide(color: AppColors.divider)),
             ),
             child: Row(children: [
-              const CircleAvatar(radius: 16, backgroundColor: AppColors.primaryMist,
+              CircleAvatar(radius: 16, backgroundColor: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!,
                 child: Text('😊', style: TextStyle(fontSize: 14))),
               const SizedBox(width: 10),
               Expanded(
@@ -705,7 +837,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                 },
                 child: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
                   child: const Icon(Icons.send_rounded, color: Colors.white, size: 18),
                 ),
               ),
@@ -738,7 +870,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
               const SizedBox(width: 3),
               Text('${c.likes}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
               const SizedBox(width: 12),
-              const Text('回覆', style: TextStyle(fontSize: 11, color: AppColors.primary, fontWeight: FontWeight.w600)),
+              Text('回覆', style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600)),
             ]),
           ]),
         ),

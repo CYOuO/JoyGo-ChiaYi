@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 
 class EventsScreen extends StatefulWidget {
@@ -8,52 +11,131 @@ class EventsScreen extends StatefulWidget {
 }
 
 class _EventsScreenState extends State<EventsScreen> {
-  DateTime _focusedMonth = DateTime(2025, 6);
-  DateTime? _selectedDay = DateTime(2025, 6, 7);
+  DateTime _focusedMonth = DateTime.now();
+  DateTime? _selectedDay;
 
-  static final List<_Event> _events = [
-    _Event(id:'e1', title:'嘉義燈會', date:DateTime(2025,6,1), endDate:DateTime(2025,6,15),
-      emoji:'🏮', category:'節慶', location:'嘉義公園',
-      desc:'年度嘉義燈會，以「光鑄諸羅」為主題，結合傳統與現代燈藝，每晚18:00-22:00精彩登場。',
-      color:const Color(0xFFE8A87C)),
-    _Event(id:'e2', title:'阿里山花季', date:DateTime(2025,6,5), endDate:DateTime(2025,6,20),
-      emoji:'🌸', category:'自然', location:'阿里山景區',
-      desc:'阿里山夏季花卉展，繡球花、百合花盛開，漫步花海感受自然之美。',
-      color:const Color(0xFFD4A8C7)),
-    _Event(id:'e3', title:'文化路美食節', date:DateTime(2025,6,7), endDate:DateTime(2025,6,7),
-      emoji:'🍜', category:'美食', location:'文化路',
-      desc:'一年一度美食節，百攤聚集，火雞肉飯、方塊酥、烤玉米通通吃到飽。',
-      color:const Color(0xFFE8C87C)),
-    _Event(id:'e4', title:'嘉義市馬拉松', date:DateTime(2025,6,8), endDate:DateTime(2025,6,8),
-      emoji:'🏃', category:'運動', location:'嘉義市區',
-      desc:'2025嘉義市馬拉松，路線穿越市區知名景點，歡迎市民與遊客共同參與。',
-      color:const Color(0xFF8FBFA8)),
-    _Event(id:'e5', title:'原住民文化祭', date:DateTime(2025,6,14), endDate:DateTime(2025,6,16),
-      emoji:'🪘', category:'文化', location:'北門車站廣場',
-      desc:'展示阿里山鄒族傳統文化，包含歌舞表演、手工藝、傳統美食體驗。',
-      color:const Color(0xFFA8B8E8)),
-    _Event(id:'e6', title:'嘉義音樂節', date:DateTime(2025,6,21), endDate:DateTime(2025,6,22),
-      emoji:'🎵', category:'藝文', location:'嘉義市立音樂廳',
-      desc:'邀請多組知名樂團演出，融合傳統與現代音樂，免費入場。',
-      color:const Color(0xFFB8A8E8)),
-    _Event(id:'e7', title:'竹崎親水公園夏日祭', date:DateTime(2025,6,28), endDate:DateTime(2025,6,29),
-      emoji:'💧', category:'親子', location:'竹崎親水公園',
-      desc:'夏日消暑特別企劃，水上活動、親子遊樂，適合全家大小同遊。',
-      color:const Color(0xFF88C8D8)),
+  List<_Event> _events = [];
+  bool _loading = true;
+  bool _error   = false;
+
+  static const _kEventsUrl =
+      'https://data.chiayi.gov.tw/opendata/api/getResource'
+      '?oid=33c3225e-f786-4eaf-8b9c-774cc39c72e0'
+      '&rid=a809167f-bba6-475d-9dfe-33b4ea7749f6';
+
+  static const _kColors = [
+    Color(0xFFE8A87C), Color(0xFFD4A8C7), Color(0xFFE8C87C),
+    Color(0xFF8FBFA8), Color(0xFFA8B8E8), Color(0xFFB8A8E8), Color(0xFF88C8D8),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchEvents();
+  }
+
+  // ── Fetch real government events (活動 only, no news) ──────────────
+  Future<void> _fetchEvents() async {
+    if (!mounted) return;
+    setState(() { _loading = true; _error = false; });
+    try {
+      final res = await http
+          .get(Uri.parse(_kEventsUrl), headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+
+      final data = jsonDecode(res.body);
+      List<dynamic> list;
+      if (data is List) {
+        list = data;
+      } else if (data is Map && data['result'] is List) {
+        list = data['result'] as List;
+      } else if (data is Map &&
+          data['result'] is Map &&
+          (data['result'] as Map)['records'] is List) {
+        list = (data['result'] as Map)['records'] as List;
+      } else if (data is Map && data['records'] is List) {
+        list = data['records'] as List;
+      } else {
+        list = [];
+      }
+
+      int colorIdx = 0;
+      final parsed = <_Event>[];
+      for (final item in list.whereType<Map>()) {
+        final raw = Map<String, dynamic>.from(item);
+        final title = _pick(raw, ['活動名稱', '標題', '名稱', 'title', 'Title']) ?? '無標題';
+        final startStr = _pick(raw, ['活動開始日期', '開始日期', '發布日期', 'date', 'Date']) ?? '';
+        final endStr   = _pick(raw, ['活動結束日期', '結束日期']) ?? startStr;
+        final loc      = _pick(raw, ['活動地點', '地點', 'location', 'venue']) ?? '嘉義市';
+        final desc     = _pick(raw, ['活動說明', '內容', '摘要', '描述', 'summary', 'content']) ?? '';
+        final url      = _pick(raw, ['連結', 'url', 'URL', 'link', '詳細連結']);
+
+        final startDate = _parseDate(startStr);
+        if (startDate == null) continue;
+        final endDate = _parseDate(endStr) ?? startDate;
+
+        parsed.add(_Event(
+          id:       '${parsed.length}',
+          title:    title,
+          date:     startDate,
+          endDate:  endDate,
+          emoji:    '🏮',
+          category: '政府活動',
+          location: loc,
+          desc:     desc.isNotEmpty ? desc : '詳細內容請至嘉義市政府官網查看。',
+          color:    _kColors[colorIdx % _kColors.length],
+          url:      url,
+        ));
+        colorIdx++;
+      }
+      parsed.sort((a, b) => a.date.compareTo(b.date));
+
+      if (mounted) setState(() { _events = parsed; _loading = false; });
+    } catch (e) {
+      debugPrint('EventsScreen fetch error: $e');
+      if (mounted) setState(() { _error = true; _loading = false; });
+    }
+  }
+
+  static String? _pick(Map<String, dynamic> m, List<String> keys) {
+    for (final k in keys) {
+      final v = m[k];
+      if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim();
+    }
+    return null;
+  }
+
+  static DateTime? _parseDate(String s) {
+    if (s.isEmpty) return null;
+    // AD year: 2025/5/1 or 2025-05-01
+    final ad = RegExp(r'(\d{4})[/\-年](\d{1,2})[/\-月](\d{1,2})').firstMatch(s);
+    if (ad != null) {
+      return DateTime.tryParse(
+          '${ad.group(1)}-${ad.group(2)!.padLeft(2, '0')}-${ad.group(3)!.padLeft(2, '0')}');
+    }
+    // ROC year: 114/5/1 → 2025/5/1
+    final roc = RegExp(r'^(\d{2,3})[/\-](\d{1,2})[/\-](\d{1,2})').firstMatch(s);
+    if (roc != null) {
+      final year = int.parse(roc.group(1)!) + 1911;
+      return DateTime.tryParse(
+          '$year-${roc.group(2)!.padLeft(2, '0')}-${roc.group(3)!.padLeft(2, '0')}');
+    }
+    return DateTime.tryParse(s);
+  }
+
   List<_Event> _eventsForDay(DateTime day) =>
-      _events.where((e) =>
-        !e.date.isAfter(day) && !e.endDate.isBefore(day)).toList();
+      _events.where((e) => !e.date.isAfter(day) && !e.endDate.isBefore(day)).toList();
 
   List<_Event> _eventsForMonth(DateTime month) =>
       _events.where((e) =>
         (e.date.year == month.year && e.date.month == month.month) ||
         (e.endDate.year == month.year && e.endDate.month == month.month)).toList();
 
+  // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final selected = _selectedDay;
+    final selected  = _selectedDay;
     final dayEvents = selected != null ? _eventsForDay(selected) : <_Event>[];
 
     return Scaffold(
@@ -66,9 +148,14 @@ class _EventsScreenState extends State<EventsScreen> {
             icon: const Icon(Icons.today_rounded),
             onPressed: () => setState(() {
               _focusedMonth = DateTime.now();
-              _selectedDay = DateTime.now();
+              _selectedDay  = DateTime.now();
             }),
           ),
+          if (_error)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: _fetchEvents,
+            ),
         ],
       ),
       body: Column(
@@ -88,21 +175,47 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
           ),
           const Divider(height: 1),
-          // ── Event list for selected day ──
+          // ── Event list for selected day / loading / error ──
           Expanded(
-            child: selected == null
-                ? _buildAllEvents()
-                : dayEvents.isEmpty
-                    ? _buildEmptyDay(selected)
-                    : _buildDayEventList(dayEvents, selected),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : _error
+                    ? _buildErrorState()
+                    : selected == null
+                        ? _buildAllEvents()
+                        : dayEvents.isEmpty
+                            ? _buildEmptyDay(selected)
+                            : _buildDayEventList(dayEvents, selected),
           ),
         ],
       ),
     );
   }
 
+  // ── Error ──
+  Widget _buildErrorState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('😕', style: TextStyle(fontSize: 52)),
+          const SizedBox(height: 12),
+          const Text('無法載入活動資料',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _fetchEvents,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('重試'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Month header ──
   Widget _buildMonthHeader() {
-    final months = ['1月','2月','3月','4月','5月','6月',
+    const months = ['1月','2月','3月','4月','5月','6月',
                     '7月','8月','9月','10月','11月','12月'];
     return Row(
       children: [
@@ -131,6 +244,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── Weekday labels ──
   Widget _buildWeekdayLabels() {
     const labels = ['日','一','二','三','四','五','六'];
     return Row(
@@ -147,33 +261,34 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── Calendar grid ──
   Widget _buildCalendarGrid() {
-    final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final startOffset = firstDay.weekday % 7; // Sun=0
+    final firstDay    = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final startOffset = firstDay.weekday % 7; // Sun = 0
     final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
-    final totalCells = startOffset + daysInMonth;
-    final rows = (totalCells / 7).ceil();
+    final totalCells  = startOffset + daysInMonth;
+    final rows        = (totalCells / 7).ceil();
 
     return Column(
       children: List.generate(rows, (row) {
         return Row(
           children: List.generate(7, (col) {
             final cellIndex = row * 7 + col;
-            final dayNum = cellIndex - startOffset + 1;
+            final dayNum    = cellIndex - startOffset + 1;
             if (dayNum < 1 || dayNum > daysInMonth) {
               return const Expanded(child: SizedBox(height: 42));
             }
-            final date = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
-            final hasEvents = _eventsForDay(date).isNotEmpty;
-            final isSelected = _selectedDay != null &&
-              _selectedDay!.year == date.year &&
-              _selectedDay!.month == date.month &&
-              _selectedDay!.day == date.day;
-            final isToday = date.year == DateTime.now().year &&
-              date.month == DateTime.now().month &&
-              date.day == DateTime.now().day;
-            final isWeekend = col == 0 || col == 6;
+            final date       = DateTime(_focusedMonth.year, _focusedMonth.month, dayNum);
             final eventsToday = _eventsForDay(date);
+            final hasEvents  = eventsToday.isNotEmpty;
+            final isSelected = _selectedDay != null &&
+              _selectedDay!.year  == date.year &&
+              _selectedDay!.month == date.month &&
+              _selectedDay!.day   == date.day;
+            final isToday   = date.year  == DateTime.now().year &&
+              date.month == DateTime.now().month &&
+              date.day   == DateTime.now().day;
+            final isWeekend = col == 0 || col == 6;
 
             return Expanded(
               child: GestureDetector(
@@ -183,13 +298,13 @@ class _EventsScreenState extends State<EventsScreen> {
                   margin: const EdgeInsets.all(1.5),
                   decoration: BoxDecoration(
                     color: isSelected
-                        ? AppColors.primary
+                        ? Theme.of(context).colorScheme.primary
                         : isToday
-                            ? AppColors.primaryMist
+                            ? Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!
                             : Colors.transparent,
                     borderRadius: BorderRadius.circular(10),
                     border: isToday && !isSelected
-                        ? Border.all(color: AppColors.primary, width: 1.5)
+                        ? Border.all(color: Theme.of(context).colorScheme.primary, width: 1.5)
                         : null,
                   ),
                   child: Column(
@@ -213,8 +328,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: eventsToday.take(3).map((e) =>
                             Container(
-                              width: 5,
-                              height: 5,
+                              width: 5, height: 5,
                               margin: const EdgeInsets.symmetric(horizontal: 1),
                               decoration: BoxDecoration(
                                 color: isSelected ? Colors.white70 : e.color,
@@ -235,6 +349,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── Day event list ──
   Widget _buildDayEventList(List<_Event> events, DateTime day) {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -255,16 +370,33 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── All events for current month ──
   Widget _buildAllEvents() {
     final monthEvents = _eventsForMonth(_focusedMonth);
+    if (monthEvents.isEmpty && !_loading) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🗓️', style: TextStyle(fontSize: 52)),
+            const SizedBox(height: 12),
+            const Text('本月尚無活動',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+            const SizedBox(height: 6),
+            const Text('可切換月份查看其他活動',
+                style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+          ],
+        ),
+      );
+    }
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 12),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
           child: Text(
-            '本月所有活動',
-            style: TextStyle(
+            '本月共 ${monthEvents.length} 個活動',
+            style: const TextStyle(
               fontWeight: FontWeight.w700,
               color: AppColors.textSecondary,
               fontSize: 13,
@@ -276,6 +408,7 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── Empty day ──
   Widget _buildEmptyDay(DateTime day) {
     return Center(
       child: Column(
@@ -299,8 +432,10 @@ class _EventsScreenState extends State<EventsScreen> {
     );
   }
 
+  // ── Event card ──
   Widget _eventCard(_Event e) {
-    final isMultiDay = e.endDate.day != e.date.day || e.endDate.month != e.date.month;
+    final isMultiDay = e.endDate.day   != e.date.day ||
+                       e.endDate.month != e.date.month;
     return GestureDetector(
       onTap: () => _showEventDetail(e),
       child: Container(
@@ -314,8 +449,7 @@ class _EventsScreenState extends State<EventsScreen> {
           children: [
             // Color stripe
             Container(
-              width: 6,
-              height: 100,
+              width: 6, height: 100,
               decoration: BoxDecoration(
                 color: e.color,
                 borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
@@ -323,7 +457,7 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
             const SizedBox(width: 14),
             // Date block
-            Container(
+            SizedBox(
               width: 48,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -331,18 +465,12 @@ class _EventsScreenState extends State<EventsScreen> {
                   Text(
                     '${e.date.day}',
                     style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: e.color,
-                    ),
+                      fontSize: 24, fontWeight: FontWeight.w900, color: e.color),
                   ),
                   Text(
                     _monthLabel(e.date.month),
                     style: const TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textHint,
-                      fontWeight: FontWeight.w600,
-                    ),
+                      fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w600),
                   ),
                   if (isMultiDay) ...[
                     const Text('～', style: TextStyle(color: AppColors.textHint, fontSize: 10)),
@@ -373,10 +501,9 @@ class _EventsScreenState extends State<EventsScreen> {
                     Text(
                       e.title,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        color: AppColors.textPrimary,
-                      ),
+                        fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
                     Row(
@@ -384,10 +511,13 @@ class _EventsScreenState extends State<EventsScreen> {
                         const Icon(Icons.location_on_outlined,
                             size: 12, color: AppColors.textHint),
                         const SizedBox(width: 3),
-                        Text(
-                          e.location,
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textHint),
+                        Expanded(
+                          child: Text(
+                            e.location,
+                            style: const TextStyle(fontSize: 12, color: AppColors.textHint),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
@@ -397,8 +527,7 @@ class _EventsScreenState extends State<EventsScreen> {
             ),
             const Padding(
               padding: EdgeInsets.only(right: 12),
-              child: Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textHint, size: 18),
+              child: Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 18),
             ),
           ],
         ),
@@ -413,14 +542,8 @@ class _EventsScreenState extends State<EventsScreen> {
         color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(
-        cat,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: color.withOpacity(0.9),
-        ),
-      ),
+      child: Text(cat,
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color.withOpacity(0.9))),
     );
   }
 
@@ -430,6 +553,7 @@ class _EventsScreenState extends State<EventsScreen> {
     return labels[m];
   }
 
+  // ── Event detail sheet ──
   void _showEventDetail(_Event e) {
     showModalBottomSheet(
       context: context,
@@ -452,9 +576,7 @@ class _EventsScreenState extends State<EventsScreen> {
                   width: 36, height: 4,
                   margin: const EdgeInsets.only(bottom: 20),
                   decoration: BoxDecoration(
-                    color: AppColors.divider,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+                    color: AppColors.divider, borderRadius: BorderRadius.circular(2)),
                 ),
               ),
               // Header
@@ -477,10 +599,7 @@ class _EventsScreenState extends State<EventsScreen> {
                         const SizedBox(height: 4),
                         Text(e.title,
                           style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                            color: AppColors.textPrimary,
-                          ),
+                            fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary),
                         ),
                       ],
                     ),
@@ -488,7 +607,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 ],
               ),
               const SizedBox(height: 20),
-              // Info rows
+              // Date
               _detailRow(Icons.calendar_today_rounded,
                 e.date.day == e.endDate.day && e.date.month == e.endDate.month
                     ? '${e.date.year}/${e.date.month}/${e.date.day}'
@@ -500,9 +619,25 @@ class _EventsScreenState extends State<EventsScreen> {
                 style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary, fontSize: 13)),
               const SizedBox(height: 8),
               Text(e.desc,
-                style: const TextStyle(
-                  fontSize: 15, color: AppColors.textPrimary, height: 1.8)),
+                style: const TextStyle(fontSize: 15, color: AppColors.textPrimary, height: 1.8)),
               const SizedBox(height: 24),
+              // Action buttons
+              if (e.url != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      final uri = Uri.tryParse(e.url!);
+                      if (uri != null && await canLaunchUrl(uri)) {
+                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                      }
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                    label: const Text('閱讀完整內容'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               Row(
                 children: [
                   Expanded(
@@ -535,22 +670,29 @@ class _EventsScreenState extends State<EventsScreen> {
   Widget _detailRow(IconData icon, String text) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: AppColors.primary),
+        Icon(icon, size: 16, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
-        Text(text, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+        Expanded(
+          child: Text(text,
+              style: const TextStyle(
+                  fontSize: 14, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+        ),
       ],
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────
 class _Event {
   final String id, title, emoji, category, location, desc;
   final DateTime date, endDate;
   final Color color;
+  final String? url;
 
   const _Event({
     required this.id, required this.title, required this.date,
     required this.endDate, required this.emoji, required this.category,
     required this.location, required this.desc, required this.color,
+    this.url,
   });
 }

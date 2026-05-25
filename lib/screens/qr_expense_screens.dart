@@ -46,11 +46,11 @@ class QrShareScreen extends StatelessWidget {
                     children: [
                       const Text('🏯', style: TextStyle(fontSize: 18)),
                       const SizedBox(width: 6),
-                      const Text(
+                      Text(
                         '探索諸羅',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                           fontSize: 16,
                         ),
                       ),
@@ -114,8 +114,8 @@ class QrShareScreen extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const Icon(Icons.copy_rounded,
-                            size: 16, color: AppColors.primary),
+                        Icon(Icons.copy_rounded,
+                            size: 16, color: Theme.of(context).colorScheme.primary),
                       ],
                     ),
                   ),
@@ -129,22 +129,22 @@ class QrShareScreen extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.05),
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
-                      Text('✏️', style: TextStyle(fontSize: 18)),
-                      SizedBox(width: 8),
+                      const Text('✏️', style: TextStyle(fontSize: 18)),
+                      const SizedBox(width: 8),
                       Text(
                         '共同編輯功能',
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                           fontSize: 15,
                         ),
                       ),
@@ -178,10 +178,10 @@ class QrShareScreen extends StatelessWidget {
                           height: 30,
                           margin: const EdgeInsets.only(right: 4),
                           decoration: BoxDecoration(
-                            color: AppColors.primaryLight.withOpacity(0.3),
+                            color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!.withValues(alpha: 0.3),
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: AppColors.primary, width: 1.5),
+                                color: Theme.of(context).colorScheme.primary, width: 1.5),
                           ),
                           child: Center(child: Text(emoji)),
                         );
@@ -219,7 +219,6 @@ class QrShareScreen extends StatelessWidget {
                     icon: const Icon(Icons.download_rounded, size: 18),
                     label: const Text('儲存 QR Code'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
                       minimumSize: const Size(0, 50),
                     ),
                   ),
@@ -228,12 +227,9 @@ class QrShareScreen extends StatelessWidget {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {},
-                    icon: const Icon(Icons.share_rounded,
-                        size: 18, color: AppColors.primary),
-                    label: const Text('分享',
-                        style: TextStyle(color: AppColors.primary)),
+                    icon: const Icon(Icons.share_rounded, size: 18),
+                    label: const Text('分享'),
                     style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: AppColors.primary),
                       minimumSize: const Size(0, 50),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -340,8 +336,8 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
         actions: [
           TextButton.icon(
             onPressed: () => _showAddExpense(context),
-            icon: const Icon(Icons.add_rounded, color: AppColors.primary),
-            label: const Text('新增', style: TextStyle(color: AppColors.primary)),
+            icon: Icon(Icons.add_rounded, color: Theme.of(context).colorScheme.primary),
+            label: Text('新增', style: TextStyle(color: Theme.of(context).colorScheme.primary)),
           ),
         ],
       ),
@@ -352,8 +348,8 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [AppColors.primary, AppColors.primaryLight],
+              gradient: LinearGradient(
+                colors: [Theme.of(context).colorScheme.primary, Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!],
               ),
               borderRadius: BorderRadius.circular(20),
             ),
@@ -372,11 +368,11 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: () => _showSplitResult(context, perPerson),
-                  icon: const Icon(Icons.calculate_rounded,
-                      size: 16, color: AppColors.primary),
-                  label: const Text('計算分帳',
+                  icon: Icon(Icons.calculate_rounded,
+                      size: 16, color: Theme.of(context).colorScheme.primary),
+                  label: Text('計算分帳',
                       style: TextStyle(
-                          color: AppColors.primary,
+                          color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w700)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
@@ -451,7 +447,7 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.primaryLight.withOpacity(0.15),
+              color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
@@ -560,7 +556,6 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
               ElevatedButton(
                 onPressed: () => Navigator.pop(context),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
                   minimumSize: const Size(double.infinity, 48),
                 ),
                 child: const Text('新增'),
@@ -618,9 +613,9 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
               final idx = _members.indexOf(m);
               final colors = [
                 AppColors.error,
-                AppColors.primary,
+                Theme.of(context).colorScheme.primary,
                 AppColors.error,
-                AppColors.primary
+                Theme.of(context).colorScheme.primary
               ];
               final labels = ['-NT\$400', '+NT\$200', '-NT\$200', '+NT\$400'];
               return Padding(
@@ -631,7 +626,7 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: AppColors.primaryLight.withOpacity(0.2),
+                        color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
                       child: const Center(child: Text('😊')),

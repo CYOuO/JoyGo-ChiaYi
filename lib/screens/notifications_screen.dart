@@ -48,7 +48,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         actions: [
           TextButton(
             onPressed: () => setState(() { for (final n in _notifs) n.isRead = true; }),
-            child: const Text('全部已讀', style: TextStyle(color: AppColors.primary, fontSize: 13)),
+            child: Text('全部已讀', style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 13)),
           ),
         ],
       ),
@@ -78,7 +78,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       child: InkWell(
         onTap: () => setState(() => n.isRead = true),
         child: Container(
-          color: n.isRead ? Colors.transparent : AppColors.primaryMist.withOpacity(0.4),
+          color: n.isRead ? Colors.transparent : Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!.withValues(alpha: 0.4),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,7 +127,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 const SizedBox(width: 8),
                 Container(
                   width: 8, height: 8,
-                  decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary, shape: BoxShape.circle),
                 ),
               ],
             ],

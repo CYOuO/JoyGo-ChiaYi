@@ -154,9 +154,34 @@ class _Place {
 // ═══════════════════════════════════════════════════════════
 
 class MapScreen extends StatefulWidget {
-  /// Set this notifier from any screen to jump the map to a specific position.
-  /// Value is a (lat, lng) record; the map resets it to null after consuming.
-  static final focusNotifier = ValueNotifier<(double, double)?>(null);
+  /// Set this notifier from any screen to jump the map to a specific position
+  /// and optionally enable a category layer.
+  ///
+  /// Fields:
+  ///   lat / lng   — target coordinates
+  ///   catKey      — optional string key; the map will enable the matching
+  ///                 category layer (see [_catKeyMap]).
+  ///
+  /// Known catKey values (use MapScreen.catKey* constants):
+  ///   'chiayiFood', 'tdxSpot', 'goodShop', 'petShop', 'drinkShop'
+  static final focusNotifier =
+      ValueNotifier<({double lat, double lng, String? catKey})?>(null);
+
+  // ── public catKey constants (referenced from other screens) ─
+  static const catKeyChiayiFood = 'chiayiFood';
+  static const catKeyTdxSpot    = 'tdxSpot';
+  static const catKeyGoodShop   = 'goodShop';
+  static const catKeyPetShop    = 'petShop';
+  static const catKeyDrinkShop  = 'drinkShop';
+
+  // ── internal mapping: catKey → _Cat ─────────────────────────
+  static const _catKeyMap = <String, _Cat>{
+    'chiayiFood': _Cat.chiayiFood,
+    'tdxSpot':    _Cat.tdxSpot,
+    'goodShop':   _Cat.goodShop,
+    'petShop':    _Cat.petShop,
+    'drinkShop':  _Cat.drinkShop,
+  };
 
   const MapScreen({super.key});
   @override
@@ -725,9 +750,16 @@ class _MapScreenState extends State<MapScreen> {
     if (t == null || !mounted) return;
     // Switch to map view if in list mode
     if (_isListView) setState(() => _isListView = false);
+    // Enable matching category layer if specified and not already visible
+    if (t.catKey != null) {
+      final cat = MapScreen._catKeyMap[t.catKey!];
+      if (cat != null && !_visible.contains(cat)) {
+        setState(() => _visible.add(cat));
+      }
+    }
     // Move after the next frame so the map widget is fully rendered
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _mapCtrl.move(LatLng(t.$1, t.$2), 15.5);
+      if (mounted) _mapCtrl.move(LatLng(t.lat, t.lng), 15.5);
     });
     // Reset so the same coordinates can trigger again next time
     Future.microtask(() => MapScreen.focusNotifier.value = null);

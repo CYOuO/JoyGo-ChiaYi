@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
@@ -93,6 +94,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _newsError   = false;
   Timer? _autoScrollTimer;
 
+  // ── 使用者位置（供附近排序用）────────────────────────────
+  Position? _myPos;
+
   // ── Restaurants (雞肉飯) from Firestore ──────────────────
   List<_RestaurantItem> _restaurants = [];
   bool _restaurantsLoading = true;
@@ -120,9 +124,64 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _fetchLocation();   // 先取位置，再排序餐廳
     _fetchNews();
     _fetchRestaurants();
     _fetchNearbySpots();
+  }
+
+  /// 取得使用者位置（用於餐廳、附近景點距離排序）
+  Future<void> _fetchLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) return;
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+      ).timeout(const Duration(seconds: 8));
+      if (!mounted) return;
+      _myPos = pos;
+      // 位置取得後重新排序（如果資料已載入）
+      if (_restaurants.isNotEmpty) _sortRestaurantsByProximity();
+      if (_nearbySpots.isNotEmpty) _sortNearbyByProximity();
+    } catch (_) {} // 失敗不影響 app 正常使用
+  }
+
+  /// 依距離排序餐廳（就地排序 + setState）
+  void _sortRestaurantsByProximity() {
+    if (_myPos == null) return;
+    final lat = _myPos!.latitude;
+    final lng = _myPos!.longitude;
+    final sorted = [..._restaurants];
+    sorted.sort((a, b) {
+      if (a.lat == null || a.lng == null) return 1;
+      if (b.lat == null || b.lng == null) return -1;
+      final da = Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!);
+      final db = Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!);
+      return da.compareTo(db);
+    });
+    if (mounted) setState(() => _restaurants = sorted);
+  }
+
+  /// 依距離排序附近景點（就地排序 + setState）
+  void _sortNearbyByProximity() {
+    if (_myPos == null) return;
+    final lat = _myPos!.latitude;
+    final lng = _myPos!.longitude;
+    final sorted = [..._nearbySpots];
+    sorted.sort((a, b) {
+      if (a.lat == null || a.lng == null) return 1;
+      if (b.lat == null || b.lng == null) return -1;
+      final da = Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!);
+      final db = Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!);
+      return da.compareTo(db);
+    });
+    if (mounted) setState(() => _nearbySpots = sorted);
   }
 
   @override
@@ -210,16 +269,42 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _restaurantsLoading = false);
       return;
     }
-    final list = fresh
+    var list = fresh
         .map(_restaurantFromDoc)
         .where((r) => r.name.isNotEmpty)
         .toList();
+    if (_myPos != null) _sortListByProximity(list);
     if (mounted) setState(() { _restaurants = list; _restaurantsLoading = false; });
+  }
+
+  /// 就地依距離排序（不 setState，呼叫端自行決定）
+  void _sortListByProximity(List<_RestaurantItem> list) {
+    if (_myPos == null) return;
+    final lat = _myPos!.latitude, lng = _myPos!.longitude;
+    list.sort((a, b) {
+      if (a.lat == null || a.lng == null) return 1;
+      if (b.lat == null || b.lng == null) return -1;
+      return Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!)
+          .compareTo(Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!));
+    });
   }
 
   /// 從快取 Map 還原 _RestaurantItem
   _RestaurantItem _restaurantFromDoc(Map<String, dynamic> d) {
     final images = (d['images'] as List?)?.whereType<String>().toList() ?? [];
+    // 嘗試解析座標（GeoPoint 已由 StaticDataCache 還原）
+    double? lat, lng;
+    final loc = d['location'];
+    if (loc is GeoPoint && loc.latitude > 21 && loc.latitude < 26) {
+      lat = loc.latitude; lng = loc.longitude;
+    } else {
+      for (final k in ['lat','latitude','緯度']) {
+        final v = d[k]; if (v is num) { lat = v.toDouble(); break; }
+      }
+      for (final k in ['lng','longitude','經度']) {
+        final v = d[k]; if (v is num) { lng = v.toDouble(); break; }
+      }
+    }
     return _RestaurantItem(
       id:        d['__id']?.toString() ?? '',
       name:      d['name']?.toString() ?? '',
@@ -231,6 +316,7 @@ class _HomeScreenState extends State<HomeScreen> {
       shortDesc: d['shortDesc']?.toString() ?? '',
       price:     d['price']?.toString() ?? '',
       openTime:  d['time']?.toString() ?? '',
+      lat: lat, lng: lng,
     );
   }
 
@@ -1175,11 +1261,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showRestaurantDetail(_RestaurantItem r) {
+    final ctx = context;
     showModalBottomSheet(
-      context: context,
+      context: ctx,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _RestaurantDetailSheet(r: r),
+      builder: (_) => _RestaurantDetailSheet(
+        r: r,
+        onViewOnMap: (r.lat != null && r.lng != null)
+            ? () {
+                Navigator.of(ctx).pop();
+                MapScreen.focusNotifier.value = (
+                  lat: r.lat!,
+                  lng: r.lng!,
+                  catKey: MapScreen.catKeyChiayiFood,
+                );
+                widget.onSwitchTab?.call(1);
+              }
+            : null,
+      ),
     );
   }
 
@@ -1438,7 +1538,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ElevatedButton.icon(
                     onPressed: () {
                       Navigator.of(sheetCtx).pop();
-                      MapScreen.focusNotifier.value = (s.lat!, s.lng!);
+                      // 傳 catKey 讓地圖自動開啟對應圖層
+                      final catKey = const {
+                        'TDX景點':  MapScreen.catKeyTdxSpot,
+                        '好店':     MapScreen.catKeyGoodShop,
+                        '寵物友善': MapScreen.catKeyPetShop,
+                        '飲料店':   MapScreen.catKeyDrinkShop,
+                      }[s.category];
+                      MapScreen.focusNotifier.value = (
+                        lat: s.lat!, lng: s.lng!, catKey: catKey,
+                      );
                       widget.onSwitchTab?.call(1);
                     },
                     icon: const Icon(Icons.map_rounded, size: 16),
@@ -1483,7 +1592,8 @@ class _HomeScreenState extends State<HomeScreen> {
 // ── Restaurant Detail Sheet with image carousel ───────────────
 class _RestaurantDetailSheet extends StatefulWidget {
   final _RestaurantItem r;
-  const _RestaurantDetailSheet({required this.r});
+  final VoidCallback? onViewOnMap;
+  const _RestaurantDetailSheet({required this.r, this.onViewOnMap});
   @override
   State<_RestaurantDetailSheet> createState() => _RestaurantDetailSheetState();
 }
@@ -1614,6 +1724,25 @@ class _RestaurantDetailSheetState extends State<_RestaurantDetailSheet> {
                   if (r.address.isNotEmpty) _detailRow(Icons.location_on_outlined, r.address, primary),
                   if (r.openTime.isNotEmpty) _detailRow(Icons.access_time_outlined, r.openTime, primary),
                   if (r.price.isNotEmpty) _detailRow(Icons.monetization_on_outlined, r.price, primary),
+                  // 在地圖上查看（有座標才顯示）
+                  if (widget.onViewOnMap != null) ...[
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: widget.onViewOnMap,
+                        icon: const Icon(Icons.map_outlined, size: 16),
+                        label: const Text('在地圖上查看'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: primary,
+                          side: BorderSide(color: primary),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                   SpotRatingSection(placeId: 'restaurant_${r.id}'),
                 ],
               ),
@@ -1661,6 +1790,8 @@ class _RestaurantItem {
   final String shortDesc;
   final String price;
   final String openTime;
+  final double? lat;
+  final double? lng;
   const _RestaurantItem({
     required this.id,
     required this.name,
@@ -1672,6 +1803,8 @@ class _RestaurantItem {
     required this.shortDesc,
     required this.price,
     required this.openTime,
+    this.lat,
+    this.lng,
   });
 }
 

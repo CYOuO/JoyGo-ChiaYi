@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 
@@ -392,7 +394,8 @@ class ChiayiAppBar extends StatelessWidget implements PreferredSizeWidget {
 
 // ═══════════════════════════════════════════════════════════
 //  愛心評分 + 備註區塊（任何地點詳細頁共用）
-//  Persists to SharedPreferences keyed by placeId.
+//  已登入 → 儲存到 Firebase Firestore（users/{uid}/spot_ratings/{placeId}）
+//  未登入 → 僅存到 SharedPreferences（本地）
 // ═══════════════════════════════════════════════════════════
 
 class SpotRatingSection extends StatefulWidget {
@@ -412,6 +415,20 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
   String get _rKey => 'spot_rating_${widget.placeId}';
   String get _nKey => 'spot_note_${widget.placeId}';
 
+  /// 目前登入使用者（null = 未登入）
+  User? get _user => FirebaseAuth.instance.currentUser;
+
+  /// Firestore 文件路徑（登入後才有）
+  DocumentReference<Map<String, dynamic>>? get _firestoreDoc {
+    final uid = _user?.uid;
+    if (uid == null) return null;
+    return FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .collection('spot_ratings')
+        .doc(widget.placeId);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -425,6 +442,24 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
   }
 
   Future<void> _load() async {
+    // 優先從 Firebase 讀（已登入）
+    final doc = _firestoreDoc;
+    if (doc != null) {
+      try {
+        final snap = await doc.get();
+        if (!mounted) return;
+        if (snap.exists) {
+          final d = snap.data()!;
+          setState(() {
+            _rating        = (d['rating'] as int?) ?? 0;
+            _noteCtrl.text = (d['note'] as String?) ?? '';
+            _loading       = false;
+          });
+          return;
+        }
+      } catch (_) { /* 讀取失敗 fall through 到 local */ }
+    }
+    // 未登入或 Firebase 讀取失敗 → 讀本地快取
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
@@ -435,23 +470,46 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
   }
 
   Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rating > 0) {
-      await prefs.setInt(_rKey, _rating);
-    } else {
-      await prefs.remove(_rKey);
-    }
     final note = _noteCtrl.text.trim();
-    if (note.isNotEmpty) {
-      await prefs.setString(_nKey, note);
-    } else {
-      await prefs.remove(_nKey);
+
+    // ── Firebase 儲存（已登入）──────────────────────────────
+    final doc = _firestoreDoc;
+    if (doc != null) {
+      try {
+        if (_rating == 0 && note.isEmpty) {
+          await doc.delete();
+        } else {
+          await doc.set({
+            'placeId':   widget.placeId,
+            'rating':    _rating,
+            'note':      note,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+        // 同步更新本地快取方便離線讀取
+        final prefs = await SharedPreferences.getInstance();
+        if (_rating > 0) { await prefs.setInt(_rKey, _rating); }
+        else              { await prefs.remove(_rKey); }
+        if (note.isNotEmpty) { await prefs.setString(_nKey, note); }
+        else                 { await prefs.remove(_nKey); }
+        if (!mounted) return;
+        setState(() => _saved = true);
+        Future.delayed(const Duration(seconds: 2),
+            () { if (mounted) setState(() => _saved = false); });
+        return;
+      } catch (_) { /* Firebase 失敗 fall through 到 local only */ }
     }
+
+    // ── 未登入：只存 SharedPreferences ─────────────────────
+    final prefs = await SharedPreferences.getInstance();
+    if (_rating > 0) { await prefs.setInt(_rKey, _rating); }
+    else             { await prefs.remove(_rKey); }
+    if (note.isNotEmpty) { await prefs.setString(_nKey, note); }
+    else                 { await prefs.remove(_nKey); }
     if (!mounted) return;
     setState(() => _saved = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _saved = false);
-    });
+    Future.delayed(const Duration(seconds: 2),
+        () { if (mounted) setState(() => _saved = false); });
   }
 
   @override

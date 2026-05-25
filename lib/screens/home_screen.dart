@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import '../services/static_data_cache.dart';
 import '../widgets/common_widgets.dart' show SectionHeader, SpotRatingSection, TapFeedback;
 import 'search_screen.dart';
 import 'notifications_screen.dart';
@@ -186,148 +187,185 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ── Fetch restaurants from Firestore ──────────────────────
+  // ── Fetch restaurants — cache-first ───────────────────────
   Future<void> _fetchRestaurants() async {
-    try {
-      final snap = await FirebaseFirestore.instance
-          .collection('restaurants')
-          .orderBy('rating', descending: true)
-          .limit(15)
-          .get();
-      final list = snap.docs.map((doc) {
-        final d      = doc.data();
-        final images = (d['images'] as List?)?.whereType<String>().toList() ?? [];
-        return _RestaurantItem(
-          id:        doc.id,
-          name:      d['name']?.toString() ?? '',
-          rating:    (d['rating'] as num?)?.toDouble() ?? 0,
-          tags:      (d['tags'] as List?)?.whereType<String>().toList() ?? [],
-          imageUrl:  images.isNotEmpty ? images.first : '',
-          allImages: images,
-          address:   d['address']?.toString() ?? '',
-          shortDesc: d['shortDesc']?.toString() ?? '',
-          price:     d['price']?.toString() ?? '',
-          openTime:  d['time']?.toString() ?? '',
-        );
-      }).where((r) => r.name.isNotEmpty).toList();
-      if (mounted) {
-        setState(() {
-          _restaurants        = list;
-          _restaurantsLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('[HomeScreen] restaurants: $e');
+    // 1. 嘗試從本地快取立即顯示
+    final cached = await StaticDataCache.load('restaurants');
+    if (cached.isNotEmpty) {
+      final list = cached
+          .map(_restaurantFromDoc)
+          .where((r) => r.name.isNotEmpty)
+          .toList();
+      if (mounted) setState(() { _restaurants = list; _restaurantsLoading = false; });
+    }
+
+    // 2. 若快取是新鮮的就不再打網路
+    final stale = await StaticDataCache.isStale('restaurants');
+    if (!stale && cached.isNotEmpty) return;
+
+    // 3. 快取不存在或已過期 → 背景 refresh（有快取時不顯示 loading）
+    if (cached.isEmpty && mounted) setState(() => _restaurantsLoading = true);
+    final fresh = await StaticDataCache.refresh('restaurants');
+    if (fresh.isEmpty) {
       if (mounted) setState(() => _restaurantsLoading = false);
+      return;
     }
+    final list = fresh
+        .map(_restaurantFromDoc)
+        .where((r) => r.name.isNotEmpty)
+        .toList();
+    if (mounted) setState(() { _restaurants = list; _restaurantsLoading = false; });
   }
 
-  // ── Fetch nearby spots from multiple Firestore collections ──
+  /// 從快取 Map 還原 _RestaurantItem
+  _RestaurantItem _restaurantFromDoc(Map<String, dynamic> d) {
+    final images = (d['images'] as List?)?.whereType<String>().toList() ?? [];
+    return _RestaurantItem(
+      id:        d['__id']?.toString() ?? '',
+      name:      d['name']?.toString() ?? '',
+      rating:    (d['rating'] as num?)?.toDouble() ?? 0,
+      tags:      (d['tags'] as List?)?.whereType<String>().toList() ?? [],
+      imageUrl:  images.isNotEmpty ? images.first : '',
+      allImages: images,
+      address:   d['address']?.toString() ?? '',
+      shortDesc: d['shortDesc']?.toString() ?? '',
+      price:     d['price']?.toString() ?? '',
+      openTime:  d['time']?.toString() ?? '',
+    );
+  }
+
+  // ── 附近景點 key 常數（共用於 cache load 和 refresh 解析）──────
+  static const _nameKeys = [
+    'name','Name','店家名稱','業者名稱','名稱','店名',
+    '公共場所名稱','場所名稱','地點','停車場名稱','單位名稱','中文單位名稱',
+  ];
+  static const _addrKeys = [
+    'address','Address','地址','加油站地址','營業地址',
+    '設置地點','場所地址','路段',
+  ];
+  static const _imgKeys = ['imageUrl','image','Pic','pic','圖片','thumbnail'];
+  static const _descKeys = [
+    'description','Description','簡介','產品特色','場所描述','特色介紹','備註','內容',
+  ];
+  static const _latKeys = ['緯度','緯度坐標','地點LAT','Latitude','POINT_Y','lat'];
+  static const _lngKeys = ['經度','經度坐標','地點LNG','Longitude','POINT_X','lng'];
+
+  // ── Fetch nearby spots — cache-first ───────────────────────
   Future<void> _fetchNearbySpots() async {
-    try {
-      // Same broad key sets as map_screen._extractName / _extractAddr
-      const _nameKeys = [
-        'name','Name','店家名稱','業者名稱','名稱','店名',
-        '公共場所名稱','場所名稱','地點','停車場名稱','單位名稱','中文單位名稱',
-      ];
-      const _addrKeys = [
-        'address','Address','地址','加油站地址','營業地址',
-        '設置地點','場所地址','路段',
-      ];
-      const _imgKeys = ['imageUrl','image','Pic','pic','圖片','thumbnail'];
+    const cols = {
+      'tdx_spots':            'TDX景點',
+      'good_shops':           '好店',
+      'pet_friendly_shops':   '寵物友善',
+      'excellent_drink_shops':'飲料店',
+    };
 
-      final futures = <Future<List<_NearbySpotItem>>>[
-        _fetchNearbyFrom('tdx_spots',            'TDX景點',
-            nameKeys: _nameKeys, addrKeys: _addrKeys, imgKeys: _imgKeys),
-        _fetchNearbyFrom('good_shops',            '好店',
-            nameKeys: _nameKeys, addrKeys: _addrKeys, imgKeys: _imgKeys),
-        _fetchNearbyFrom('pet_friendly_shops',    '寵物友善',
-            nameKeys: _nameKeys, addrKeys: _addrKeys, imgKeys: _imgKeys),
-        _fetchNearbyFrom('excellent_drink_shops', '飲料店',
-            nameKeys: _nameKeys, addrKeys: _addrKeys, imgKeys: _imgKeys),
-      ];
-      final results = await Future.wait(futures);
-      final all = results.expand((x) => x).toList()..shuffle();
-      if (mounted) {
-        setState(() { _nearbySpots = all; _nearbyLoading = false; });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _nearbyLoading = false);
+    // 1. 從快取立即顯示
+    final cachedLists = await Future.wait(
+      cols.entries.map((e) => _loadNearbyCache(e.key, e.value)),
+    );
+    final cachedAll = cachedLists.expand((x) => x).toList()..shuffle();
+    if (cachedAll.isNotEmpty && mounted) {
+      setState(() { _nearbySpots = cachedAll; _nearbyLoading = false; });
+    }
+
+    // 2. 任一集合 stale（或沒快取）才去 refresh
+    final staleCheck = await Future.wait(
+      cols.keys.map(StaticDataCache.isStale),
+    );
+    final anyStale = staleCheck.any((s) => s);
+    if (!anyStale && cachedAll.isNotEmpty) return;
+
+    if (cachedAll.isEmpty && mounted) setState(() => _nearbyLoading = true);
+
+    final freshLists = await Future.wait(
+      cols.entries.map((e) => _refreshNearby(e.key, e.value)),
+    );
+    final freshAll = freshLists.expand((x) => x).toList()..shuffle();
+    if (freshAll.isNotEmpty && mounted) {
+      setState(() { _nearbySpots = freshAll; _nearbyLoading = false; });
+    } else if (mounted) {
+      setState(() => _nearbyLoading = false);
     }
   }
 
-  Future<List<_NearbySpotItem>> _fetchNearbyFrom(
-    String col, String cat, {
-    required List<String> nameKeys,
-    required List<String> addrKeys,
-    required List<String> imgKeys,
-  }) async {
-    try {
-      final snap = await FirebaseFirestore.instance.collection(col).limit(12).get();
-      return snap.docs.map((doc) {
-        final d = doc.data();
-        String name = '';
-        for (final k in nameKeys) {
-          final v = d[k]?.toString() ?? '';
-          if (v.isNotEmpty) { name = v; break; }
-        }
-        if (name.isEmpty) return null;
-        String address = '';
-        for (final k in addrKeys) {
-          final v = d[k]?.toString() ?? '';
-          if (v.isNotEmpty) { address = v; break; }
-        }
-        String imageUrl = '';
-        for (final k in imgKeys) {
-          final v = d[k];
-          if (v is String && v.isNotEmpty) { imageUrl = v; break; }
-          if (v is List && v.isNotEmpty) { imageUrl = v.first.toString(); break; }
-        }
-        // ── Extract description ────────────────────────────
-        const descKeys = [
-          'description', 'Description', '簡介', '產品特色',
-          '場所描述', '特色介紹', '備註', '內容',
-        ];
-        String desc = '';
-        for (final k in descKeys) {
-          final v = d[k]?.toString().trim() ?? '';
-          if (v.length > 5) { desc = v; break; }
-        }
-        // ── Extract lat/lng ────────────────────────────────
-        double? lat, lng;
-        final loc = d['location'];
-        if (loc is GeoPoint &&
-            loc.latitude > 21 && loc.latitude < 26 &&
-            loc.longitude > 119 && loc.longitude < 123) {
-          lat = loc.latitude;
-          lng = loc.longitude;
-        } else {
-          const latKeys2 = ['緯度','緯度坐標','地點LAT','Latitude','POINT_Y','lat'];
-          const lngKeys2 = ['經度','經度坐標','地點LNG','Longitude','POINT_X','lng'];
-          double? _toNum(dynamic v) {
-            if (v is double) return v;
-            if (v is int)    return v.toDouble();
-            if (v is String) return double.tryParse(v.trim());
-            return null;
-          }
-          for (final k in latKeys2) {
-            final n = _toNum(d[k]);
-            if (n != null && n > 21 && n < 26) { lat = n; break; }
-          }
-          for (final k in lngKeys2) {
-            final n = _toNum(d[k]);
-            if (n != null && n > 119 && n < 123) { lng = n; break; }
-          }
-        }
-        return _NearbySpotItem(
-          id: doc.id, name: name, category: cat,
-          address: address, imageUrl: imageUrl,
-          description: desc, lat: lat, lng: lng,
-        );
-      }).whereType<_NearbySpotItem>().toList();
-    } catch (_) {
-      return [];
+  /// 從快取讀取一個集合並解析成 _NearbySpotItem
+  Future<List<_NearbySpotItem>> _loadNearbyCache(String col, String cat) async {
+    final docs = await StaticDataCache.load(col);
+    return docs
+        .map((d) => _nearbyFromDoc(d, cat))
+        .whereType<_NearbySpotItem>()
+        .toList();
+  }
+
+  /// 向 Firestore refresh 一個集合並解析成 _NearbySpotItem
+  Future<List<_NearbySpotItem>> _refreshNearby(String col, String cat) async {
+    final docs = await StaticDataCache.refresh(col);
+    return docs
+        .map((d) => _nearbyFromDoc(d, cat))
+        .whereType<_NearbySpotItem>()
+        .toList();
+  }
+
+  /// 從 Map（快取或 Firestore doc.data()）解析 _NearbySpotItem。
+  /// name 空的回 null（用 whereType 過濾掉）。
+  _NearbySpotItem? _nearbyFromDoc(Map<String, dynamic> d, String cat) {
+    // id
+    final id = d['__id']?.toString() ?? '';
+    // name
+    String name = '';
+    for (final k in _nameKeys) {
+      final v = d[k]?.toString() ?? '';
+      if (v.isNotEmpty) { name = v; break; }
     }
+    if (name.isEmpty) return null;
+    // address
+    String address = '';
+    for (final k in _addrKeys) {
+      final v = d[k]?.toString() ?? '';
+      if (v.isNotEmpty) { address = v; break; }
+    }
+    // image
+    String imageUrl = '';
+    for (final k in _imgKeys) {
+      final v = d[k];
+      if (v is String && v.isNotEmpty) { imageUrl = v; break; }
+      if (v is List && v.isNotEmpty) { imageUrl = v.first.toString(); break; }
+    }
+    // description
+    String desc = '';
+    for (final k in _descKeys) {
+      final v = d[k]?.toString().trim() ?? '';
+      if (v.length > 5) { desc = v; break; }
+    }
+    // lat/lng
+    double? lat, lng;
+    final loc = d['location'];
+    if (loc is GeoPoint &&
+        loc.latitude > 21 && loc.latitude < 26 &&
+        loc.longitude > 119 && loc.longitude < 123) {
+      lat = loc.latitude;
+      lng = loc.longitude;
+    } else {
+      double? toNum(dynamic v) {
+        if (v is double) return v;
+        if (v is int)    return v.toDouble();
+        if (v is String) return double.tryParse(v.trim());
+        return null;
+      }
+      for (final k in _latKeys) {
+        final n = toNum(d[k]);
+        if (n != null && n > 21 && n < 26) { lat = n; break; }
+      }
+      for (final k in _lngKeys) {
+        final n = toNum(d[k]);
+        if (n != null && n > 119 && n < 123) { lng = n; break; }
+      }
+    }
+    return _NearbySpotItem(
+      id: id, name: name, category: cat,
+      address: address, imageUrl: imageUrl,
+      description: desc, lat: lat, lng: lng,
+    );
   }
 
   Future<List<_GovItem>> _fetchNewsOne(

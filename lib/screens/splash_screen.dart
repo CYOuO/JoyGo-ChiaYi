@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../services/static_data_cache.dart';
 
 class SplashScreen extends StatefulWidget {
   final VoidCallback onFinish;
@@ -40,10 +42,23 @@ class _SplashScreenState extends State<SplashScreen>
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
 
-    // After one full sky cycle + a bit, navigate
-    Future.delayed(const Duration(milliseconds: 6200), () {
-      if (mounted) widget.onFinish();
-    });
+    _startupSequence();
+  }
+
+  /// 動畫至少跑 6.2s；同時背景預載 Firestore 靜態資料。
+  /// - 一般情況：快取已存在 → prewarm 幾乎瞬間完成 → 動畫秒數決定何時進首頁
+  /// - 第一次安裝：prewarm 需要時間 → 最多等到 9s 強制進入首頁（避免無網卡死）
+  Future<void> _startupSequence() async {
+    final animation = Future.delayed(const Duration(milliseconds: 6200));
+    final prewarm = StaticDataCache.prewarm().timeout(
+      const Duration(seconds: 9),
+      onTimeout: () {
+        debugPrint('[Splash] prewarm timeout — proceeding anyway');
+      },
+    );
+    // 等動畫 + 預載都完成（取 max）；prewarm 自帶 9s 上限
+    await Future.wait([animation, prewarm]);
+    if (mounted) widget.onFinish();
   }
 
   @override

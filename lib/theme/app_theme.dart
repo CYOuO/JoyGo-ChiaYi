@@ -101,25 +101,24 @@ class AppTheme {
         unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
 
-      // ── Card（圓潤 24px）
+      // ── Card（圓潤 20px）
       cardTheme: const CardThemeData(
         color: AppColors.surfaceWarm,
         elevation: 0,
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(24))),
+            borderRadius: BorderRadius.all(Radius.circular(20))),
         shadowColor: AppColors.cardShadow,
         margin: EdgeInsets.zero,
       ),
 
-      // ── ElevatedButton（藥丸狀 + 軟陰影）
+      // ── ElevatedButton（藥丸狀）
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
           foregroundColor: Colors.white,
-          elevation: 2,
-          shadowColor: primary.withValues(alpha: 0.30),
+          elevation: 0,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(14)),
           padding:
               const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
           textStyle: const TextStyle(
@@ -134,9 +133,9 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: primary,
-          side: BorderSide(color: primary, width: 1.8),
+          side: BorderSide(color: primary, width: 1.5),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20)),
+              borderRadius: BorderRadius.circular(14)),
           padding:
               const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
           textStyle:
@@ -153,22 +152,22 @@ class AppTheme {
         ),
       ),
 
-      // ── Input（18px 更柔和）
+      // ── Input（14px）
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceMoss,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           borderSide:
               const BorderSide(color: AppColors.divider, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: primary, width: 1.8),
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: primary, width: 1.5),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -179,18 +178,18 @@ class AppTheme {
         floatingLabelStyle: TextStyle(color: primary),
       ),
 
-      // ── Chip（完全藥丸狀）
+      // ── Chip（圓角 20px）
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceMoss,
         selectedColor: mist,
         labelStyle: const TextStyle(
           fontSize: 12,
           color: AppColors.textSecondary,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w600,
         ),
         side: const BorderSide(color: AppColors.divider),
         shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(100))),
+            borderRadius: BorderRadius.all(Radius.circular(20))),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
 

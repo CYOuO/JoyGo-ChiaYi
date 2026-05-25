@@ -88,13 +88,13 @@ class _SpotCardState extends State<SpotCard>
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
           color: AppColors.surfaceWarm,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.divider),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white, width: 2),
           boxShadow: [
             BoxShadow(
               color: AppColors.cardShadow,
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -104,7 +104,7 @@ class _SpotCardState extends State<SpotCard>
             // Image
             ClipRRect(
               borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
+                  const BorderRadius.vertical(top: Radius.circular(22)),
               child: Stack(
                 children: [
                   Image.network(
@@ -127,15 +127,22 @@ class _SpotCardState extends State<SpotCard>
                     top: 8,
                     left: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
+                      width: 32, height: 32,
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(20),
+                        color: Colors.white.withValues(alpha: 0.92),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.10),
+                            blurRadius: 6,
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        _categoryIcon,
-                        style: const TextStyle(fontSize: 12),
+                      child: Center(
+                        child: Text(
+                          _categoryIcon,
+                          style: const TextStyle(fontSize: 15),
+                        ),
                       ),
                     ),
                   ),
@@ -234,28 +241,39 @@ class SectionHeader extends StatelessWidget {
   final String title;
   final String? actionText;
   final VoidCallback? onAction;
+  /// 可選小 emoji 裝飾，顯示在標題右側
+  final String? emoji;
 
   const SectionHeader({
     super.key,
     required this.title,
     this.actionText,
     this.onAction,
+    this.emoji,
   });
 
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final mist = Color.lerp(primary, Colors.white, 0.82) ?? AppColors.primaryMist;
     return Row(
       children: [
+        // 雙圈糖果點
         Container(
-          width: 4,
-          height: 20,
-          decoration: BoxDecoration(
-            color: primary,
-            borderRadius: BorderRadius.circular(2),
+          width: 22, height: 22,
+          decoration: BoxDecoration(color: mist, shape: BoxShape.circle),
+          child: Center(
+            child: Container(
+              width: 10, height: 10,
+              decoration: BoxDecoration(
+                color: primary,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.35), blurRadius: 5)],
+              ),
+            ),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 9),
         Text(
           title,
           style: const TextStyle(
@@ -264,16 +282,30 @@ class SectionHeader extends StatelessWidget {
             color: AppColors.textPrimary,
           ),
         ),
+        if (emoji != null) ...[
+          const SizedBox(width: 5),
+          Text(emoji!, style: const TextStyle(fontSize: 15)),
+        ],
         const Spacer(),
         if (actionText != null)
           GestureDetector(
             onTap: onAction,
-            child: Text(
-              actionText!,
-              style: TextStyle(
-                fontSize: 13,
-                color: primary,
-                fontWeight: FontWeight.w600,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+              decoration: BoxDecoration(
+                color: mist,
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    actionText!,
+                    style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(width: 2),
+                  Icon(Icons.arrow_forward_ios_rounded, size: 10, color: primary),
+                ],
               ),
             ),
           ),
@@ -300,7 +332,6 @@ class CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    // ignore: unused_local_variable
     final mist    = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
     return GestureDetector(
       onTap: onTap,
@@ -309,18 +340,18 @@ class CategoryChip extends StatelessWidget {
         margin: const EdgeInsets.only(right: 8),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? primary : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? primary : mist,
+          borderRadius: BorderRadius.circular(100),
           border: Border.all(
-            color: isSelected ? primary : AppColors.surfaceMoss,
+            color: isSelected ? primary : AppColors.divider,
             width: 1.5,
           ),
           boxShadow: isSelected
               ? [
                   BoxShadow(
-                    color: primary.withValues(alpha: 0.3),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    color: primary.withValues(alpha: 0.28),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
                   )
                 ]
               : [],

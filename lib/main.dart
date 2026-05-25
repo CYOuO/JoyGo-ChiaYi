@@ -178,7 +178,16 @@ class _MainShellState extends State<MainShell> {
                       horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isSelected ? mist : Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: isSelected
+                        ? [
+                            BoxShadow(
+                              color: primary.withValues(alpha: 0.15),
+                              blurRadius: 10,
+                              offset: const Offset(0, 3),
+                            )
+                          ]
+                        : [],
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,

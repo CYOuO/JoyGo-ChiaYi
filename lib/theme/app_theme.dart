@@ -40,6 +40,14 @@ class AppColors {
   static const Color stampGold   = Color(0xFFCFA84C);
   static const Color stampSilver = Color(0xFFA0AFA0);
   static const Color stampBronze = Color(0xFFA8784A);
+
+  // ── 可愛粉嫩點綴色
+  static const Color cutePeach    = Color(0xFFFFD3C2);
+  static const Color cutePink     = Color(0xFFFCC8D4);
+  static const Color cuteLavender = Color(0xFFD8CCEC);
+  static const Color cuteMint     = Color(0xFFC2E8D5);
+  static const Color cuteLemon    = Color(0xFFFFE9A8);
+  static const Color cuteSky      = Color(0xFFC4E1F0);
 }
 
 class AppTheme {
@@ -93,46 +101,46 @@ class AppTheme {
         unselectedLabelStyle: const TextStyle(fontSize: 11),
       ),
 
-      // ── Card
+      // ── Card（圓潤 24px）
       cardTheme: const CardThemeData(
         color: AppColors.surfaceWarm,
         elevation: 0,
         shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(20))),
+            borderRadius: BorderRadius.all(Radius.circular(24))),
         shadowColor: AppColors.cardShadow,
         margin: EdgeInsets.zero,
       ),
 
-      // ── ElevatedButton
+      // ── ElevatedButton（藥丸狀 + 軟陰影）
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primary,
           foregroundColor: Colors.white,
-          elevation: 0,
-          shadowColor: Colors.transparent,
+          elevation: 2,
+          shadowColor: primary.withValues(alpha: 0.30),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14)),
+              borderRadius: BorderRadius.circular(20)),
           padding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+              const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
           textStyle: const TextStyle(
             fontSize: 15,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w800,
             letterSpacing: 0.3,
           ),
         ),
       ),
 
-      // ── OutlinedButton
+      // ── OutlinedButton（藥丸狀）
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: primary,
-          side: BorderSide(color: primary, width: 1.5),
+          side: BorderSide(color: primary, width: 1.8),
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14)),
+              borderRadius: BorderRadius.circular(20)),
           padding:
-              const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+              const EdgeInsets.symmetric(vertical: 14, horizontal: 26),
           textStyle:
-              const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
       ),
 
@@ -145,22 +153,22 @@ class AppTheme {
         ),
       ),
 
-      // ── Input
+      // ── Input（18px 更柔和）
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: AppColors.surfaceMoss,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
           borderSide:
               const BorderSide(color: AppColors.divider, width: 1),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: primary, width: 1.5),
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(color: primary, width: 1.8),
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -171,19 +179,19 @@ class AppTheme {
         floatingLabelStyle: TextStyle(color: primary),
       ),
 
-      // ── Chip
+      // ── Chip（完全藥丸狀）
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceMoss,
         selectedColor: mist,
         labelStyle: const TextStyle(
           fontSize: 12,
           color: AppColors.textSecondary,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
         ),
         side: const BorderSide(color: AppColors.divider),
         shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(20))),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            borderRadius: BorderRadius.all(Radius.circular(100))),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       ),
 
       // ── Divider
@@ -284,5 +292,23 @@ class AppGradients {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [Color(0xFFE8D5A3), Color(0xFFD4B896)],
+  );
+
+  static const LinearGradient candyPeach = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFFFD3C2), Color(0xFFFCC8D4)],
+  );
+
+  static const LinearGradient dreamMint = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFC2E8D5), Color(0xFFC4E1F0)],
+  );
+
+  static const LinearGradient softLavender = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFD8CCEC), Color(0xFFFCC8D4)],
   );
 }

@@ -45,8 +45,10 @@ class SettingsScreen extends StatelessWidget {
             ),
             child: Column(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 12,
+                  runSpacing: 12,
                   children: List.generate(kThemePresets.length, (i) {
                     final preset  = kThemePresets[i];
                     final selected = settings.themeIndex == i;

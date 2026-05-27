@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import '../services/rail_service.dart';
 import 'search_screen.dart';
 
 // ═══════════════════════════════════════════════════
@@ -603,17 +604,79 @@ class _TransportScreenState extends State<TransportScreen>
   String _trainSearch = '';
 
   // Alishan state
-  String _alishanRoute = '嘉義 → 阿里山';
+  String _alishanRoute = '上行（往山上）';
 
   // THSR state
   String _thsrDirection     = '北上';
   bool   _thsrShowTimetable = false;  // toggle today ↔ full timetable
+
+  // ── Real rail data from Cloud Functions ──────────────────
+  static const _traStationIds = {
+    '嘉義': '3160', '大林': '3141', '民雄': '3152', '水上': '3162', '南靖': '3163',
+  };
+  List<Map<String, dynamic>>? _traTrains;
+  bool    _traLoading = false;
+  String? _traError;
+
+  List<Map<String, dynamic>>? _thsrTrains;
+  bool    _thsrLoading = false;
+  String? _thsrError;
+
+  List<Map<String, dynamic>>? _alishanDocs;
+  bool _alishanLoading = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 5, vsync: this, initialIndex: widget.initialTab.clamp(0, 4));
     _startCountdown();
+    _fetchTra();
+    _fetchThsr();
+    _fetchAlishan();
+  }
+
+  // ── Fetch helpers ─────────────────────────────────────────
+  String get _todayDateStr {
+    // Always compute in Taiwan timezone (UTC+8) — TDX API rejects historical dates.
+    // A device set to UTC would return yesterday's date after midnight in Taiwan,
+    // causing TDX to reject the request with "TrainDate: 無提供查詢歷史資料".
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _fetchTra() async {
+    final stationId = _traStationIds[_trainStation] ?? '3160';
+    if (!mounted) return;
+    setState(() { _traLoading = true; _traError = null; });
+    try {
+      final result = await RailService.queryTra(
+          trainDate: _todayDateStr, stationId: stationId);
+      if (mounted) setState(() { _traTrains = result; _traLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _traLoading = false; _traError = e.toString(); });
+    }
+  }
+
+  Future<void> _fetchThsr() async {
+    if (!mounted) return;
+    setState(() { _thsrLoading = true; _thsrError = null; });
+    try {
+      final result = await RailService.queryThsr(trainDate: _todayDateStr);
+      if (mounted) setState(() { _thsrTrains = result; _thsrLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _thsrLoading = false; _thsrError = e.toString(); });
+    }
+  }
+
+  Future<void> _fetchAlishan() async {
+    if (!mounted) return;
+    setState(() => _alishanLoading = true);
+    try {
+      final result = await RailService.fetchAlishanSchedules();
+      if (mounted) setState(() { _alishanDocs = result; _alishanLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _alishanLoading = false);
+    }
   }
 
   void _startCountdown() {
@@ -1057,48 +1120,34 @@ class _TransportScreenState extends State<TransportScreen>
 
   // ── TRAIN TAB ──
   Widget _buildTrainTab() {
-    // All TRA stations in Chiayi County/City (+ neighboring stations for context)
-    const chiayiStations = [
-      '大林', '民雄', '嘉義', '水上', '南靖',
-    ];
+    const chiayiStations = ['大林', '民雄', '嘉義', '水上', '南靖'];
     final allStations = ['嘉義','大林','民雄','水上','南靖','新營','台南','高雄','台中','台北'];
 
-    final allBound = [
-      _Train(no:'自強 108', type:'自強', from:'嘉義', to:'台北', dep:'14:05', arr:'16:52', delay:0, stops:['嘉義','台中','板橋','台北']),
-      _Train(no:'太魯閣 224', type:'太魯閣', from:'嘉義', to:'花蓮', dep:'15:30', arr:'18:55', delay:5, stops:['嘉義','台中','台北','花蓮']),
-      _Train(no:'莒光 222', type:'莒光', from:'嘉義', to:'台北', dep:'16:15', arr:'20:10', delay:0, stops:['嘉義','民雄','大林','斗六','彰化','台中','台北']),
-      _Train(no:'自強 109', type:'自強', from:'嘉義', to:'高雄', dep:'14:02', arr:'15:08', delay:0, stops:['嘉義','水上','南靖','新營','台南','高雄']),
-      _Train(no:'自強 113', type:'自強', from:'嘉義', to:'潮州', dep:'15:45', arr:'17:20', delay:3, stops:['嘉義','台南','高雄','鳳山','潮州']),
-      _Train(no:'莒光 105', type:'莒光', from:'嘉義', to:'台南', dep:'11:30', arr:'12:20', delay:0, stops:['嘉義','水上','南靖','後壁','台南']),
-      _Train(no:'區間 2311', type:'區間', from:'民雄', to:'台南', dep:'13:20', arr:'15:05', delay:0, stops:['民雄','嘉義','水上','南靖','新營','台南']),
-      _Train(no:'區間 2215', type:'區間', from:'大林', to:'嘉義', dep:'12:45', arr:'13:10', delay:0, stops:['大林','民雄','嘉義']),
-    ];
+    // ── Build north/south lists from API data ──────────────
+    final List<_Train> northbound = [];
+    final List<_Train> southbound = [];
 
-    // Filter by selected station (trains that stop at this station)
-    final trainFiltered = allBound.where((t) {
-      final stationMatch = t.stops.contains(_trainStation);
-      final searchMatch = _trainSearch.isEmpty ||
-          t.no.contains(_trainSearch) || t.stops.any((s) => s.contains(_trainSearch));
-      return stationMatch && searchMatch;
-    }).toList();
-
-    final northbound = trainFiltered.where((t) {
-      final fromIdx = t.stops.indexOf(_trainStation);
-      final northDests = ['台中','板橋','台北','花蓮'];
-      return northDests.any((d) {
-        final dIdx = t.stops.indexOf(d);
-        return dIdx > fromIdx && dIdx >= 0;
-      });
-    }).toList();
-
-    final southbound = trainFiltered.where((t) {
-      final fromIdx = t.stops.indexOf(_trainStation);
-      final southDests = ['台南','高雄','鳳山','潮州'];
-      return southDests.any((d) {
-        final dIdx = t.stops.indexOf(d);
-        return dIdx > fromIdx && dIdx >= 0;
-      });
-    }).toList();
+    if (_traTrains != null) {
+      for (final d in _traTrains!) {
+        final typeRaw = d['train_type_name'] as String? ?? '';
+        final noRaw   = d['train_no']?.toString() ?? '';
+        final dest    = d['destination_station'] as String? ?? '';
+        final dep     = d['departure_time'] as String? ?? '';
+        final dir     = d['direction'] as String? ?? '';
+        final label   = typeRaw.isNotEmpty ? '$typeRaw $noRaw' : noRaw;
+        final searchMatch = _trainSearch.isEmpty ||
+            label.contains(_trainSearch) || dest.contains(_trainSearch);
+        if (!searchMatch) continue;
+        final train = _Train(
+          no: label, type: typeRaw, from: _trainStation, to: dest,
+          dep: dep, arr: '', delay: 0, stops: [_trainStation, dest],
+        );
+        if (dir == '北上') northbound.add(train);
+        else if (dir == '南下') southbound.add(train);
+      }
+      northbound.sort((a, b) => a.dep.compareTo(b.dep));
+      southbound.sort((a, b) => a.dep.compareTo(b.dep));
+    }
 
     return ListView(
       padding: const EdgeInsets.all(14),
@@ -1140,7 +1189,7 @@ class _TransportScreenState extends State<TransportScreen>
                     underline: const SizedBox(),
                     style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
                     items: allStations.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                    onChanged: (v) => v != null ? setState(() => _trainStation = v) : null,
+                    onChanged: (v) { if (v != null) { setState(() => _trainStation = v); _fetchTra(); } },
                   ),
                 ),
               ]),
@@ -1149,7 +1198,7 @@ class _TransportScreenState extends State<TransportScreen>
               Wrap(spacing: 6, children: chiayiStations.map((s) {
                 final sel = s == _trainStation;
                 return GestureDetector(
-                  onTap: () => setState(() => _trainStation = s),
+                  onTap: () { setState(() => _trainStation = s); _fetchTra(); },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
@@ -1167,32 +1216,62 @@ class _TransportScreenState extends State<TransportScreen>
             ],
           ),
         ),
-        _infoTip('資料每分鐘更新，誤點資訊以臺鐵官網為準'),
+        _infoTip('資料由台鐵即時API提供，查詢結果以臺鐵官網為準'),
         const SizedBox(height: 14),
 
-        if (northbound.isNotEmpty) ...[
-          _trainSectionHeader('⬆️ 北上', '往台中・台北方向'),
-          const SizedBox(height: 8),
-          ...northbound.map((t) => _trainCard(t, _trainStation)),
-          const SizedBox(height: 16),
-        ],
-
-        if (southbound.isNotEmpty) ...[
-          _trainSectionHeader('⬇️ 南下', '往台南・高雄方向'),
-          const SizedBox(height: 8),
-          ...southbound.map((t) => _trainCard(t, _trainStation)),
-          const SizedBox(height: 16),
-        ],
-
-        if (northbound.isEmpty && southbound.isEmpty)
+        // ── Loading / Error states ───────────────────────
+        if (_traLoading)
           const Padding(
-            padding: EdgeInsets.only(top: 30),
+            padding: EdgeInsets.symmetric(vertical: 40),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_traError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 30),
             child: Center(child: Column(children: [
-              Text('🚂', style: TextStyle(fontSize: 40)),
-              SizedBox(height: 12),
-              Text('找不到從此站出發的班次', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+              const Text('🚂', style: TextStyle(fontSize: 40)),
+              const SizedBox(height: 12),
+              const Text('無法取得班次資料', style: TextStyle(fontWeight: FontWeight.w700,
+                  fontSize: 15, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              TextButton.icon(
+                onPressed: _fetchTra,
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('重試'),
+              ),
             ])),
-          ),
+          )
+        else ...[
+          if (northbound.isNotEmpty) ...[
+            _trainSectionHeader('⬆️ 北上', '往台中・台北方向'),
+            const SizedBox(height: 8),
+            ...northbound.map((t) => _trainCard(t, _trainStation)),
+            const SizedBox(height: 16),
+          ],
+          if (southbound.isNotEmpty) ...[
+            _trainSectionHeader('⬇️ 南下', '往台南・高雄方向'),
+            const SizedBox(height: 8),
+            ...southbound.map((t) => _trainCard(t, _trainStation)),
+            const SizedBox(height: 16),
+          ],
+          if (!_traLoading && _traTrains != null &&
+              northbound.isEmpty && southbound.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 30),
+              child: Center(child: Column(children: [
+                Text('🚂', style: TextStyle(fontSize: 40)),
+                SizedBox(height: 12),
+                Text('找不到從此站出發的班次',
+                    style: TextStyle(fontWeight: FontWeight.w700,
+                        fontSize: 16, color: AppColors.textPrimary)),
+              ])),
+            ),
+          if (_traTrains == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 30),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+        ],
 
         const SizedBox(height: 20),
       ],
@@ -1434,34 +1513,39 @@ class _TransportScreenState extends State<TransportScreen>
 
   // ── ALISHAN RAILWAY TAB ──
   Widget _buildAlishanTab() {
-    const routes = ['嘉義 → 阿里山', '嘉義 → 奮起湖', '阿里山 → 嘉義', '奮起湖 → 嘉義', '阿里山 ↔ 祝山（日出）'];
-    final schedules = <String, List<_AlishanTrain>>{
-      '嘉義 → 阿里山': [
-        const _AlishanTrain(no:'A01', type:'觀光列車', dep:'09:00', arr:'12:28', price:849, remark:'需事先訂票'),
-        const _AlishanTrain(no:'A03', type:'觀光列車', dep:'13:00', arr:'16:28', price:849, remark:'假日加開'),
-      ],
-      '嘉義 → 奮起湖': [
-        const _AlishanTrain(no:'B01', type:'普通車', dep:'08:00', arr:'10:50', price:440, remark:''),
-        const _AlishanTrain(no:'B03', type:'普通車', dep:'10:20', arr:'13:10', price:440, remark:''),
-        const _AlishanTrain(no:'B05', type:'普通車', dep:'14:00', arr:'16:50', price:440, remark:''),
-        const _AlishanTrain(no:'B07', type:'普通車', dep:'16:30', arr:'19:20', price:440, remark:'末班車'),
-      ],
-      '阿里山 → 嘉義': [
-        const _AlishanTrain(no:'A02', type:'觀光列車', dep:'14:00', arr:'17:25', price:849, remark:'需事先訂票'),
-        const _AlishanTrain(no:'A04', type:'觀光列車', dep:'16:00', arr:'19:25', price:849, remark:'假日加開'),
-      ],
-      '奮起湖 → 嘉義': [
-        const _AlishanTrain(no:'B02', type:'普通車', dep:'11:30', arr:'14:20', price:440, remark:''),
-        const _AlishanTrain(no:'B04', type:'普通車', dep:'15:00', arr:'17:50', price:440, remark:''),
-        const _AlishanTrain(no:'B06', type:'普通車', dep:'17:20', arr:'20:10', price:440, remark:'末班車'),
-      ],
-      '阿里山 ↔ 祝山（日出）': [
-        const _AlishanTrain(no:'S01', type:'祝山線', dep:'依日出時間', arr:'祝山', price:150, remark:'早晨日出班次'),
-        const _AlishanTrain(no:'S02', type:'祝山線', dep:'日出後30分', arr:'阿里山', price:150, remark:'回程'),
-        const _AlishanTrain(no:'S03', type:'沼平線', dep:'各整點', arr:'沼平', price:100, remark:'每整點發車'),
-      ],
-    };
-    final list = schedules[_alishanRoute] ?? [];
+    const routes = ['上行（往山上）', '下行（往嘉義）'];
+
+    // ── Build train list from Firestore data ──────────────
+    final List<_AlishanTrain> list = [];
+    if (_alishanDocs != null) {
+      final isUpward = _alishanRoute == '上行（往山上）';
+      final dirValue = isUpward ? 1 : 0;
+      for (final d in _alishanDocs!) {
+        final docDir = d['Direction'];
+        final dir = docDir is int ? docDir : (docDir as num?)?.toInt() ?? -1;
+        if (dir != dirValue) continue;
+        final trainNo = '${d['TrainNo'] ?? ''}';
+        final stopTimes = d['stopTimes'];
+        if (stopTimes == null) continue;
+        final sorted = List<Map<String, dynamic>>.from(
+            (stopTimes as List).map((s) => Map<String, dynamic>.from(s as Map)));
+        sorted.sort((a, b) =>
+            ((a['StopSequence'] as num?)?.toInt() ?? 0)
+                .compareTo((b['StopSequence'] as num?)?.toInt() ?? 0));
+        if (sorted.isEmpty) continue;
+        final firstStop = sorted.first;
+        final lastStop  = sorted.last;
+        list.add(_AlishanTrain(
+          no:     trainNo,
+          type:   '觀光列車',
+          dep:    firstStop['DepartureTime'] as String? ?? '',
+          arr:    lastStop['ArrivalTime'] as String? ?? '',
+          price:  0,
+          remark: '',
+        ));
+      }
+      list.sort((a, b) => a.dep.compareTo(b.dep));
+    }
 
     return ListView(
       padding: const EdgeInsets.all(14),
@@ -1495,7 +1579,9 @@ class _TransportScreenState extends State<TransportScreen>
         const SizedBox(height: 12),
         _infoTip('阿里山林業鐵路班次資訊，實際班次以林鐵官方公告為準，建議提前訂票'),
         const SizedBox(height: 12),
-        if (list.isEmpty)
+        if (_alishanLoading)
+          const Center(child: Padding(padding: EdgeInsets.only(top: 20), child: CircularProgressIndicator()))
+        else if (list.isEmpty)
           const Center(
             child: Padding(padding: EdgeInsets.only(top: 30),
               child: Text('目前無班次資料', style: TextStyle(color: AppColors.textHint, fontSize: 14)))),
@@ -1609,44 +1695,27 @@ class _TransportScreenState extends State<TransportScreen>
     final primary = Theme.of(context).colorScheme.primary;
     const thsrPurple = Color(0xFF9C27B0);
 
-    final northbound = [
-      _ThsrTrain(no:'0102', dep:'06:36', arr:'08:00', dest:'南港', price:1290, seats:'有空位',
-        stops:['嘉義','台中','板橋','台北','南港']),
-      _ThsrTrain(no:'0106', dep:'07:36', arr:'09:01', dest:'南港', price:1290, seats:'有空位',
-        stops:['嘉義','台中','桃園','台北','南港']),
-      _ThsrTrain(no:'0110', dep:'08:36', arr:'10:00', dest:'台北', price:1190, seats:'少量',
-        stops:['嘉義','台中','桃園','台北']),
-      _ThsrTrain(no:'0114', dep:'09:36', arr:'11:01', dest:'南港', price:1290, seats:'有空位',
-        stops:['嘉義','台中','台北','南港']),
-      _ThsrTrain(no:'0118', dep:'10:36', arr:'12:00', dest:'台北', price:1190, seats:'有空位',
-        stops:['嘉義','桃園','台北']),
-      _ThsrTrain(no:'0122', dep:'12:00', arr:'13:22', dest:'南港', price:1290, seats:'客滿',
-        stops:['嘉義','台中','苗栗','新竹','桃園','台北','南港']),
-      _ThsrTrain(no:'0126', dep:'13:36', arr:'15:01', dest:'台北', price:1190, seats:'有空位',
-        stops:['嘉義','台中','台北']),
-      _ThsrTrain(no:'0130', dep:'15:36', arr:'17:01', dest:'南港', price:1290, seats:'少量',
-        stops:['嘉義','台中','桃園','台北','南港']),
-      _ThsrTrain(no:'0134', dep:'17:36', arr:'19:01', dest:'南港', price:1290, seats:'有空位',
-        stops:['嘉義','台中','台北','南港']),
-      _ThsrTrain(no:'0138', dep:'19:36', arr:'21:00', dest:'台北', price:1190, seats:'有空位',
-        stops:['嘉義','台中','桃園','台北']),
-    ];
-    final southbound = [
-      _ThsrTrain(no:'0101', dep:'09:24', arr:'10:04', dest:'左營', price:1190, seats:'有空位',
-        stops:['南港','台北','桃園','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0105', dep:'11:24', arr:'12:04', dest:'左營', price:1190, seats:'少量',
-        stops:['台北','桃園','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0109', dep:'13:00', arr:'13:40', dest:'左營', price:1190, seats:'有空位',
-        stops:['南港','台北','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0113', dep:'15:00', arr:'15:40', dest:'左營', price:1190, seats:'有空位',
-        stops:['台北','桃園','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0117', dep:'17:00', arr:'17:40', dest:'左營', price:1190, seats:'客滿',
-        stops:['台北','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0121', dep:'18:24', arr:'19:04', dest:'左營', price:1190, seats:'少量',
-        stops:['南港','台北','桃園','台中','嘉義','台南','左營']),
-      _ThsrTrain(no:'0125', dep:'20:00', arr:'20:40', dest:'左營', price:1190, seats:'有空位',
-        stops:['台北','台中','嘉義','台南','左營']),
-    ];
+    // ── Build north/south lists from Cloud Function data ──
+    final List<_ThsrTrain> northbound = [];
+    final List<_ThsrTrain> southbound = [];
+
+    if (_thsrTrains != null) {
+      for (final d in _thsrTrains!) {
+        final noRaw = d['train_no']?.toString() ?? '';
+        final dep   = d['departure_time'] as String? ?? '';
+        final dest  = d['destination_station'] as String? ?? '';
+        final dir   = d['direction'] as String? ?? '';
+        final train = _ThsrTrain(
+          no: noRaw, dep: dep, arr: '', dest: dest,
+          price: 0, seats: '請至官網查詢',
+          stops: ['嘉義', dest],
+        );
+        if (dir == '北上') northbound.add(train);
+        else if (dir == '南下') southbound.add(train);
+      }
+      northbound.sort((a, b) => a.dep.compareTo(b.dep));
+      southbound.sort((a, b) => a.dep.compareTo(b.dep));
+    }
 
     final list = _thsrDirection == '北上' ? northbound : southbound;
     final today = DateTime.now();
@@ -1671,7 +1740,34 @@ class _TransportScreenState extends State<TransportScreen>
         children: [
           _infoTip(_thsrDirection == '北上' ? '往台中・台北・南港方向（停嘉義班次）' : '往台南・左營（高雄）方向（停嘉義班次）'),
           const SizedBox(height: 12),
-          ...list.map((t) => _thsrCard(t, primary, thsrPurple)),
+          if (_thsrLoading)
+            const Center(child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 30),
+                child: CircularProgressIndicator()))
+          else if (_thsrError != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: Column(children: [
+                const Text('🚅', style: TextStyle(fontSize: 36)),
+                const SizedBox(height: 10),
+                const Text('無法取得高鐵班次',
+                    style: TextStyle(fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary)),
+                TextButton.icon(
+                  onPressed: _fetchThsr,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('重試'),
+                ),
+              ])),
+            )
+          else if (list.isEmpty && _thsrTrains != null)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: Text('目前無此方向班次資料',
+                  style: TextStyle(color: AppColors.textHint))),
+            )
+          else
+            ...list.map((t) => _thsrCard(t, primary, thsrPurple)),
           const SizedBox(height: 12),
           // Toggle to full timetable
           GestureDetector(

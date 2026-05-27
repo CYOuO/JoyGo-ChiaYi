@@ -385,7 +385,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         icon: const Icon(Icons.add_rounded),
         label: const Text('新增消費',
             style: TextStyle(fontWeight: FontWeight.w700)),
-        elevation: 2,
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }

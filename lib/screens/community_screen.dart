@@ -380,6 +380,7 @@ class _CommunityScreenState extends State<CommunityScreen>
       ))),
       child: Container(
       margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(20),

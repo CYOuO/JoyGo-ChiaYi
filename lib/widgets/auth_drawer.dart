@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
 import '../screens/settings_screen.dart';
+import '../screens/login_page.dart';
 import '../models/dummy_data.dart';
 
 class AuthDrawer extends StatefulWidget {
@@ -19,42 +23,32 @@ class _AuthDrawerState extends State<AuthDrawer>
     with SingleTickerProviderStateMixin {
   // ── Auth UI state ──────────────────────────────────────
   bool _isLoggedIn = false;
-  bool _showLogin  = true;
-  bool _isLoading  = false;
+
+  // ── User photo (loaded from Firestore) ─────────────────
+  String? _userPhotoUrl;
 
   // ── Auth state stream ──────────────────────────────────
   StreamSubscription<fb_auth.User?>? _authSub;
-
-  // ── Form controllers ───────────────────────────────────
-  final _emailCtrl    = TextEditingController();
-  final _passwordCtrl = TextEditingController();
-  final _nicknameCtrl = TextEditingController();
-  final _confirmCtrl  = TextEditingController();
 
   // ── Animation ──────────────────────────────────────────
   late AnimationController _animController;
   late Animation<double>   _fadeAnim;
 
-  // ── Password visibility toggles ────────────────────────
-  bool _loginPwVisible    = false;
-  bool _registerPwVisible = false;
-  bool _confirmPwVisible  = false;
-
   @override
   void initState() {
     super.initState();
-    // Initialise from current Firebase auth state (synchronous — available
-    // immediately after Firebase.initializeApp() completes in main()).
     _isLoggedIn = fb_auth.FirebaseAuth.instance.currentUser != null;
+    if (_isLoggedIn) _loadUserPhoto();
 
-    // Also subscribe to authStateChanges so the UI reacts if the session is
-    // revoked server-side or restored after a cold start.
     _authSub = fb_auth.FirebaseAuth.instance.authStateChanges().listen((user) {
       if (!mounted) return;
       final loggedIn = user != null;
       if (loggedIn != _isLoggedIn) {
         setState(() => _isLoggedIn = loggedIn);
-        if (loggedIn) _animController.forward(from: 0);
+        if (loggedIn) {
+          _animController.forward(from: 0);
+          _loadUserPhoto();
+        }
       }
     });
 
@@ -70,10 +64,6 @@ class _AuthDrawerState extends State<AuthDrawer>
   void dispose() {
     _authSub?.cancel();
     _animController.dispose();
-    _emailCtrl.dispose();
-    _passwordCtrl.dispose();
-    _nicknameCtrl.dispose();
-    _confirmCtrl.dispose();
     super.dispose();
   }
 
@@ -81,150 +71,28 @@ class _AuthDrawerState extends State<AuthDrawer>
   //  Auth logic
   // ══════════════════════════════════════════════════════
 
-  Future<void> _doLogin() async {
-    final email = _emailCtrl.text.trim();
-    final pass  = _passwordCtrl.text;
-    if (email.isEmpty || pass.isEmpty) {
-      _showError('請填寫電子郵件和密碼');
-      return;
-    }
-    setState(() => _isLoading = true);
-    try {
-      await fb_auth.FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: pass);
-      if (!mounted) return;
-      setState(() => _isLoggedIn = true);
-      _animController.forward(from: 0);
-      // Close drawer → reveals home screen
-      Navigator.of(context).pop();
-    } on fb_auth.FirebaseAuthException catch (e) {
-      _showError(_authErrorMsg(e.code));
-    } catch (e) {
-      _showError('登入失敗，請稍後再試');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _doRegister() async {
-    final nickname = _nicknameCtrl.text.trim();
-    final email    = _emailCtrl.text.trim();
-    final pass     = _passwordCtrl.text;
-    final confirm  = _confirmCtrl.text;
-
-    if (nickname.isEmpty || email.isEmpty || pass.isEmpty || confirm.isEmpty) {
-      _showError('請填寫所有欄位');
-      return;
-    }
-    if (pass.length < 6) {
-      _showError('密碼至少需要 6 個字元');
-      return;
-    }
-    if (pass != confirm) {
-      _showError('兩次輸入的密碼不一致');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      final cred = await fb_auth.FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: email, password: pass);
-
-      // Set display name on Firebase Auth user
-      await cred.user?.updateDisplayName(nickname);
-
-      // Create Firestore user document with all tracked fields
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(cred.user!.uid)
-          .set({
-        'email':                email,
-        'nickname':             nickname,
-        'photoUrl':             null,
-        'bio':                  '',
-        'createdAt':            FieldValue.serverTimestamp(),
-        // Social
-        'following':            [],
-        'followers':            [],
-        // Saved / favourites
-        'savedSpots':           [],
-        'savedRestaurants':     [],
-        'savedTrips':           [],
-        // Check-ins / stamps
-        'checkedInSpots':       [],
-        'checkedInRestaurants': [],
-        // App settings (mirrors device prefs as cloud backup)
-        'themeIndex':           2,
-        'language':             'zh',
-        // Community
-        'postCount':            0,
-        'likeCount':            0,
-      });
-
-      if (!mounted) return;
-      setState(() => _isLoggedIn = true);
-      _animController.forward(from: 0);
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('歡迎加入探索諸羅，$nickname！🎉'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ));
-    } on fb_auth.FirebaseAuthException catch (e) {
-      _showError(_authErrorMsg(e.code));
-    } catch (e) {
-      _showError('註冊失敗，請稍後再試');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
   Future<void> _doLogout() async {
     await fb_auth.FirebaseAuth.instance.signOut();
-    setState(() {
-      _isLoggedIn = false;
-      _emailCtrl.clear();
-      _passwordCtrl.clear();
-      _nicknameCtrl.clear();
-      _confirmCtrl.clear();
-    });
-    _animController.forward(from: 0);
-  }
-
-  String _authErrorMsg(String code) {
-    switch (code) {
-      case 'email-already-in-use':
-        return '此電子郵件已被註冊，請直接登入';
-      case 'invalid-email':
-        return '電子郵件格式不正確';
-      case 'weak-password':
-        return '密碼強度不足，至少需要 6 個字元';
-      case 'user-not-found':
-        return '找不到此帳號，請先註冊';
-      case 'wrong-password':
-        return '密碼錯誤，請重新輸入';
-      case 'invalid-credential':
-        return '帳號或密碼不正確，請重新確認';
-      case 'too-many-requests':
-        return '嘗試次數過多，請稍後再試';
-      case 'network-request-failed':
-        return '網路連線異常，請稍後再試';
-      case 'user-disabled':
-        return '此帳號已被停用，請聯繫客服';
-      default:
-        return '操作失敗（$code），請稍後再試';
+    if (mounted) {
+      setState(() {
+        _isLoggedIn   = false;
+        _userPhotoUrl = null;
+      });
+      _animController.forward(from: 0);
     }
   }
 
-  void _showError(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor: AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+  Future<void> _loadUserPhoto() async {
+    final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users').doc(uid).get();
+      if (mounted && doc.exists) {
+        setState(() =>
+            _userPhotoUrl = doc.data()?['photoUrl'] as String?);
+      }
+    } catch (_) {}
   }
 
   // ══════════════════════════════════════════════════════
@@ -237,416 +105,173 @@ class _AuthDrawerState extends State<AuthDrawer>
       backgroundColor: AppColors.surface,
       child: FadeTransition(
         opacity: _fadeAnim,
-        child: _isLoggedIn ? _buildProfile(context) : _buildAuth(context),
+        child: _isLoggedIn ? _buildProfile(context) : _buildGuestView(context),
       ),
     );
   }
 
   // ══════════════════════════════════════════════════════
-  //  AUTH (Login / Register)
+  //  GUEST VIEW (未登入 — 引導前往 LoginPage)
   // ══════════════════════════════════════════════════════
-  Widget _buildAuth(BuildContext context) {
+  Widget _buildGuestView(BuildContext context) {
     final settings = context.watch<AppSettingsProvider>();
     final primary  = settings.currentTheme.primary;
     final primDark = settings.currentTheme.primaryDark;
 
     return SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Header gradient
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [primDark, primary],
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('🏯', style: TextStyle(fontSize: 40)),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '探索諸羅',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '登入以解鎖完整功能',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.8),
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Toggle tabs
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceMoss,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    _authTab('登入', _showLogin),
-                    _authTab('註冊', !_showLogin),
-                  ],
-                ),
-              ),
-            ),
-
-            // Form
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _showLogin ? _buildLoginForm() : _buildRegisterForm(),
-            ),
-
-            // Divider
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 20),
-              child: Row(
-                children: [
-                  const Expanded(child: Divider()),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('或',
-                        style: TextStyle(
-                            color: AppColors.textHint, fontSize: 12)),
-                  ),
-                  const Expanded(child: Divider()),
-                ],
-              ),
-            ),
-
-            // Social login (coming soon)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                children: [
-                  _socialButton('Google 帳號登入',   '🌐', const Color(0xFFEA4335)),
-                  const SizedBox(height: 10),
-                  _socialButton('Facebook 帳號登入', '📘', const Color(0xFF1877F2)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _authTab(String label, bool isSelected) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() => _showLogin = label == '登入');
-          _animController.forward(from: 0);
-        },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.all(4),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected ? AppColors.surface : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: isSelected
-                ? [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 4)]
-                : [],
-          ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              color: isSelected
-                  ? Theme.of(context).colorScheme.primary
-                  : AppColors.textHint,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── Login Form ──────────────────────────────────────────
-  Widget _buildLoginForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '歡迎回來 👋',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          '登入你的帳號繼續探索嘉義',
-          style: TextStyle(color: AppColors.textHint, fontSize: 13),
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: '電子郵件',
-            prefixIcon: Icon(Icons.email_outlined, size: 18),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _passwordCtrl,
-          obscureText: !_loginPwVisible,
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _doLogin(),
-          decoration: InputDecoration(
-            labelText: '密碼',
-            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _loginPwVisible
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                size: 18,
-              ),
-              onPressed: () =>
-                  setState(() => _loginPwVisible = !_loginPwVisible),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Align(
-          alignment: Alignment.centerRight,
-          child: GestureDetector(
-            onTap: () => _showForgotPassword(),
-            child: Text(
-              '忘記密碼？',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.primary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _doLogin,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('登入', style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ),
-        const SizedBox(height: 4),
-      ],
-    );
-  }
-
-  // ── Register Form ───────────────────────────────────────
-  Widget _buildRegisterForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          '建立帳號 🎉',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        const Text(
-          '加入探索諸羅，開始你的嘉義旅程',
-          style: TextStyle(color: AppColors.textHint, fontSize: 13),
-        ),
-        const SizedBox(height: 20),
-        TextField(
-          controller: _nicknameCtrl,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: '暱稱',
-            prefixIcon: Icon(Icons.person_outline_rounded, size: 18),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _emailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(
-            labelText: '電子郵件',
-            prefixIcon: Icon(Icons.email_outlined, size: 18),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _passwordCtrl,
-          obscureText: !_registerPwVisible,
-          textInputAction: TextInputAction.next,
-          decoration: InputDecoration(
-            labelText: '密碼（至少 6 個字元）',
-            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _registerPwVisible
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                size: 18,
-              ),
-              onPressed: () =>
-                  setState(() => _registerPwVisible = !_registerPwVisible),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _confirmCtrl,
-          obscureText: !_confirmPwVisible,
-          textInputAction: TextInputAction.done,
-          onSubmitted: (_) => _doRegister(),
-          decoration: InputDecoration(
-            labelText: '確認密碼',
-            prefixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _confirmPwVisible
-                    ? Icons.visibility_off_outlined
-                    : Icons.visibility_outlined,
-                size: 18,
-              ),
-              onPressed: () =>
-                  setState(() => _confirmPwVisible = !_confirmPwVisible),
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          height: 48,
-          child: ElevatedButton(
-            onPressed: _isLoading ? null : _doRegister,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 20, height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                  )
-                : const Text('建立帳號', style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ),
-        const SizedBox(height: 4),
-      ],
-    );
-  }
-
-  void _showForgotPassword() {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final ctrl = TextEditingController();
-        return AlertDialog(
-          backgroundColor: AppColors.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('重設密碼', style: TextStyle(fontWeight: FontWeight.w800)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('請輸入你的電子郵件，\n我們將寄送密碼重設連結。',
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.5)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: ctrl,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: '電子郵件',
-                  prefixIcon: Icon(Icons.email_outlined, size: 18),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final email = ctrl.text.trim();
-                if (email.isEmpty) return;
-                try {
-                  await fb_auth.FirebaseAuth.instance
-                      .sendPasswordResetEmail(email: email);
-                  if (!mounted) return;
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: const Text('密碼重設郵件已寄出，請檢查收件匣'),
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ));
-                } on fb_auth.FirebaseAuthException catch (e) {
-                  if (!mounted) return;
-                  Navigator.pop(ctx);
-                  _showError(_authErrorMsg(e.code));
-                }
-              },
-              child: const Text('發送'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _socialButton(String label, String icon, Color color) {
-    return OutlinedButton(
-      onPressed: () => _showComingSoon(context, label),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size(double.infinity, 46),
-        side: BorderSide(color: color.withValues(alpha: 0.4)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
         children: [
-          Text(icon, style: const TextStyle(fontSize: 18)),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
+          // ── Gradient header ──────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 36, 24, 32),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [primDark, primary],
+              ),
             ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('🏯', style: TextStyle(fontSize: 44)),
+                const SizedBox(height: 14),
+                const Text(
+                  '探索諸羅',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '嘉義最完整的在地旅遊夥伴',
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
+          // ── Login / Register prompt card ─────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceWarm,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.divider),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // Icon
+                  Container(
+                    width: 64, height: 64,
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.person_outline_rounded,
+                        color: primary, size: 32),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    '尚未登入',
+                    style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    '登入後可收藏景點、規劃行程、\n集章成就、與社群互動',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textHint,
+                        height: 1.6),
+                  ),
+                  const SizedBox(height: 20),
+                  // Login button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openLoginPage(context),
+                      icon: const Icon(Icons.login_rounded, size: 18),
+                      label: const Text('登入 / 註冊',
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 15)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Feature highlights ────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('登入後解鎖功能',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: primary)),
+                const SizedBox(height: 12),
+                _featureRow(Icons.favorite_outline_rounded, '收藏景點與美食'),
+                _featureRow(Icons.calendar_today_outlined,  '個人化行程規劃'),
+                _featureRow(Icons.military_tech_outlined,   '集章成就系統'),
+                _featureRow(Icons.people_outline_rounded,   '與旅人社群互動'),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+          const Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: Text('探索諸羅 v1.0.0',
+                style: TextStyle(color: AppColors.textHint, fontSize: 11)),
           ),
         ],
       ),
     );
+  }
+
+  Widget _featureRow(IconData icon, String label) => Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(children: [
+      Icon(icon, size: 18, color: AppColors.textSecondary),
+      const SizedBox(width: 10),
+      Text(label,
+          style: const TextStyle(
+              fontSize: 14, color: AppColors.textPrimary)),
+    ]),
+  );
+
+  void _openLoginPage(BuildContext context) {
+    // Capture root navigator BEFORE pop to avoid context invalidation
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    Navigator.of(context).pop(); // close drawer
+    rootNav.push(MaterialPageRoute(builder: (_) => const LoginPage()));
   }
 
   // ══════════════════════════════════════════════════════
@@ -687,8 +312,17 @@ class _AuthDrawerState extends State<AuthDrawer>
                       color: Colors.white.withValues(alpha: 0.2),
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    child: const Center(
-                        child: Text('😊', style: TextStyle(fontSize: 28))),
+                    child: ClipOval(
+                      child: _userPhotoUrl != null
+                          ? Image.network(
+                              _userPhotoUrl!,
+                              fit: BoxFit.cover,
+                              width: 60, height: 60,
+                              errorBuilder: (_, __, ___) =>
+                                  const Center(child: Text('😊', style: TextStyle(fontSize: 28))),
+                            )
+                          : const Center(child: Text('😊', style: TextStyle(fontSize: 28))),
+                    ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -716,9 +350,13 @@ class _AuthDrawerState extends State<AuthDrawer>
                     icon: const Icon(Icons.edit_outlined,
                         color: Colors.white, size: 18),
                     onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const _EditProfilePage()));
+                      final nav = Navigator.of(context);
+                      nav.pop();
+                      nav.push(MaterialPageRoute(
+                        builder: (_) => const _EditProfilePage(),
+                      )).then((_) {
+                        if (mounted) _loadUserPhoto();
+                      });
                     },
                   ),
                 ],
@@ -746,43 +384,42 @@ class _AuthDrawerState extends State<AuthDrawer>
             padding: const EdgeInsets.symmetric(vertical: 8),
             children: [
               _menuItem(Icons.person_outline_rounded, '我的資料', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(
-                        builder: (_) => const _ProfileDetailPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _ProfileDetailPage()));
               }),
               _menuItem(Icons.favorite_outline_rounded, '收藏清單', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _FavoritesPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _FavoritesPage()));
               }),
               _menuItem(Icons.calendar_today_outlined, '我的行程', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _MyTripsPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _MyTripsPage()));
               }),
               _menuItem(Icons.military_tech_outlined, '成就徽章', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _BadgesPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _BadgesPage()));
               }),
               _menuItem(Icons.camera_alt_outlined, '打卡照片', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _CheckinPhotosPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _CheckinPhotosPage()));
               }),
               const Divider(height: 20, indent: 16, endIndent: 16),
               _menuItem(Icons.notifications_outlined, '通知設定',
                   () => _showNotifSettings(context)),
               _menuItem(Icons.palette_rounded, '外觀與語言', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
               }),
               _menuItem(Icons.privacy_tip_outlined, '隱私政策', () {
-                Navigator.pop(context);
-                Navigator.push(context,
-                    MaterialPageRoute(builder: (_) => const _PrivacyPage()));
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute(builder: (_) => const _PrivacyPage()));
               }),
               _menuItem(Icons.help_outline_rounded, '常見問題',
                   () => _showFAQ(context)),
@@ -855,14 +492,7 @@ class _AuthDrawerState extends State<AuthDrawer>
     );
   }
 
-  void _showComingSoon(BuildContext ctx, String name) {
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-      content: Text('$name — 即將推出'),
-      backgroundColor: Theme.of(ctx).colorScheme.primary,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
-  }
+
 
   void _showNotifSettings(BuildContext ctx) {
     showDialog(
@@ -978,8 +608,10 @@ class _EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<_EditProfilePage> {
   final _nameCtrl = TextEditingController();
   final _bioCtrl  = TextEditingController();
-  bool _saving    = false;
-  String _avatar  = '😊';
+  bool    _saving      = false;
+  String  _avatar      = '😊';
+  XFile?  _pickedImage;
+  String? _photoUrl;   // currently saved URL from Firestore
 
   static const _avatars = ['😊','😎','🏔️','🌸','🎨','🚂','🦋','🍜','📷','🌲','⛰️','🎭'];
 
@@ -988,18 +620,19 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     super.initState();
     final fbUser = fb_auth.FirebaseAuth.instance.currentUser;
     _nameCtrl.text = fbUser?.displayName ?? '';
-    _loadBio();
+    _loadProfile();
   }
 
-  Future<void> _loadBio() async {
+  Future<void> _loadProfile() async {
     final uid = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
     try {
       final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (doc.exists && mounted) {
         setState(() {
-          _bioCtrl.text  = doc.data()?['bio'] as String? ?? '';
-          _avatar        = doc.data()?['avatar'] as String? ?? '😊';
+          _bioCtrl.text = doc.data()?['bio'] as String? ?? '';
+          _avatar       = doc.data()?['avatar'] as String? ?? '😊';
+          _photoUrl     = doc.data()?['photoUrl'] as String?;
         });
       }
     } catch (_) {}
@@ -1012,17 +645,54 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     super.dispose();
   }
 
+  Future<void> _pickPhoto() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512, maxHeight: 512,
+        imageQuality: 85);
+    if (picked != null && mounted) {
+      setState(() {
+        _pickedImage = picked;
+        _avatar      = '😊'; // clear emoji selection when photo is chosen
+      });
+    }
+  }
+
+  Future<String?> _uploadPhoto(String uid) async {
+    if (_pickedImage == null) return null;
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('users/$uid/avatar.jpg');
+      final task = await ref.putFile(
+        File(_pickedImage!.path),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      return await task.ref.getDownloadURL();
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> _save() async {
     final uid  = fb_auth.FirebaseAuth.instance.currentUser?.uid;
     final name = _nameCtrl.text.trim();
     if (uid == null || name.isEmpty) return;
     setState(() => _saving = true);
     try {
+      // Upload new photo if selected
+      String? newPhotoUrl;
+      if (_pickedImage != null) {
+        newPhotoUrl = await _uploadPhoto(uid);
+      }
+
       await fb_auth.FirebaseAuth.instance.currentUser?.updateDisplayName(name);
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         'nickname': name,
         'bio':      _bioCtrl.text.trim(),
         'avatar':   _avatar,
+        if (newPhotoUrl != null) 'photoUrl': newPhotoUrl,
       });
       if (!mounted) return;
       Navigator.pop(context);
@@ -1046,63 +716,126 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+
+    // Decide what to show in the big avatar circle
+    Widget avatarContent;
+    if (_pickedImage != null) {
+      avatarContent = Image.file(File(_pickedImage!.path),
+          fit: BoxFit.cover, width: 88, height: 88);
+    } else if (_photoUrl != null) {
+      avatarContent = Image.network(_photoUrl!, fit: BoxFit.cover,
+          width: 88, height: 88,
+          errorBuilder: (_, __, ___) =>
+              Center(child: Text(_avatar, style: const TextStyle(fontSize: 44))));
+    } else {
+      avatarContent = Center(child: Text(_avatar, style: const TextStyle(fontSize: 44)));
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('編輯個人資料', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: const Text('編輯個人資料',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         actions: [
           TextButton(
             onPressed: _saving ? null : _save,
             child: _saving
-                ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: primary))
-                : Text('儲存', style: TextStyle(fontWeight: FontWeight.w700, color: primary, fontSize: 15)),
+                ? SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: primary))
+                : Text('儲存',
+                    style: TextStyle(fontWeight: FontWeight.w700, color: primary, fontSize: 15)),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          // Avatar selector
+          // ── Avatar section ───────────────────────────────
           Center(
             child: Column(children: [
-              Container(
-                width: 88, height: 88,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: primary.withValues(alpha: 0.1),
-                  border: Border.all(color: primary, width: 2),
-                ),
-                child: Center(child: Text(_avatar, style: const TextStyle(fontSize: 44))),
-              ),
-              const SizedBox(height: 12),
-              const Text('選擇頭像', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 10, runSpacing: 10,
-                alignment: WrapAlignment.center,
-                children: _avatars.map((a) {
-                  final sel = a == _avatar;
-                  return GestureDetector(
-                    onTap: () => setState(() => _avatar = a),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      width: 48, height: 48,
+              GestureDetector(
+                onTap: _pickPhoto,
+                child: Stack(
+                  children: [
+                    Container(
+                      width: 88, height: 88,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: sel ? primary.withValues(alpha: 0.15) : AppColors.surfaceMoss,
-                        border: Border.all(color: sel ? primary : AppColors.divider, width: sel ? 2 : 1),
+                        color: primary.withValues(alpha: 0.1),
+                        border: Border.all(color: primary, width: 2),
                       ),
-                      child: Center(child: Text(a, style: const TextStyle(fontSize: 24))),
+                      child: ClipOval(child: avatarContent),
                     ),
-                  );
-                }).toList(),
+                    Positioned(
+                      right: 0, bottom: 0,
+                      child: Container(
+                        width: 26, height: 26,
+                        decoration: BoxDecoration(
+                          color: primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            color: Colors.white, size: 13),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(height: 6),
+              Text('點擊更換相片',
+                  style: TextStyle(fontSize: 11, color: primary)),
+              const SizedBox(height: 12),
+              // Emoji picker (hidden when a real photo is chosen)
+              if (_pickedImage == null && _photoUrl == null) ...[
+                const Text('或選擇 Emoji 頭像',
+                    style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 10, runSpacing: 10,
+                  alignment: WrapAlignment.center,
+                  children: _avatars.map((a) {
+                    final sel = a == _avatar && _pickedImage == null;
+                    return GestureDetector(
+                      onTap: () => setState(() => _avatar = a),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: sel ? primary.withValues(alpha: 0.15) : AppColors.surfaceMoss,
+                          border: Border.all(
+                              color: sel ? primary : AppColors.divider,
+                              width: sel ? 2 : 1),
+                        ),
+                        child: Center(child: Text(a,
+                            style: const TextStyle(fontSize: 24))),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ] else
+                // Show a "remove photo" option
+                TextButton.icon(
+                  onPressed: () => setState(() {
+                    _pickedImage = null;
+                    _photoUrl    = null;
+                  }),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                  label: const Text('移除照片，改用 Emoji'),
+                  style: TextButton.styleFrom(foregroundColor: AppColors.error),
+                ),
             ]),
           ),
+
           const SizedBox(height: 28),
-          const Text('基本資料', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
+
+          // ── Basic info ───────────────────────────────────
+          const Text('基本資料',
+              style: TextStyle(fontWeight: FontWeight.w800,
+                  fontSize: 14, color: AppColors.textPrimary)),
           const SizedBox(height: 12),
           TextField(
             controller: _nameCtrl,
@@ -1132,10 +865,10 @@ class _EditProfilePageState extends State<_EditProfilePage> {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: AppColors.divider),
             ),
-            child: Row(children: [
-              const Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textHint),
-              const SizedBox(width: 8),
-              const Expanded(child: Text(
+            child: const Row(children: [
+              Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textHint),
+              SizedBox(width: 8),
+              Expanded(child: Text(
                 '變更暱稱後需重新登入才會在所有裝置同步',
                 style: TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.4),
               )),

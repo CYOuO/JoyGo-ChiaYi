@@ -94,6 +94,31 @@ const kThemePresets = <ThemePreset>[
     primaryDark: Color(0xFF306898),
     primaryMist: Color(0xFFEEF7FF),
   ),
+  // ── Extra four to complete 3 rows of 5 ──────────────────────
+  ThemePreset(
+    name: '莓果紅',  emoji: '🍓',
+    primary:     Color(0xFFC0394A), // 莓果深紅
+    primaryDark: Color(0xFF97202F),
+    primaryMist: Color(0xFFFFECEE),
+  ),
+  ThemePreset(
+    name: '深海綠',  emoji: '🐊',
+    primary:     Color(0xFF2E8B5C), // 祖母綠
+    primaryDark: Color(0xFF1A6640),
+    primaryMist: Color(0xFFE8F6EF),
+  ),
+  ThemePreset(
+    name: '咖啡棕',  emoji: '☕',
+    primary:     Color(0xFF7B5E42), // 深可可棕
+    primaryDark: Color(0xFF5A3F28),
+    primaryMist: Color(0xFFF5EDE5),
+  ),
+  ThemePreset(
+    name: '暮光藍',  emoji: '🌆',
+    primary:     Color(0xFF4A6FA5), // 暮光鋼藍
+    primaryDark: Color(0xFF2D4F80),
+    primaryMist: Color(0xFFECF1F9),
+  ),
 ];
 
 // ═══════════════════════════════════════════════════════════

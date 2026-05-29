@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:hugeicons/hugeicons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -551,7 +552,7 @@ class _HomeScreenState extends State<HomeScreen> {
             pinned: true,
             backgroundColor: context.appPrimaryDark,
             leading: IconButton(
-              icon: const Icon(Icons.menu_rounded, color: Colors.white),
+              icon: HugeIcon(icon: HugeIcons.strokeRoundedMenu01, color: Colors.white, size: 22),
               onPressed: widget.onOpenDrawer,
             ),
             actions: [
@@ -559,7 +560,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Stack(
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                    icon: HugeIcon(icon: HugeIcons.strokeRoundedNotification01, color: Colors.white, size: 22),
                     onPressed: _goNotifications,
                   ),
                   if (_unreadCount > 0)
@@ -577,7 +578,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.search_rounded, color: Colors.white),
+                icon: HugeIcon(icon: HugeIcons.strokeRoundedSearch01, color: Colors.white, size: 22),
                 onPressed: _goSearch,
               ),
             ],

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:hugeicons/hugeicons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
@@ -796,12 +797,12 @@ class _TransportScreenState extends State<TransportScreen>
           controller: _tabController,
           labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
           unselectedLabelStyle: const TextStyle(fontSize: 11),
-          tabs: const [
-            Tab(icon: Icon(Icons.directions_bus_rounded, size: 18), text: '公車'),
-            Tab(icon: Icon(Icons.pedal_bike_rounded, size: 18), text: 'YouBike'),
-            Tab(icon: Icon(Icons.train_rounded, size: 18), text: '台鐵'),
-            Tab(icon: Icon(Icons.forest_rounded, size: 18), text: '阿里山'),
-            Tab(icon: Icon(Icons.directions_railway_filled_rounded, size: 18), text: '高鐵'),
+          tabs: [
+            Tab(icon: _HugeTabIcon(icon: HugeIcons.strokeRoundedBus01),   text: '公車'),
+            Tab(icon: _HugeTabIcon(icon: HugeIcons.strokeRoundedBicycle), text: 'YouBike'),
+            Tab(icon: _HugeTabIcon(icon: HugeIcons.strokeRoundedTrain01), text: '台鐵'),
+            Tab(icon: _HugeTabIcon(icon: HugeIcons.strokeRoundedTree01),  text: '阿里山'),
+            Tab(icon: _HugeTabIcon(icon: HugeIcons.strokeRoundedTrain02), text: '高鐵'),
           ],
         ),
       ),
@@ -2212,4 +2213,18 @@ class _ThsrTrain {
   final int price;
   const _ThsrTrain({required this.no, required this.dep, required this.arr,
     required this.dest, required this.stops, required this.price, required this.seats});
+}
+
+/// HugeIcon wrapper that inherits colour from TabBar's DefaultTextStyle
+/// (set by labelColor / unselectedLabelColor) so selected ≠ unselected.
+class _HugeTabIcon extends StatelessWidget {
+  final List<List<dynamic>> icon;
+  const _HugeTabIcon({required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = DefaultTextStyle.of(context).style.color
+        ?? Theme.of(context).colorScheme.primary;
+    return HugeIcon(icon: icon, color: color, size: 18);
+  }
 }

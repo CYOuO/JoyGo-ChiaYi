@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:hugeicons/hugeicons.dart';
 
 import 'theme/app_theme.dart';
 import 'providers/app_settings_provider.dart';
@@ -60,7 +61,6 @@ class _ExploreChiayiAppState extends State<ExploreChiayiApp> {
     return MaterialApp(
       title: '探索諸羅',
       debugShowCheckedModeBanner: false,
-      // Dynamic theme: changes with selected preset color
       theme: AppTheme.buildTheme(settings.currentTheme.primary),
       locale: const Locale('zh', 'TW'),
       home: _showSplash
@@ -81,16 +81,14 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  /// Incremented each time home taps "活動行事曆" → TripScreen listens and jumps to calendar tab.
   final ValueNotifier<int> _tripCalendarTrigger = ValueNotifier(0);
 
   void _openDrawer() => _scaffoldKey.currentState?.openDrawer();
   void _switchTab(int index) => setState(() => _currentIndex = index);
 
-  /// Switch bottom-nav to TripScreen AND signal it to open the calendar tab.
   void _goToTripCalendar() {
     _switchTab(2);
-    _tripCalendarTrigger.value++;   // always changes → listener always fires
+    _tripCalendarTrigger.value++;
   }
 
   @override
@@ -120,20 +118,19 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
-    // Re-render nav when language or theme changes
     final settings = context.watch<AppSettingsProvider>();
     final l10n     = settings.l10n;
     final primary  = settings.currentTheme.primary;
-    final mist     =
-        Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
+    final mist     = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
 
+    // ── HugeIcons 底部導覽 ──
     final navItems = [
-      _NavItem(Icons.home_rounded,           Icons.home_outlined,           l10n.navHome),
-      _NavItem(Icons.map_rounded,            Icons.map_outlined,            l10n.navMap),
-      _NavItem(Icons.calendar_month_rounded, Icons.calendar_month_outlined, l10n.navTrip),
-      _NavItem(Icons.receipt_long_rounded,   Icons.receipt_long_outlined,   l10n.navExpense),
-      _NavItem(Icons.people_rounded,         Icons.people_outline_rounded,  l10n.navCommunity),
-      _NavItem(Icons.military_tech_rounded,  Icons.military_tech_outlined,  l10n.navStamp),
+      _NavItem(HugeIcons.strokeRoundedHome09,       l10n.navHome),
+      _NavItem(HugeIcons.strokeRoundedLocation06,   l10n.navMap),
+      _NavItem(HugeIcons.strokeRoundedCalendar03,   l10n.navTrip),
+      _NavItem(HugeIcons.strokeRoundedWallet01,     l10n.navExpense),
+      _NavItem(HugeIcons.strokeRoundedUserGroup,    l10n.navCommunity),
+      _NavItem(HugeIcons.strokeRoundedAward01,      l10n.navStamp),
     ];
 
     return Scaffold(
@@ -144,8 +141,7 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  Widget _buildBottomNav(
-      List<_NavItem> navItems, Color primary, Color mist) {
+  Widget _buildBottomNav(List<_NavItem> navItems, Color primary, Color mist) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
@@ -168,14 +164,15 @@ class _MainShellState extends State<MainShell> {
               final index      = entry.key;
               final item       = entry.value;
               final isSelected = index == _currentIndex;
+              final iconColor  = isSelected ? primary : AppColors.textHint;
+
               return GestureDetector(
                 onTap: () => _switchTab(index),
                 behavior: HitTestBehavior.opaque,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   curve: Curves.easeOut,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: isSelected ? mist : Colors.transparent,
                     borderRadius: BorderRadius.circular(14),
@@ -183,7 +180,6 @@ class _MainShellState extends State<MainShell> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Icon bounces into view whenever this tab is selected
                       TweenAnimationBuilder<double>(
                         key: ValueKey('nav_${index}_${isSelected ? "on" : "off"}'),
                         tween: Tween<double>(
@@ -194,9 +190,9 @@ class _MainShellState extends State<MainShell> {
                         curve: Curves.easeOutBack,
                         builder: (_, v, child) =>
                             Transform.scale(scale: v, child: child),
-                        child: Icon(
-                          isSelected ? item.activeIcon : item.icon,
-                          color: isSelected ? primary : AppColors.textHint,
+                        child: HugeIcon(
+                          icon: item.icon,
+                          color: iconColor,
                           size: 22,
                         ),
                       ),
@@ -205,9 +201,7 @@ class _MainShellState extends State<MainShell> {
                         duration: const Duration(milliseconds: 200),
                         style: TextStyle(
                           fontSize: 10,
-                          fontWeight: isSelected
-                              ? FontWeight.w700
-                              : FontWeight.w400,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
                           color: isSelected ? primary : AppColors.textHint,
                         ),
                         child: Text(item.label),
@@ -225,7 +219,7 @@ class _MainShellState extends State<MainShell> {
 }
 
 class _NavItem {
-  final IconData activeIcon, icon;
+  final List<List<dynamic>> icon;
   final String label;
-  const _NavItem(this.activeIcon, this.icon, this.label);
+  const _NavItem(this.icon, this.label);
 }

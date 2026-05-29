@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
-import '../services/rail_service.dart';
+import '../services/rail_service.dart' show RailService, TdxService;
 import 'search_screen.dart';
 
 // ═══════════════════════════════════════════════════
@@ -610,17 +610,29 @@ class _TransportScreenState extends State<TransportScreen>
   String _thsrDirection     = '北上';
   bool   _thsrShowTimetable = false;  // toggle today ↔ full timetable
 
-  // ── Real rail data from Cloud Functions ──────────────────
+  // ── Real data from Spring Boot TDX server ────────────────
   static const _traStationIds = {
     '嘉義': '3160', '大林': '3141', '民雄': '3152', '水上': '3162', '南靖': '3163',
   };
+  // TRA
   List<Map<String, dynamic>>? _traTrains;
   bool    _traLoading = false;
   String? _traError;
 
-  List<Map<String, dynamic>>? _thsrTrains;
+  // THSR (separate N/S lists)
+  List<Map<String, dynamic>> _thsrNorth = [];
+  List<Map<String, dynamic>> _thsrSouth = [];
   bool    _thsrLoading = false;
   String? _thsrError;
+
+  // YouBike
+  List<Map<String, dynamic>> _youbikeData = [];
+  bool _youbikeLoading = true;
+  String? _youbikeError;
+
+  // Bus real ETA: route name → list of stop ETA records
+  Map<String, List<Map<String, dynamic>>> _busRealData = {};
+  bool _busLoading = true;
 
   List<Map<String, dynamic>>? _alishanDocs;
   bool _alishanLoading = false;
@@ -632,16 +644,16 @@ class _TransportScreenState extends State<TransportScreen>
     _startCountdown();
     _fetchTra();
     _fetchThsr();
+    _fetchYoubike();
+    _fetchBus();
     _fetchAlishan();
   }
 
   // ── Fetch helpers ─────────────────────────────────────────
-  String get _todayDateStr {
-    // Always compute in Taiwan timezone (UTC+8) — TDX API rejects historical dates.
-    // A device set to UTC would return yesterday's date after midnight in Taiwan,
-    // causing TDX to reject the request with "TrainDate: 無提供查詢歷史資料".
+  // 台灣時區今日日期（TDX API 不接受 UTC 日期）
+  String get _todayTw {
     final now = DateTime.now().toUtc().add(const Duration(hours: 8));
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return '${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}';
   }
 
   Future<void> _fetchTra() async {
@@ -649,8 +661,8 @@ class _TransportScreenState extends State<TransportScreen>
     if (!mounted) return;
     setState(() { _traLoading = true; _traError = null; });
     try {
-      final result = await RailService.queryTra(
-          trainDate: _todayDateStr, stationId: stationId);
+      // Spring Boot liveboard API
+      final result = await TdxService.traLiveboard(stationId);
       if (mounted) setState(() { _traTrains = result; _traLoading = false; });
     } catch (e) {
       if (mounted) setState(() { _traLoading = false; _traError = e.toString(); });
@@ -661,10 +673,53 @@ class _TransportScreenState extends State<TransportScreen>
     if (!mounted) return;
     setState(() { _thsrLoading = true; _thsrError = null; });
     try {
-      final result = await RailService.queryThsr(trainDate: _todayDateStr);
-      if (mounted) setState(() { _thsrTrains = result; _thsrLoading = false; });
+      // 嘉義(1040) 北上→南港(1000) / 南下→左營(1060)
+      final results = await Future.wait([
+        TdxService.thsrOD(origin: '1040', dest: '1000', date: _todayTw),
+        TdxService.thsrOD(origin: '1040', dest: '1060', date: _todayTw),
+      ]);
+      if (mounted) {
+        setState(() {
+          _thsrNorth = results[0];
+          _thsrSouth = results[1];
+          _thsrLoading = false;
+          _thsrError = null;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() { _thsrLoading = false; _thsrError = e.toString(); });
+    }
+  }
+
+  Future<void> _fetchYoubike() async {
+    if (!mounted) return;
+    setState(() { _youbikeLoading = true; _youbikeError = null; });
+    try {
+      final result = await TdxService.youbike();
+      if (mounted) setState(() { _youbikeData = result; _youbikeLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _youbikeLoading = false; _youbikeError = e.toString(); });
+    }
+  }
+
+  // 嘉義市常見路線
+  static const _busRoutes = ['中山幹線', '博愛幹線', '文化幹線', '忠孝幹線'];
+
+  Future<void> _fetchBus() async {
+    if (!mounted) return;
+    setState(() => _busLoading = true);
+    try {
+      final results = await Future.wait(
+        _busRoutes.map((r) => TdxService.bus('Chiayi', r)),
+      );
+      if (!mounted) return;
+      final Map<String, List<Map<String, dynamic>>> map = {};
+      for (int i = 0; i < _busRoutes.length; i++) {
+        map[_busRoutes[i]] = results[i];
+      }
+      setState(() { _busRealData = map; _busLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _busLoading = false);
     }
   }
 
@@ -763,21 +818,37 @@ class _TransportScreenState extends State<TransportScreen>
     );
   }
 
+  /// 取得某路線的最小 EstimateTime（秒→分），-1 表示無資料
+  int _busEtaMin(String routeName) {
+    final stops = _busRealData[routeName];
+    if (stops == null || stops.isEmpty) return -1;
+    int? min;
+    for (final s in stops) {
+      final eta = (s['EstimateTime'] as num?)?.toInt();
+      if (eta != null && eta >= 0) {
+        if (min == null || eta < min) min = eta;
+      }
+    }
+    return min != null ? (min ~/ 60) : -1;
+  }
+
   // ── BUS TAB ──
   Widget _buildBusTab() {
-    final allStops = ['嘉義火車站', '文化路', '嘉義公園', '嘉義高中', '中山路', '東市場', '竹崎', '奮起湖', '阿里山', '太保市', '故宮南院'];
-    final allDests = ['全部終點', '文化路', '嘉義公園', '東市場', '阿里山', '故宮南院'];
+    final allStops = ['嘉義火車站', '中山路', '博愛路', '文化路', '忠孝路', '東市場', '太保市', '故宮南院'];
+    final allDests = ['全部終點', '中山路', '博愛路', '文化路', '忠孝路'];
 
-    final busData = [
-      _BusRoute(route:'紅幹線', from:'嘉義火車站', to:'東市場', etaMin:3,
-        stops:['嘉義火車站','中正路口','文化路','東市場'], color:const Color(0xFFC4856A), current:'中正路口', progress:0.35),
-      _BusRoute(route:'藍幹線', from:'嘉義火車站', to:'嘉義公園', etaMin:8,
-        stops:['嘉義火車站','林森路','嘉義公園'], color:const Color(0xFF88B8C8), current:'林森路', progress:0.55),
-      _BusRoute(route:'101', from:'嘉義火車站', to:'阿里山', etaMin:45,
-        stops:['嘉義火車站','竹崎','奮起湖','阿里山'], color:Theme.of(context).colorScheme.primary, current:'竹崎', progress:0.25),
-      _BusRoute(route:'7218', from:'嘉義火車站', to:'故宮南院', etaMin:22,
-        stops:['嘉義火車站','太保市','故宮南院'], color:const Color(0xFF8F7DB8), current:'太保市', progress:0.50),
+    // 路線定義（固定資訊）
+    final routeDefs = [
+      _BusRoute(route:'中山幹線', from:'嘉義火車站', to:'中山路終站', etaMin:_busEtaMin('中山幹線'),
+        stops:['嘉義火車站','中山路','中山路終站'], color:const Color(0xFFC4856A), current:'—', progress:0.0),
+      _BusRoute(route:'博愛幹線', from:'嘉義火車站', to:'博愛路終站', etaMin:_busEtaMin('博愛幹線'),
+        stops:['嘉義火車站','博愛路','博愛路終站'], color:const Color(0xFF88B8C8), current:'—', progress:0.0),
+      _BusRoute(route:'文化幹線', from:'嘉義火車站', to:'文化路終站', etaMin:_busEtaMin('文化幹線'),
+        stops:['嘉義火車站','文化路','文化路終站'], color:Theme.of(context).colorScheme.primary, current:'—', progress:0.0),
+      _BusRoute(route:'忠孝幹線', from:'嘉義火車站', to:'忠孝路終站', etaMin:_busEtaMin('忠孝幹線'),
+        stops:['嘉義火車站','忠孝路','忠孝路終站'], color:const Color(0xFF8F7DB8), current:'—', progress:0.0),
     ];
+    final busData = routeDefs;
 
     // Filter: route must pass through both origin AND destination
     final q = _busSearch.trim();
@@ -917,7 +988,10 @@ class _TransportScreenState extends State<TransportScreen>
 
   Widget _busCard(_BusRoute b) {
     final eta = b.etaMin;
-    final etaColor = eta <= 5 ? AppColors.error : eta <= 15 ? AppColors.warning : Theme.of(context).colorScheme.primary;
+    final etaColor = eta < 0 ? AppColors.textHint
+        : eta <= 5 ? AppColors.error
+        : eta <= 15 ? AppColors.warning
+        : Theme.of(context).colorScheme.primary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -955,9 +1029,11 @@ class _TransportScreenState extends State<TransportScreen>
               ),
               // ETA
               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                Text('$eta 分鐘',
+                Text(eta < 0 ? (_busLoading ? '查詢中' : '無資料')
+                    : '$eta 分鐘',
                   style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: etaColor)),
-                Text('後到站', style: TextStyle(fontSize: 10, color: etaColor.withValues(alpha: 0.7))),
+                if (eta >= 0)
+                  Text('後到站', style: TextStyle(fontSize: 10, color: etaColor.withValues(alpha: 0.7))),
               ]),
             ]),
           ),
@@ -1000,21 +1076,21 @@ class _TransportScreenState extends State<TransportScreen>
 
   // ── YOUBIKE TAB ──
   Widget _buildYouBikeTab() {
-    final allStations = [
-      {'name':'嘉義火車站', 'available':8, 'empty':4, 'dist':'0.1km', 'update':'1分鐘前'},
-      {'name':'文化路夜市口', 'available':3, 'empty':9, 'dist':'0.3km', 'update':'2分鐘前'},
-      {'name':'嘉義公園', 'available':12, 'empty':2, 'dist':'0.5km', 'update':'剛剛'},
-      {'name':'嘉義高中', 'available':0, 'empty':14, 'dist':'0.7km', 'update':'3分鐘前'},
-      {'name':'嘉義市立美術館', 'available':6, 'empty':6, 'dist':'0.9km', 'update':'1分鐘前'},
-      {'name':'故宮南院', 'available':15, 'empty':3, 'dist':'4.2km', 'update':'剛剛'},
-      {'name':'嘉義大學', 'available':5, 'empty':7, 'dist':'1.1km', 'update':'2分鐘前'},
-      {'name':'北門車站', 'available':2, 'empty':10, 'dist':'1.5km', 'update':'1分鐘前'},
-    ];
-
+    final primary = Theme.of(context).colorScheme.primary;
     final q = _youbikeSearch.trim().toLowerCase();
+
+    // 從實時 API 資料建立站點列表
+    final allStations = _youbikeData.where((s) {
+      final status = (s['ServiceStatus'] as num?)?.toInt() ?? 0;
+      return status == 1; // 1 = 服務中
+    }).toList();
+
     final stations = q.isEmpty
         ? allStations
-        : allStations.where((s) => (s['name'] as String).toLowerCase().contains(q)).toList();
+        : allStations.where((s) {
+            final uid = (s['station_uid'] as String? ?? '').toLowerCase();
+            return uid.contains(q);
+          }).toList();
 
     return Column(
       children: [
@@ -1023,7 +1099,7 @@ class _TransportScreenState extends State<TransportScreen>
           padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: TextField(
             decoration: InputDecoration(
-              hintText: '搜尋站點名稱...',
+              hintText: '搜尋站點代號...',
               prefixIcon: const Icon(Icons.search_rounded, size: 18),
               suffixIcon: _youbikeSearch.isNotEmpty
                 ? IconButton(icon: const Icon(Icons.clear_rounded, size: 16),
@@ -1035,86 +1111,110 @@ class _TransportScreenState extends State<TransportScreen>
             onChanged: (v) => setState(() => _youbikeSearch = v),
           ),
         ),
-      Expanded(child: stations.isEmpty
-        ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text('🔍', style: TextStyle(fontSize: 40)),
-            SizedBox(height: 12),
-            Text('找不到符合的站點', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-          ]))
-        : ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-        _infoTip('YouBike 站點資訊即時更新，顯示距離為直線距離'),
-        const SizedBox(height: 10),
-        ...stations.map((s) {
-          final available = s['available'] as int;
-          final empty = s['empty'] as int;
-          final total = available + empty;
-          final ratio = total > 0 ? available / total : 0.0;
-          final statusColor = available > 5 ? Theme.of(context).colorScheme.primary
-              : available > 0 ? AppColors.warning : AppColors.error;
-
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surfaceWarm,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Column(
-              children: [
-                Row(children: [
-                  Container(width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12)),
-                    child: const Center(child: Text('🚲', style: TextStyle(fontSize: 20)))),
-                  const SizedBox(width: 12),
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(s['name'] as String,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
-                    Row(children: [
-                      const Icon(Icons.near_me_rounded, size: 11, color: AppColors.textHint),
-                      Text(' ${s['dist']} · 更新：${s['update']}',
-                        style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
-                    ]),
-                  ])),
-                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    Text('可借 $available 輛',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: statusColor)),
-                    Text('空位 $empty 格',
-                      style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                  ]),
-                ]),
-                const SizedBox(height: 10),
-                Row(children: [
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                        Text('可借', style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w600)),
-                        Text('$available/$total 輛', style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
-                      ]),
-                      const SizedBox(height: 4),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: ratio, minHeight: 8,
-                          backgroundColor: AppColors.divider,
-                          valueColor: AlwaysStoppedAnimation<Color>(statusColor),
-                        ),
-                      ),
-                    ]),
+        Expanded(
+          child: _youbikeLoading
+            ? Center(child: CircularProgressIndicator(color: primary, strokeWidth: 2.5))
+            : _youbikeError != null
+              ? _youbikeErrorView(primary)
+              : stations.isEmpty
+                ? const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text('🔍', style: TextStyle(fontSize: 40)),
+                    SizedBox(height: 12),
+                    Text('找不到符合的站點', style: TextStyle(fontWeight: FontWeight.w700,
+                        fontSize: 16, color: AppColors.textPrimary)),
+                  ]))
+                : ListView(
+                    padding: const EdgeInsets.all(14),
+                    children: [
+                      _infoTip('YouBike 即時車位資訊，每60秒由TDX更新'),
+                      const SizedBox(height: 10),
+                      ...stations.map((s) => _youbikeCard(s, primary)),
+                    ],
                   ),
-                ]),
-              ],
-            ),
-          );
-        }),
-      ],
         ),
+      ],
+    );
+  }
+
+  Widget _youbikeErrorView(Color primary) => Center(child: Column(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      const Text('🚲', style: TextStyle(fontSize: 40)),
+      const SizedBox(height: 12),
+      const Text('無法取得YouBike資料', style: TextStyle(fontWeight: FontWeight.w700,
+          fontSize: 15, color: AppColors.textPrimary)),
+      const SizedBox(height: 6),
+      const Text('請確認 server 是否啟動', style: TextStyle(
+          fontSize: 12, color: AppColors.textHint)),
+      const SizedBox(height: 14),
+      TextButton.icon(
+        onPressed: _fetchYoubike,
+        icon: const Icon(Icons.refresh_rounded, size: 16),
+        label: const Text('重試'),
       ),
     ],
+  ));
+
+  Widget _youbikeCard(Map<String, dynamic> s, Color primary) {
+    final uid       = s['station_uid'] as String? ?? '';
+    final general   = (s['GeneralBikes']  as num?)?.toInt() ?? 0;
+    final electric  = (s['ElectricBikes'] as num?)?.toInt() ?? 0;
+    final returnSlots = (s['AvailableReturnBikes'] as num?)?.toInt() ?? 0;
+    final available = general + electric;
+    final total     = available + returnSlots;
+    final ratio     = total > 0 ? available / total : 0.0;
+    final statusColor = available > 5 ? primary
+        : available > 0 ? AppColors.warning : AppColors.error;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceWarm,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(children: [
+        Row(children: [
+          Container(width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12)),
+            child: const Center(child: Text('🚲', style: TextStyle(fontSize: 20)))),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(uid, style: const TextStyle(fontWeight: FontWeight.w700,
+                fontSize: 13, color: AppColors.textPrimary)),
+            if (electric > 0)
+              Text('⚡ 電動 $electric 輛',
+                style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
+          ])),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text('可借 $available 輛',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: statusColor)),
+            Text('還車 $returnSlots 格',
+              style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+          ]),
+        ]),
+        const SizedBox(height: 10),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('可借', style: TextStyle(fontSize: 10, color: statusColor,
+                fontWeight: FontWeight.w600)),
+            Text('$available/$total 輛',
+                style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
+          ]),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: ratio, minHeight: 8,
+              backgroundColor: AppColors.divider,
+              valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+            ),
+          ),
+        ]),
+      ]),
     );
   }
 
@@ -1129,21 +1229,23 @@ class _TransportScreenState extends State<TransportScreen>
 
     if (_traTrains != null) {
       for (final d in _traTrains!) {
+        // Spring Boot liveboard 欄位:
+        //   train_no, train_type_name, direction(int:0南下/1北上),
+        //   delay_time(int秒), schedule_departure_time, schedule_arrival_time
         final typeRaw = d['train_type_name'] as String? ?? '';
         final noRaw   = d['train_no']?.toString() ?? '';
-        final dest    = d['destination_station'] as String? ?? '';
-        final dep     = d['departure_time'] as String? ?? '';
-        final dir     = d['direction'] as String? ?? '';
+        final dep     = d['schedule_departure_time'] as String? ?? '';
+        final delay   = (d['delay_time'] as num?)?.toInt() ?? 0;
+        final dirInt  = (d['direction'] as num?)?.toInt() ?? -1;
         final label   = typeRaw.isNotEmpty ? '$typeRaw $noRaw' : noRaw;
-        final searchMatch = _trainSearch.isEmpty ||
-            label.contains(_trainSearch) || dest.contains(_trainSearch);
+        final searchMatch = _trainSearch.isEmpty || label.contains(_trainSearch);
         if (!searchMatch) continue;
         final train = _Train(
-          no: label, type: typeRaw, from: _trainStation, to: dest,
-          dep: dep, arr: '', delay: 0, stops: [_trainStation, dest],
+          no: label, type: typeRaw, from: _trainStation, to: '',
+          dep: dep, arr: '', delay: delay ~/ 60, stops: [_trainStation],
         );
-        if (dir == '北上') northbound.add(train);
-        else if (dir == '南下') southbound.add(train);
+        if (dirInt == 1) northbound.add(train);
+        else if (dirInt == 0) southbound.add(train);
       }
       northbound.sort((a, b) => a.dep.compareTo(b.dep));
       southbound.sort((a, b) => a.dep.compareTo(b.dep));
@@ -1699,23 +1801,23 @@ class _TransportScreenState extends State<TransportScreen>
     final List<_ThsrTrain> northbound = [];
     final List<_ThsrTrain> southbound = [];
 
-    if (_thsrTrains != null) {
-      for (final d in _thsrTrains!) {
-        final noRaw = d['train_no']?.toString() ?? '';
-        final dep   = d['departure_time'] as String? ?? '';
-        final dest  = d['destination_station'] as String? ?? '';
-        final dir   = d['direction'] as String? ?? '';
-        final train = _ThsrTrain(
-          no: noRaw, dep: dep, arr: '', dest: dest,
+    // Spring Boot THSR OD 欄位: TrainNo, DepartureTime, ArrivalTime, EndingStationName
+    void parseList(List<Map<String, dynamic>> src, List<_ThsrTrain> target) {
+      for (final d in src) {
+        final no   = d['TrainNo']?.toString() ?? '';
+        final dep  = d['DepartureTime'] as String? ?? '';
+        final arr  = d['ArrivalTime'] as String? ?? '';
+        final dest = d['EndingStationName'] as String? ?? '';
+        target.add(_ThsrTrain(
+          no: no, dep: dep, arr: arr, dest: dest,
           price: 0, seats: '請至官網查詢',
           stops: ['嘉義', dest],
-        );
-        if (dir == '北上') northbound.add(train);
-        else if (dir == '南下') southbound.add(train);
+        ));
       }
-      northbound.sort((a, b) => a.dep.compareTo(b.dep));
-      southbound.sort((a, b) => a.dep.compareTo(b.dep));
+      target.sort((a, b) => a.dep.compareTo(b.dep));
     }
+    parseList(_thsrNorth, northbound);
+    parseList(_thsrSouth, southbound);
 
     final list = _thsrDirection == '北上' ? northbound : southbound;
     final today = DateTime.now();
@@ -1760,7 +1862,7 @@ class _TransportScreenState extends State<TransportScreen>
                 ),
               ])),
             )
-          else if (list.isEmpty && _thsrTrains != null)
+          else if (list.isEmpty && !_thsrLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(child: Text('目前無此方向班次資料',

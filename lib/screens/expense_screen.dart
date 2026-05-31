@@ -68,7 +68,8 @@ class Settlement {
 // ═══════════════════════════════════════════════
 
 class ExpenseScreen extends StatefulWidget {
-  const ExpenseScreen({super.key});
+  final bool embedded;
+  const ExpenseScreen({super.key, this.embedded = false});
 
   @override
   State<ExpenseScreen> createState() => _ExpenseScreenState();
@@ -327,6 +328,29 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     final primaryMist = Color.lerp(primary, Colors.white, 0.88)!;
+    final tabBar = TabBar(
+      controller: _tabController,
+      tabs: const [
+        Tab(text: '帳單明細'),
+        Tab(text: '分帳結算'),
+        Tab(text: '統計圖表'),
+      ],
+    );
+    final body = TabBarView(
+      controller: _tabController,
+      children: [
+        _buildExpenseListTab(),
+        _buildSettlementTab(),
+        _buildChartTab(),
+      ],
+    );
+    // When embedded in trip detail, skip Scaffold+AppBar
+    if (widget.embedded) {
+      return Column(children: [
+        Material(color: AppColors.surface, child: tabBar),
+        Expanded(child: body),
+      ]);
+    }
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -361,23 +385,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             onPressed: () => _showMemberManager(context),
           ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: '帳單明細'),
-            Tab(text: '分帳結算'),
-            Tab(text: '統計圖表'),
-          ],
-        ),
+        bottom: tabBar,
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildExpenseListTab(),
-          _buildSettlementTab(),
-          _buildChartTab(),
-        ],
-      ),
+      body: body,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddExpense(context),
         backgroundColor: primary,

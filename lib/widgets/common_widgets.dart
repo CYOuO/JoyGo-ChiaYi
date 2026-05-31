@@ -230,6 +230,45 @@ class _SpotCardState extends State<SpotCard>
 }
 
 // ===== SECTION HEADER =====
+// ══════════════════════════════════════════════════════════════
+//  _BrushPainter — 在文字底部畫一條手感不規則的粗筆刷底色
+//  模擬「先用麥克筆/毛筆刷一筆，再寫字上去」的感覺
+// ══════════════════════════════════════════════════════════════
+class _BrushPainter extends CustomPainter {
+  final Color color;
+  const _BrushPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    // 筆刷：硬邊，靠下，像螢光筆刷過文字下半截
+    final path = Path();
+    final top    = size.height * 0.60;
+    final bottom = size.height * 0.95;
+
+    path.moveTo(-2, top + 1);
+    path.cubicTo(
+      size.width * 0.25, top - 3,
+      size.width * 0.60, top + 4,
+      size.width + 3,    top,
+    );
+    path.lineTo(size.width + 3, bottom);
+    path.cubicTo(
+      size.width * 0.55, bottom + 3,
+      size.width * 0.20, bottom - 2,
+      -2, bottom + 1,
+    );
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BrushPainter old) => old.color != color;
+}
+
 class SectionHeader extends StatelessWidget {
   final String title;
   final String? actionText;
@@ -245,23 +284,31 @@ class SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final brushColor = primary.withValues(alpha: 0.18);
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Container(
-          width: 4,
-          height: 20,
-          decoration: BoxDecoration(
-            color: primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textPrimary,
+        CustomPaint(
+          painter: _BrushPainter(color: brushColor),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+                letterSpacing: 0.3,
+                shadows: [
+                  Shadow(
+                    color: primary.withValues(alpha: 0.15),
+                    blurRadius: 0,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const Spacer(),
@@ -692,6 +739,121 @@ class _TapFeedbackState extends State<TapFeedback>
         builder: (_, child) =>
             Transform.scale(scale: _scale.value, child: child),
         child: widget.child,
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  WashiTapeDivider — 仿紙膠帶分隔線（半透明色帶 + 不規則邊緣）
+// ═══════════════════════════════════════════════════════════
+
+class WashiTapeDivider extends StatelessWidget {
+  final Color? color;
+  final double height;
+  const WashiTapeDivider({super.key, this.color, this.height = 8});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12);
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+      child: CustomPaint(
+        size: Size(double.infinity, height),
+        painter: _WashiPainter(c),
+      ),
+    );
+  }
+}
+
+class _WashiPainter extends CustomPainter {
+  final Color color;
+  const _WashiPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..style = PaintingStyle.fill;
+    final path = Path();
+    // Slightly wavy top edge
+    path.moveTo(0, 2);
+    for (double x = 0; x < size.width; x += 12) {
+      path.lineTo(x + 4, 0);
+      path.lineTo(x + 8, 2.5);
+      path.lineTo(x + 12, 0.5);
+    }
+    path.lineTo(size.width, size.height - 2);
+    // Slightly wavy bottom edge
+    for (double x = size.width; x > 0; x -= 14) {
+      path.lineTo(x - 5, size.height);
+      path.lineTo(x - 9, size.height - 2);
+      path.lineTo(x - 14, size.height - 0.5);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WashiPainter old) => old.color != color;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PolaroidCard — 仿拍立得風格的圖片卡（白邊 + 微微傾斜）
+// ═══════════════════════════════════════════════════════════
+
+class PolaroidCard extends StatelessWidget {
+  final String imageUrl;
+  final String? caption;
+  final double tiltDegrees;
+  final double width;
+
+  const PolaroidCard({
+    super.key,
+    required this.imageUrl,
+    this.caption,
+    this.tiltDegrees = 0,
+    this.width = 160,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: tiltDegrees * 3.14159 / 180,
+      child: Container(
+        width: width,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 12,
+              offset: const Offset(2, 4)),
+          ],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: Image.network(imageUrl,
+                width: width - 16, height: width - 16,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  width: width - 16, height: width - 16,
+                  color: const Color(0xFFF0EDE8),
+                  child: const Icon(Icons.photo_outlined, color: AppColors.textHint))),
+            ),
+          ),
+          if (caption != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 10),
+              child: Text(caption!,
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.3),
+                maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+            )
+          else
+            const SizedBox(height: 10),
+        ]),
       ),
     );
   }

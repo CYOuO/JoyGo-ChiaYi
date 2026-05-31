@@ -1,7 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+// ignore_for_file: unused_element
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -11,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart' show SpotRatingSection;
+import '../widgets/spot_save_button.dart';
 
 // ═══════════════════════════════════════════════════════════
 //  常數
@@ -34,33 +36,34 @@ enum _Cat {
 class _CatCfg {
   final _Cat cat;
   final String label;
-  final String emoji;
+  final IconData icon;
   final Color color;
   final List<String> collections;
-  const _CatCfg(this.cat, this.label, this.emoji, this.color, this.collections);
+  const _CatCfg(this.cat, this.label, this.icon, this.color, this.collections);
 }
 
+// Macaron palette — soft, unique color per category
 const _kCats = <_CatCfg>[
-  _CatCfg(_Cat.parking,      '停車場',   '🅿️', Color(0xFF1565C0), ['parking_lots','county_parking_lots']),
-  _CatCfg(_Cat.gas,          '加油站',   '⛽',  Color(0xFFE65100), ['gas_stations','county_gas_stations']),
-  _CatCfg(_Cat.ev,           '充電站',   '⚡',  Color(0xFF2E7D32), ['ev_charging_stations']),
-  _CatCfg(_Cat.taxi,         '計程車',   '🚕',  Color(0xFFF9A825), ['taxi_stands']),
-  _CatCfg(_Cat.toilet,       '公廁',     '🚻',  Color(0xFF00838F), ['public_toilets']),
-  _CatCfg(_Cat.aed,          'AED',      '❤️',  Color(0xFFC62828), ['aed_locations']),
-  _CatCfg(_Cat.goodShop,     '好店',     '🏪',  Color(0xFF6A1B9A), ['good_shops']),
-  _CatCfg(_Cat.petShop,      '寵物友善', '🐾',  Color(0xFFAD1457), ['pet_friendly_shops']),
-  _CatCfg(_Cat.drinkShop,    '飲料店',   '🧋',  Color(0xFF0277BD), ['excellent_drink_shops']),
-  _CatCfg(_Cat.restaurant,   '餐廳',     '🍽️', Color(0xFFBF360C), ['excellent_restaurants']),
-  _CatCfg(_Cat.wheelchair,   '輪椅站',   '♿',  Color(0xFF00695C), ['wheelchair_stations']),
-  _CatCfg(_Cat.breastfeeding,'哺乳室',   '🤱',  Color(0xFF6A1B9A), ['breastfeeding_rooms']),
-  _CatCfg(_Cat.wifi,         'iTaiwan',  '📶',  Color(0xFF283593), ['itaiwan_hotspots']),
-  _CatCfg(_Cat.police,       '警察局',   '👮',  Color(0xFF0D47A1), ['police_stations']),
-  _CatCfg(_Cat.tdxSpot,     'TDX景點',  '🏛️', Color(0xFF00897B), ['tdx_spots']),
-  _CatCfg(_Cat.hotel,       '旅館民宿', '🏨', Color(0xFF7B1FA2), ['tdx_hotels']),
-  _CatCfg(_Cat.youbike,     'YouBike', '🚲', Color(0xFF00897B), ['tdx_youbike_stations']),
-  _CatCfg(_Cat.busStop,     '公車站',  '🚌', Color(0xFF1565C0), ['tdx_bus_routes']),
-  _CatCfg(_Cat.facility,   '旅遊設施', '🗺️', Color(0xFF00695C), ['facilities']),
-  _CatCfg(_Cat.chiayiFood, '雞肉飯',  '🍗', Color(0xFFBF360C), ['restaurants']),
+  _CatCfg(_Cat.parking,      '停車場',   Icons.local_parking_rounded,     Color(0xFF7BA7CC), ['parking_lots','county_parking_lots']),
+  _CatCfg(_Cat.gas,          '加油站',   Icons.local_gas_station_rounded,  Color(0xFFE8A87C), ['gas_stations','county_gas_stations']),
+  _CatCfg(_Cat.ev,           '充電站',   Icons.ev_station_rounded,         Color(0xFF85B79D), ['ev_charging_stations']),
+  _CatCfg(_Cat.taxi,         '計程車',   Icons.local_taxi_rounded,         Color(0xFFE8CB6B), ['taxi_stands']),
+  _CatCfg(_Cat.toilet,       '公廁',     Icons.wc_rounded,                 Color(0xFF6CB5B0), ['public_toilets']),
+  _CatCfg(_Cat.aed,          'AED',      Icons.favorite_rounded,           Color(0xFFE88B8B), ['aed_locations']),
+  _CatCfg(_Cat.goodShop,     '好店',     Icons.store_rounded,              Color(0xFFB08BD4), ['good_shops']),
+  _CatCfg(_Cat.petShop,      '寵物友善', Icons.pets_rounded,               Color(0xFFD4869B), ['pet_friendly_shops']),
+  _CatCfg(_Cat.drinkShop,    '飲料店',   Icons.local_cafe_rounded,         Color(0xFF8BB8D4), ['excellent_drink_shops']),
+  _CatCfg(_Cat.restaurant,   '餐廳',     Icons.restaurant_rounded,         Color(0xFFCC9B7A), ['excellent_restaurants']),
+  _CatCfg(_Cat.wheelchair,   '輪椅站',   Icons.accessible_rounded,         Color(0xFF7ABFB3), ['wheelchair_stations']),
+  _CatCfg(_Cat.breastfeeding,'哺乳室',   Icons.child_care_rounded,         Color(0xFFC9A0D4), ['breastfeeding_rooms']),
+  _CatCfg(_Cat.wifi,         'iTaiwan',  Icons.wifi_rounded,               Color(0xFF8A9CC5), ['itaiwan_hotspots']),
+  _CatCfg(_Cat.police,       '警察局',   Icons.local_police_rounded,       Color(0xFF6E8FAF), ['police_stations']),
+  _CatCfg(_Cat.tdxSpot,     'TDX景點',  Icons.account_balance_rounded,    Color(0xFF73B5A3), ['tdx_spots']),
+  _CatCfg(_Cat.hotel,       '旅館民宿', Icons.hotel_rounded,               Color(0xFFA78BC5), ['tdx_hotels']),
+  _CatCfg(_Cat.youbike,     'YouBike', Icons.pedal_bike_rounded,           Color(0xFF8FBF8F), ['tdx_youbike_stations']),
+  _CatCfg(_Cat.busStop,     '公車站',  Icons.directions_bus_rounded,       Color(0xFF87AFC7), ['tdx_bus_routes']),
+  _CatCfg(_Cat.facility,    '旅遊設施', Icons.info_rounded,                Color(0xFFA3C4A3), ['facilities']),
+  _CatCfg(_Cat.chiayiFood,  '雞肉飯',  Icons.rice_bowl_rounded,           Color(0xFFD4A574), ['restaurants']),
 ];
 
 const _kSkip = <String>{
@@ -99,16 +102,16 @@ const _kLabels = <String, String>{
   '級別':'評級','營業主體':'業者','備註':'備註','編號':'編號',
 };
 
-// 旅遊設施（facilities）類別 → Emoji
-String _facilityEmoji(Map<String, dynamic> raw) {
+// 旅遊設施（facilities）類別 → Icon
+IconData _facilityIcon(Map<String, dynamic> raw) {
   final type = raw['類別']?.toString() ?? '';
-  if (type.contains('旅遊服務中心')) return '🏛️';
-  if (type.contains('借問站')) return '❓';
-  return '📍';
+  if (type.contains('旅遊服務中心')) return Icons.account_balance_rounded;
+  if (type.contains('借問站')) return Icons.help_outline_rounded;
+  return Icons.place_rounded;
 }
 
-// TDX 景點類別 → Emoji（依嘉義資料實際分類對照）
-String _tdxEmoji(Map<String, dynamic> raw) {
+// TDX 景點類別 → Icon（依嘉義資料實際分類對照）
+IconData _tdxIcon(Map<String, dynamic> raw) {
   final v = raw['classes'];
   final List<String> cls = v is List
       ? v.whereType<String>().toList()
@@ -117,23 +120,27 @@ String _tdxEmoji(Map<String, dynamic> raw) {
           : [];
   for (final c in cls) {
     switch (c.trim()) {
-      case '休閒農業類': return '🌾';
-      case '古蹟類':    return '🏯';
-      case '廟宇類':    return '⛩️';
-      case '文化類':    return '🎭';
-      case '林場類':    return '🌲';
-      case '森林遊樂區類': return '🌲';
-      case '生態類':    return '🦋';
-      case '自然風景類': return '🌄';
-      case '藝術類':    return '🎨';
-      case '觀光工廠類': return '🏭';
-      case '遊憩類':    return '🎡';
-      case '都會公園類': return '🌳';
-      case '體育健身類': return '🏃';
+      case '休閒農業類': return Icons.grass_rounded;
+      case '古蹟類':    return Icons.fort_rounded;
+      case '廟宇類':    return Icons.temple_buddhist_rounded;
+      case '文化類':    return Icons.museum_rounded;
+      case '林場類':    return Icons.park_rounded;
+      case '森林遊樂區類': return Icons.forest_rounded;
+      case '生態類':    return Icons.eco_rounded;
+      case '自然風景類': return Icons.landscape_rounded;
+      case '藝術類':    return Icons.palette_rounded;
+      case '觀光工廠類': return Icons.factory_rounded;
+      case '遊憩類':    return Icons.local_activity_rounded;
+      case '都會公園類': return Icons.park_rounded;
+      case '體育健身類': return Icons.sports_rounded;
     }
   }
-  return '📍'; // 其他 / 未知
+  return Icons.place_rounded;
 }
+
+// Keep emoji helpers as aliases for legacy fallback (unused but safe to keep)
+String _facilityEmoji(Map<String, dynamic> raw) => '';
+String _tdxEmoji(Map<String, dynamic> raw) => '';
 
 class _Place {
   final String id;
@@ -1159,22 +1166,21 @@ class _MapScreenState extends State<MapScreen> {
           ]),
         MarkerLayer(
           markers: places.map((p) {
-            final cfg   = _kCats.firstWhere((c) => c.cat == p.cat);
-            final emoji = p.cat == _Cat.tdxSpot
-                ? _tdxEmoji(p.raw)
+            final cfg  = _kCats.firstWhere((c) => c.cat == p.cat);
+            final icon = p.cat == _Cat.tdxSpot
+                ? _tdxIcon(p.raw)
                 : p.cat == _Cat.facility
-                    ? _facilityEmoji(p.raw)
-                    : cfg.emoji;
+                    ? _facilityIcon(p.raw)
+                    : cfg.icon;
             final sel = _selectedId == p.id;
             return Marker(
               point: p.pos,
-              // Selected marker needs more room for the larger bubble
               width:  sel ? 46 : 36,
               height: sel ? 56 : 44,
               alignment: Alignment.topCenter,
               child: GestureDetector(
                 onTap: () => _onMarkerTap(p),
-                child: _MarkerPin(color: cfg.color, emoji: emoji, isSelected: sel),
+                child: _MarkerPin(color: cfg.color, icon: icon, isSelected: sel),
               ),
             );
           }).toList(),
@@ -1218,13 +1224,14 @@ class _MapScreenState extends State<MapScreen> {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           leading: CircleAvatar(
             backgroundColor: cfg.color,
-            child: Text(
+            child: Icon(
               p.cat == _Cat.tdxSpot
-                  ? _tdxEmoji(p.raw)
+                  ? _tdxIcon(p.raw)
                   : p.cat == _Cat.facility
-                      ? _facilityEmoji(p.raw)
-                      : cfg.emoji,
-              style: const TextStyle(fontSize: 16),
+                      ? _facilityIcon(p.raw)
+                      : cfg.icon,
+              color: Colors.white,
+              size: 18,
             ),
           ),
           title: Text(p.name,
@@ -1374,7 +1381,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── TDX 景點類別 ──────────────────────────
                         if (showTdx) ...[
-                          _filterHeader('🏛️', 'TDX 景點類別'),
+                          _filterHeader(Icons.account_balance_rounded, 'TDX 景點類別'),
                           Text(
                             '未選則顯示全部',
                             style: TextStyle(
@@ -1421,12 +1428,12 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 廁所 ──────────────────────────────────
                         if (showToilet) ...[
-                          _filterHeader('🚻', '公廁'),
+                          _filterHeader(Icons.wc_rounded, '公廁'),
                           Wrap(spacing: 8, runSpacing: 6, children: [
-                            _filterChip(setDlg, '🍼 有尿布台',
+                            _filterChip(setDlg, '有尿布台',
                                 _diaperOnly,
                                 (v) => setState(() => _diaperOnly = v)),
-                            _filterChip(setDlg, '♿ 無障礙/通用',
+                            _filterChip(setDlg, '無障礙/通用',
                                 _accessibleOnly,
                                 (v) => setState(() => _accessibleOnly = v)),
                           ]),
@@ -1444,15 +1451,15 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 停車場 ────────────────────────────────
                         if (showParking) ...[
-                          _filterHeader('🅿️', '停車場'),
+                          _filterHeader(Icons.local_parking_rounded, '停車場'),
                           Wrap(spacing: 8, runSpacing: 6, children: [
-                            _filterChip(setDlg, '🆓 免費停車',
+                            _filterChip(setDlg, '免費停車',
                                 _freeParking,
                                 (v) => setState(() => _freeParking = v)),
-                            _filterChip(setDlg, '⚡ 有EV車位',
+                            _filterChip(setDlg, '有EV車位',
                                 _evParking,
                                 (v) => setState(() => _evParking = v)),
-                            _filterChip(setDlg, '♿ 有身障車位',
+                            _filterChip(setDlg, '有身障車位',
                                 _disabledParking,
                                 (v) => setState(() => _disabledParking = v)),
                           ]),
@@ -1470,7 +1477,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 哺集乳室 ──────────────────────────────
                         if (showBreastfeeding) ...[
-                          _filterHeader('🤱', '哺集乳室類別'),
+                          _filterHeader(Icons.child_care_rounded, '哺集乳室類別'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1484,7 +1491,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 寵物友善 ──────────────────────────────
                         if (showPet) ...[
-                          _filterHeader('🐾', '寵物友善類別'),
+                          _filterHeader(Icons.pets_rounded, '寵物友善類別'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1498,7 +1505,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 餐廳評核級別 ──────────────────────────
                         if (showRestaurant) ...[
-                          _filterHeader('🍽️', '餐飲評核級別'),
+                          _filterHeader(Icons.restaurant_rounded, '餐飲評核級別'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1513,7 +1520,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 飲冰品 ────────────────────────────────
                         if (showDrink) ...[
-                          _filterHeader('🧋', '飲冰品分類'),
+                          _filterHeader(Icons.local_cafe_rounded, '飲冰品分類'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1528,7 +1535,7 @@ class _MapScreenState extends State<MapScreen> {
 
                         // ── 嘉市好店 ──────────────────────────────
                         if (showGoodShop) ...[
-                          _filterHeader('🏪', '嘉市好店組別'),
+                          _filterHeader(Icons.store_rounded, '嘉市好店組別'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1543,7 +1550,7 @@ class _MapScreenState extends State<MapScreen> {
                         // ── 旅館民宿等級 ───────────────────────────
                         if (showHotel) ...[
                           if (showGoodShop) const SizedBox(height: 20),
-                          _filterHeader('🏨', '旅館等級'),
+                          _filterHeader(Icons.hotel_rounded, '旅館等級'),
                           Text('未選則顯示全部', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                           const SizedBox(height: 8),
                           Wrap(
@@ -1566,10 +1573,10 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _filterHeader(String emoji, String label) => Padding(
+  Widget _filterHeader(IconData icon, String label) => Padding(
         padding: const EdgeInsets.only(bottom: 10),
         child: Row(children: [
-          Text(emoji, style: const TextStyle(fontSize: 16)),
+          Icon(icon, size: 16, color: AppColors.textSecondary),
           const SizedBox(width: 6),
           Text(label,
               style: const TextStyle(
@@ -1657,8 +1664,7 @@ class _MapScreenState extends State<MapScreen> {
                     final on = _visible.contains(c.cat);
                     return SwitchListTile(
                       dense: true,
-                      secondary: Text(c.emoji,
-                          style: const TextStyle(fontSize: 20)),
+                      secondary: Icon(c.icon, color: c.color, size: 22),
                       title: Text(c.label,
                           style: const TextStyle(fontSize: 14)),
                       value: on,
@@ -1770,8 +1776,8 @@ class _MapLoadingOverlayState extends State<_MapLoadingOverlay>
               children: [
                 Transform.translate(
                   offset: Offset(0, _bounce.value),
-                  child: const Text('📍',
-                      style: TextStyle(fontSize: 54)),
+                  child: Icon(Icons.location_on_rounded,
+                      size: 54, color: Theme.of(context).colorScheme.primary),
                 ),
                 const SizedBox(height: 6),
                 Transform.scale(
@@ -1814,22 +1820,21 @@ class _MapLoadingOverlayState extends State<_MapLoadingOverlay>
 // ═══════════════════════════════════════════════════════════
 
 class _MarkerPin extends StatelessWidget {
-  final Color  color;
-  final String emoji;
-  final bool   isSelected;
+  final Color    color;
+  final IconData icon;
+  final bool     isSelected;
   const _MarkerPin({
     required this.color,
-    required this.emoji,
+    required this.icon,
     this.isSelected = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Normal: light pastel fill.  Selected: solid brand colour.
     final fill      = isSelected ? color : Color.lerp(color, Colors.white, 0.80)!;
-    final iconColor = isSelected ? Colors.white : null; // white emoji when selected
+    final iconColor = isSelected ? Colors.white : color;
     final size      = isSelected ? 40.0 : 32.0;
-    final fontSize  = isSelected ? 20.0 : 14.0;
+    final iconSize  = isSelected ? 20.0 : 14.0;
 
     // OverflowBox 讓 easeOutBack 超出 Marker 邊界時不拋 RenderFlex overflow
     return OverflowBox(
@@ -1858,16 +1863,7 @@ class _MarkerPin extends StatelessWidget {
             ],
           ),
           alignment: Alignment.center,
-          child: Text(
-            emoji,
-            style: TextStyle(
-              fontSize: fontSize,
-              height: 1,
-              // Tint emoji white when bubble is solid colour so it stays legible
-              color: iconColor,
-            ),
-            textAlign: TextAlign.center,
-          ),
+          child: Icon(icon, size: iconSize, color: iconColor),
         ),
         // ── Tail ────────────────────────────────────────────
         AnimatedContainer(
@@ -1941,8 +1937,7 @@ class _PlaceSheet extends StatelessWidget {
                   decoration: BoxDecoration(
                       color: _cfg.color, shape: BoxShape.circle),
                   alignment: Alignment.center,
-                  child: Text(_cfg.emoji,
-                      style: const TextStyle(fontSize: 22)),
+                  child: Icon(_cfg.icon, size: 22, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1964,17 +1959,30 @@ class _PlaceSheet extends StatelessWidget {
                     ],
                   ),
                 ),
+                // ── 動作按鈕（統一 40×40 尺寸）──────────────────
+                SizedBox(
+                  width: 40, height: 40,
+                  child: Center(child: SpotSaveButton(
+                    spotId: place.id,
+                    spotName: place.name,
+                    size: 18,
+                  )),
+                ),
                 if (onShowOnMap != null)
                   IconButton(
                     icon: Icon(Icons.map_rounded,
-                        color: Theme.of(context).colorScheme.primary, size: 24),
+                        color: Theme.of(context).colorScheme.primary, size: 22),
                     tooltip: '在地圖上查看',
+                    constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                    padding: EdgeInsets.zero,
                     onPressed: onShowOnMap,
                   ),
                 IconButton(
                   icon: Icon(Icons.directions_rounded,
-                      color: Theme.of(context).colorScheme.primary, size: 26),
+                      color: Theme.of(context).colorScheme.primary, size: 24),
                   tooltip: '開啟導航',
+                  constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                  padding: EdgeInsets.zero,
                   onPressed: () => _nav(place.pos),
                 ),
               ],
@@ -2006,9 +2014,9 @@ class _PlaceSheet extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Wrap(spacing: 8, runSpacing: 6, children: [
-        if (n > 0) _badge('🍼 尿布台 ×$n', const Color(0xFFFFE0B2)),
+        if (n > 0) _badge('尿布台 ×$n', const Color(0xFFFFE0B2)),
         if (accessible)
-          _badge('♿ 通用／無障礙廁所', const Color(0xFFB3E5FC)),
+          _badge('通用／無障礙廁所', const Color(0xFFB3E5FC)),
       ]),
     );
   }
@@ -2249,7 +2257,7 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                         const SizedBox(height: 8),
                       ],
 
-                      // 標題 + 導航按鈕
+                      // 標題 + 操作按鈕
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -2259,17 +2267,30 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold)),
                           ),
+                          // ── 動作按鈕（統一 40×40）───────────────
+                          SizedBox(
+                            width: 40, height: 40,
+                            child: Center(child: SpotSaveButton(
+                              spotId: widget.place.id,
+                              spotName: widget.place.name,
+                              size: 18,
+                            )),
+                          ),
                           if (widget.onShowOnMap != null)
                             IconButton(
                               icon: Icon(Icons.map_rounded,
-                                  color: Theme.of(context).colorScheme.primary, size: 24),
+                                  color: Theme.of(context).colorScheme.primary, size: 22),
                               tooltip: '在地圖上查看',
+                              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                              padding: EdgeInsets.zero,
                               onPressed: widget.onShowOnMap,
                             ),
                           IconButton(
                             icon: Icon(Icons.directions_rounded,
-                                color: Theme.of(context).colorScheme.primary, size: 26),
+                                color: Theme.of(context).colorScheme.primary, size: 24),
                             tooltip: '開啟導航',
+                            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                            padding: EdgeInsets.zero,
                             onPressed: () =>
                                 _PlaceSheet._nav(widget.place.pos),
                           ),
@@ -2283,63 +2304,54 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
 
                       const Divider(height: 20),
 
-                      // ── 簡介 ───────────────────────
-                      if (desc.isNotEmpty) ...[
-                        const Text('簡介',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.textSecondary)),
-                        const SizedBox(height: 6),
-                        Text(
-                          (!_descExpanded && desc.length > 160)
-                              ? '${desc.substring(0, 160)}…'
-                              : desc,
-                          style: const TextStyle(
-                              fontSize: 13,
-                              height: 1.65,
-                              color: AppColors.textPrimary),
-                        ),
-                        if (desc.length > 160)
-                          GestureDetector(
-                            onTap: () =>
-                                setState(() => _descExpanded = !_descExpanded),
-                            child: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                _descExpanded ? '收起 ▲' : '展開全文 ▼',
-                                style: TextStyle(
-                                    fontSize: 12, color: Theme.of(context).colorScheme.primary),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 14),
-                      ],
-
-                      // ── 詳細介紹（可折疊）──────────
-                      if (detail.isNotEmpty)
-                        Theme(
-                          data: Theme.of(context).copyWith(
-                              dividerColor: Colors.transparent),
-                          child: ExpansionTile(
-                            tilePadding: EdgeInsets.zero,
-                            iconColor: Theme.of(context).colorScheme.primary,
-                            collapsedIconColor: AppColors.textSecondary,
-                            title: const Text('詳細介紹',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.textSecondary)),
+                      // ── 景點說明 (合併 desc + detail，避免重複) ────
+                      // Use detail if available (usually more complete);
+                      // only append desc if detail doesn't contain it.
+                      if (desc.isNotEmpty || detail.isNotEmpty) ...[
+                        Builder(builder: (ctx) {
+                          final primary = Theme.of(ctx).colorScheme.primary;
+                          // Determine the canonical text to show
+                          final mainText = () {
+                            if (detail.isEmpty) return desc;
+                            if (desc.isEmpty) return detail;
+                            // If detail already contains the first 40 chars of desc,
+                            // it's a superset — just show detail.
+                            final prefix = desc.length > 40 ? desc.substring(0, 40) : desc;
+                            return detail.contains(prefix) ? detail : '$desc\n\n$detail';
+                          }();
+                          final needsExpand = mainText.length > 200;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(detail,
-                                  style: const TextStyle(
-                                      fontSize: 13,
-                                      height: 1.65,
-                                      color: AppColors.textPrimary)),
-                              const SizedBox(height: 12),
+                              Text(
+                                (!_descExpanded && needsExpand)
+                                    ? mainText.substring(0, 200)
+                                    : mainText,
+                                style: const TextStyle(
+                                    fontSize: 13, height: 1.7,
+                                    color: AppColors.textPrimary),
+                              ),
+                              if (needsExpand) ...[
+                                const SizedBox(height: 6),
+                                GestureDetector(
+                                  onTap: () => setState(() => _descExpanded = !_descExpanded),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Text(
+                                      _descExpanded ? '收起' : '展開全文',
+                                      style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Icon(_descExpanded ? Icons.keyboard_arrow_up_rounded
+                                        : Icons.keyboard_arrow_down_rounded,
+                                        size: 16, color: primary),
+                                  ]),
+                                ),
+                              ],
+                              const SizedBox(height: 14),
                             ],
-                          ),
-                        ),
+                          );
+                        }),
+                      ],
 
                       // ── 聯絡資訊 ───────────────────
                       if (phone.isNotEmpty || open.isNotEmpty ||
@@ -2501,3 +2513,5 @@ class _ImageCarouselState extends State<_ImageCarousel> {
     );
   }
 }
+
+

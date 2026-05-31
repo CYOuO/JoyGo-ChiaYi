@@ -16,7 +16,7 @@ class AppColors {
   static const Color accentSky    = Color(0xFF88B8C8); // 晴空藍（資訊）
 
   // ── Backgrounds ─ 白色系、霧感
-  static const Color background   = Color(0xFFF7F9F5); // 極淡草地白
+  static const Color background   = Color(0xFFF8F9FA); // 乾淨中性白，通透感
   static const Color surface      = Color(0xFFFFFFFF);
   static const Color surfaceWarm  = Color(0xFFFDF8F2); // 暖白（卡片）
   static const Color surfaceMoss  = Color(0xFFF0F5EF); // 苔蘚白（tag背景）
@@ -69,8 +69,8 @@ class AppTheme {
         surface:   AppColors.surface,
         brightness: Brightness.light,
       ),
-      scaffoldBackgroundColor: AppColors.background,
-      fontFamily: 'NotoSansTC',
+      // 背景色隨主題主色調產生極淡染色感
+      scaffoldBackgroundColor: Color.lerp(primary, Colors.white, 0.96)!,
 
       // ── AppBar
       appBarTheme: const AppBarTheme(
@@ -80,7 +80,6 @@ class AppTheme {
         scrolledUnderElevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
-          fontFamily: 'NotoSansTC',
           fontSize: 17,
           fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,

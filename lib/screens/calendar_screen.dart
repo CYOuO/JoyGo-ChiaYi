@@ -211,51 +211,250 @@ class _CalendarScreenState extends State<CalendarScreen> {
           Expanded(flex: 4, child: _buildEventList(selectedEvents, primary, l10n)),
         ],
       ),
+      floatingActionButton: FloatingActionButton(
+        heroTag: 'cal_add',
+        backgroundColor: primary,
+        foregroundColor: Colors.white,
+        mini: true,
+        onPressed: () => _showAddEventSheet(context, primary, l10n),
+        child: const Icon(Icons.add_rounded),
+      ),
     );
   }
 
-  // ── Month header ──────────────────────────────────────────
+  // ── 新增事件 sheet（支援日期區間）─────────────────────────────
+  void _showAddEventSheet(BuildContext context, Color primary, AppL10n l10n) {
+    final titleCtrl = TextEditingController();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: StatefulBuilder(builder: (ctx, setLocal) {
+          DateTimeRange? range = _selected != null
+              ? DateTimeRange(start: _selected!, end: _selected!)
+              : null;
+
+          String _fmtDate(DateTime d) =>
+              '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
+
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Center(child: Container(width: 36, height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+              Text('新增行事曆事件', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primary)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: titleCtrl,
+                decoration: const InputDecoration(
+                  labelText: '事件名稱',
+                  hintText: '例如：阿里山日出、文化路夜市'),
+              ),
+              const SizedBox(height: 14),
+              // ── 日期區間選擇器 ────────────────────────────────
+              GestureDetector(
+                onTap: () async {
+                  final picked = await showDateRangePicker(
+                    context: context,
+                    firstDate: DateTime(2024),
+                    lastDate: DateTime(2030),
+                    initialDateRange: range,
+                    helpText: '選擇事件日期區間',
+                    cancelText: '取消',
+                    confirmText: '確定',
+                    builder: (ctx, child) => Theme(
+                      data: Theme.of(ctx).copyWith(
+                        colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: primary),
+                      ),
+                      child: child!,
+                    ),
+                  );
+                  if (picked != null) setLocal(() => range = picked);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: range != null ? 0.08 : 0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: primary.withValues(alpha: range != null ? 0.4 : 0.2)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.date_range_rounded, size: 18, color: primary),
+                    const SizedBox(width: 10),
+                    Expanded(child: range == null
+                        ? Text('點選選擇日期（可選區間）',
+                            style: TextStyle(color: primary.withValues(alpha: 0.7), fontSize: 14))
+                        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text('開始：${_fmtDate(range.start)}',
+                              style: TextStyle(fontWeight: FontWeight.w700, color: primary, fontSize: 13)),
+                            if (range.start != range.end)
+                              Text('結束：${_fmtDate(range.end)}',
+                                style: TextStyle(color: primary.withValues(alpha: 0.8), fontSize: 12)),
+                          ]),
+                    ),
+                    Icon(Icons.chevron_right_rounded, size: 16, color: primary),
+                  ]),
+                ),
+              ),
+              if (range != null) Builder(builder: (_) {
+                final r = range!;
+                if (r.start == r.end) return const SizedBox.shrink();
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '共 ${r.duration.inDays + 1} 天',
+                      style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ]);
+              }),
+              // 如果有行程，顯示「套用行程日期」選項
+              if (widget.userTrips.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('或套用行程日期:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 36,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: widget.userTrips.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) {
+                      final t = widget.userTrips[i];
+                      return GestureDetector(
+                        onTap: () {
+                          final end = t.endDate ?? t.date;
+                          setLocal(() => range = DateTimeRange(start: t.date, end: end));
+                          if (titleCtrl.text.isEmpty) titleCtrl.text = t.title;
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: primary.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: primary.withValues(alpha: 0.25)),
+                          ),
+                          child: Text(t.title,
+                            style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (titleCtrl.text.trim().isEmpty) return;
+                    final startDate = range?.start ?? _selected ?? DateTime.now();
+                    final endDate = (range != null && range!.start != range!.end) ? range!.end : null;
+                    final newEvent = CalEvent(
+                      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                      title: titleCtrl.text.trim(),
+                      date: startDate,
+                      endDate: endDate,
+                      type: CalEventType.userTrip,
+                    );
+                    setState(() {
+                      _apiEvents.add(newEvent);
+                      _selected = startDate;
+                    });
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('已新增「${titleCtrl.text.trim()}」到行事曆'),
+                      behavior: SnackBarBehavior.floating,
+                      backgroundColor: primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ));
+                  },
+                  child: const Text('新增到行事曆'),
+                ),
+              ),
+            ]),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ── Month header（可愛版）────────────────────────────────────
   Widget _buildMonthHeader(Color primary, AppL10n l10n) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: AppColors.surface,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left_rounded),
-          onPressed: _prevMonth, color: primary, padding: EdgeInsets.zero,
+        GestureDetector(
+          onTap: _prevMonth,
+          child: Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.chevron_left_rounded, color: primary, size: 20),
+          ),
         ),
         Expanded(
           child: Center(
-            child: Text(
-              '${_focused.year}年 ${l10n.monthName(_focused.month)}',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-            ),
+            child: Column(children: [
+              Text('${_focused.year}年',
+                style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
+              Text(l10n.monthName(_focused.month),
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.textPrimary)),
+            ]),
           ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right_rounded),
-          onPressed: _nextMonth, color: primary, padding: EdgeInsets.zero,
         ),
         if (_apiLoading)
-          SizedBox(
-            width: 16, height: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, color: primary),
-          )
+          SizedBox(width: 20, height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: primary))
         else
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 20),
-            onPressed: _fetchApi,
-            color: AppColors.textHint, padding: EdgeInsets.zero,
+          GestureDetector(
+            onTap: _fetchApi,
+            child: Container(
+              width: 34, height: 34,
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+              child: Icon(Icons.refresh_rounded, color: primary, size: 18),
+            ),
           ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: _nextMonth,
+          child: Container(
+            width: 34, height: 34,
+            decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+            child: Icon(Icons.chevron_right_rounded, color: primary, size: 20),
+          ),
+        ),
       ]),
     );
   }
 
-  // ── Weekday row ───────────────────────────────────────────
+  // ── Weekday row（頂端圓角，匹配格子）────────────────────────
   Widget _buildWeekdayRow(AppL10n l10n) {
     return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4, offset: const Offset(0, 1))],
+      ),
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
       child: Row(
         children: l10n.weekdayShort.asMap().entries.map((e) {
           final isSun = e.key == 0;
@@ -272,39 +471,74 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 
-  // ── Day grid ──────────────────────────────────────────────
+  // ── Day grid (Apple-style: Sun first, range with rounded ends) ──────────
   Widget _buildDayGrid(Color primary) {
     final firstDay    = DateTime(_focused.year, _focused.month, 1);
     final lastDay     = DateTime(_focused.year, _focused.month + 1, 0);
     final startOffset = firstDay.weekday % 7; // Sun=0
     final today       = DateTime.now();
 
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 7, childAspectRatio: 1.0,
-      ),
-      itemCount: 42,
-      itemBuilder: (ctx, i) {
-        final dayNum = i - startOffset + 1;
-        if (dayNum < 1 || dayNum > lastDay.day) return const SizedBox.shrink();
-        final date     = DateTime(_focused.year, _focused.month, dayNum);
-        final isToday  = date.year == today.year && date.month == today.month && date.day == today.day;
-        final isSel    = _selected != null &&
-            date.year == _selected!.year && date.month == _selected!.month && date.day == _selected!.day;
-        final events   = _eventsForDay(date);
-        final isSunSat = i % 7 == 0 || i % 7 == 6;
+    // Compute trip ranges
+    final tripRanges = widget.userTrips.map((t) =>
+      (start: DateTime(t.date.year, t.date.month, t.date.day),
+       end: t.endDate != null
+           ? DateTime(t.endDate!.year, t.endDate!.month, t.endDate!.day)
+           : DateTime(t.date.year, t.date.month, t.date.day))
+    ).toList();
 
-        return GestureDetector(
-          onTap: () => setState(() => _selected = date),
-          child: _DayCell(
-            dayNum: dayNum, isToday: isToday,
-            isSelected: isSel, events: events,
-            isSunSat: isSunSat, primary: primary,
-          ),
-        );
-      },
+    _RangeEdge _rangeEdge(DateTime d) {
+      for (final r in tripRanges) {
+        if (r.start == r.end && d == r.start) return _RangeEdge.none;
+        if (d == r.start && !d.isAfter(r.end)) return _RangeEdge.start;
+        if (d == r.end   && !d.isBefore(r.start)) return _RangeEdge.end;
+        if (!d.isBefore(r.start) && !d.isAfter(r.end)) return _RangeEdge.middle;
+      }
+      return _RangeEdge.none;
+    }
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      child: GridView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 7, childAspectRatio: 1.0,
+        ),
+        itemCount: 42,
+        itemBuilder: (ctx, i) {
+          final dayNum = i - startOffset + 1;
+          if (dayNum < 1 || dayNum > lastDay.day) {
+            final label = dayNum < 1
+                ? DateTime(_focused.year, _focused.month, 1).subtract(Duration(days: startOffset - i)).day
+                : dayNum - lastDay.day;
+            return Center(child: Text('$label',
+              style: const TextStyle(fontSize: 13, color: Color(0xFFCCCCCC))));
+          }
+          final date   = DateTime(_focused.year, _focused.month, dayNum);
+          final isToday= date.year == today.year && date.month == today.month && date.day == today.day;
+          final isSel  = _selected != null &&
+              date.year == _selected!.year && date.month == _selected!.month && date.day == _selected!.day;
+          final events = _eventsForDay(date);
+          final isSunSat = i % 7 == 0 || i % 7 == 6;
+          final edge   = _rangeEdge(date);
+
+          return GestureDetector(
+            onTap: () => setState(() => _selected = date),
+            child: _DayCell(
+              dayNum: dayNum, isToday: isToday,
+              isSelected: isSel, events: events,
+              isSunSat: isSunSat, rangeEdge: edge,
+              primary: primary,
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -312,7 +546,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   Widget _buildFilterRow(Color primary, AppL10n l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: AppColors.surface,
+      color: Colors.transparent,
       child: Row(children: [
         _filterChip(
           l10n.calGovEvent,
@@ -395,67 +629,87 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 }
 
-// ─── Day cell ──────────────────────────────────────────────
+enum _RangeEdge { none, start, middle, end }
+
+// ─── Day cell（Apple-style range highlight）──────────────────
 class _DayCell extends StatelessWidget {
   final int dayNum;
   final bool isToday, isSelected, isSunSat;
+  final _RangeEdge rangeEdge;
   final List<CalEvent> events;
   final Color primary;
   const _DayCell({
     required this.dayNum, required this.isToday,
     required this.isSelected, required this.isSunSat,
+    this.rangeEdge = _RangeEdge.none,
     required this.events, required this.primary,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Distinct dot colors per type (max 2 types)
-    final dots = events.map((e) {
-      if (e.type == CalEventType.userTrip) return primary;
-      return _kEventColors[e.type] ?? const Color(0xFFFF8FAB);
-    }).toSet().take(3).toList();
+    final hasDot = events.isNotEmpty;
+    final inRange = rangeEdge != _RangeEdge.none && !isSelected;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? primary
-            : isToday
-                ? primary.withValues(alpha: 0.12)
-                : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '$dayNum',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isToday || isSelected ? FontWeight.w800 : FontWeight.w400,
-              color: isSelected
-                  ? Colors.white
-                  : isSunSat
-                      ? Colors.red.shade400
-                      : AppColors.textPrimary,
+    return Center(
+      child: SizedBox(
+        width: 38, height: 44,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isSelected
+                    ? primary
+                    : isToday
+                        ? primary.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                border: isToday && !isSelected
+                    ? Border.all(color: primary.withValues(alpha: 0.5), width: 1.5)
+                    : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$dayNum',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: isToday || isSelected ? FontWeight.w800 : FontWeight.w500,
+                      color: isSelected
+                          ? Colors.white
+                          : isSunSat
+                              ? Colors.red.shade400
+                              : AppColors.textPrimary,
+                    ),
+                  ),
+                  if (hasDot)
+                    Container(
+                      width: 5, height: 5, margin: const EdgeInsets.only(top: 1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.9)
+                            : (events.first.type == CalEventType.userTrip ? primary : const Color(0xFFFF8FAB)),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (dots.isNotEmpty) ...[
-            const SizedBox(height: 2),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: dots.map((c) => Container(
-                width: 5, height: 5,
-                margin: const EdgeInsets.symmetric(horizontal: 1),
+            // Rounded capsule underline for range dates
+            if (inRange)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                width: 16, height: 3,
                 decoration: BoxDecoration(
-                  color: isSelected ? Colors.white.withValues(alpha: 0.85) : c,
-                  shape: BoxShape.circle,
+                  color: primary.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(1.5),
                 ),
-              )).toList(),
-            ),
+              ),
           ],
-        ],
+        ),
       ),
     );
   }

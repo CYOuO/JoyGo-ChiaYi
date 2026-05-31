@@ -62,6 +62,10 @@ dependencies:
   fl_chart: ^0.67.0
   intl: ^0.20.2
   hugeicons: ^1.1.7
+  google_fonts: ^6.1.0
+
+  # Premium icon packs
+  phosphor_flutter: ^2.1.0      # Duotone / bold / fill icons
 
 dev_dependencies:
   flutter_test:

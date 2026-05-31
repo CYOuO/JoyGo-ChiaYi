@@ -1102,67 +1102,69 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     final paidExpenses =
         _expenses.where((e) => e.paidById == m.id).toList();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceWarm,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(
-            dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          leading: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceMoss,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(m.emoji,
-                  style: const TextStyle(fontSize: 20)),
+    final primary = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: StitchedBox(
+        color: Colors.white,
+        stitchColor: primary.withValues(alpha: 0.20),
+        radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
+        padding: EdgeInsets.zero,
+        boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))],
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), shape: BoxShape.circle),
+                child: Center(child: Text(m.emoji, style: const TextStyle(fontSize: 20))),
+              ),
+              title: Row(children: [
+                Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                const SizedBox(width: 6),
+                DoodleHeart(color: primary.withValues(alpha: 0.30), size: 9),
+              ]),
+              subtitle: Text('代墊 NT\$$paid  應付 NT\$$owed',
+                style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+              trailing: _balanceChip(_memberBalance[m.id] ?? 0),
+              children: [
+                // 展開內容：JournalDivider + 消費明細
+                JournalDivider(color: primary, label: '消費明細'),
+                if (paidExpenses.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                    child: Text('本次未代墊費用',
+                      style: TextStyle(color: AppColors.textHint, fontSize: 12)),
+                  )
+                else
+                  ...paidExpenses.map((e) {
+                    final catColor = _catColor(e.category);
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                      child: Row(children: [
+                        Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: catColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8)),
+                          child: Center(child: Text(e.icon, style: const TextStyle(fontSize: 16)))),
+                        const SizedBox(width: 10),
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(e.title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text(e.category, style: TextStyle(fontSize: 10, color: catColor)),
+                        ])),
+                        Text('NT\$ ${e.amount}',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: catColor)),
+                      ]),
+                    );
+                  }),
+                const SizedBox(height: 6),
+              ],
             ),
           ),
-          title: Text(m.name,
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary)),
-          subtitle: Text(
-            '代墊 NT\$$paid　應付 NT\$$owed',
-            style: const TextStyle(
-                fontSize: 12, color: AppColors.textHint),
-          ),
-          trailing: _balanceChip(_memberBalance[m.id] ?? 0),
-          children: [
-            if (paidExpenses.isEmpty)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Text('本次未代墊費用',
-                    style: TextStyle(
-                        color: AppColors.textHint,
-                        fontSize: 12)),
-              )
-            else
-              ...paidExpenses.map((e) => ListTile(
-                    dense: true,
-                    leading: Text(e.icon),
-                    title: Text(e.title,
-                        style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textPrimary)),
-                    trailing: Text(
-                      'NT\$ ${e.amount}',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary),
-                    ),
-                  )),
-            const SizedBox(height: 8),
-          ],
         ),
       ),
     );

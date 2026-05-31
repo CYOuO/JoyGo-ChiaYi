@@ -1206,22 +1206,35 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (!hasImage)
                 Row(children: [
-                  Expanded(child: HandDrawnUnderline(
-                    color: primary.withValues(alpha: 0.22),
-                    child: Text(spotName,
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(spotName,
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                      maxLines: 2, overflow: TextOverflow.ellipsis))),
+                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 2),
+                    // 短色塊底線：只在名稱下方畫一小段，不歪斜
+                    Container(
+                      height: 2, width: 28,
+                      decoration: BoxDecoration(
+                        color: primary.withValues(alpha: 0.30),
+                        borderRadius: BorderRadius.circular(1))),
+                  ])),
                   const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () => onUnsave(spotId, spotName),
                     child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)),
                 ])
               else
-                HandDrawnUnderline(
-                  color: primary.withValues(alpha: 0.20),
-                  child: Text(spotName,
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(spotName,
                     style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 2),
+                  Container(
+                    height: 2, width: 24,
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.28),
+                      borderRadius: BorderRadius.circular(1))),
+                ]),
               const SizedBox(height: 5),
               Row(children: [
                 if (rating > 0) ...[
@@ -1569,10 +1582,11 @@ class _TripDetailPageState extends State<_TripDetailPage>
   StreamSubscription<List<Map<String, dynamic>>>? _candidatesSub;
 
   // 概覽：使用者自訂時間 + 景點排序
-  // key = 景點名稱, value = 'HH:mm'
   final Map<String, String> _spotTimes = {};
-  // 景點顯示順序（可拖排，初始由 trip.spots 給定）
   List<String> _orderedSpots = [];
+
+  // 地圖：日期篩選（null = 全部, 0 = Day1, 1 = Day2, ...）
+  int? _mapDayFilter;
 
   @override
   void initState() {
@@ -1644,15 +1658,9 @@ class _TripDetailPageState extends State<_TripDetailPage>
           icon: const Icon(Icons.arrow_back_ios_rounded, size: 18),
           onPressed: () => Navigator.pop(context)),
         titleSpacing: 0,
-        title: Row(mainAxisSize: MainAxisSize.min, children: [
-          GestureDetector(
-            onTap: () => _showIconPicker(context),
-            child: Text(widget.trip.icon, style: const TextStyle(fontSize: 20))),
-          const SizedBox(width: 8),
-          Flexible(child: Text(trip.title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-            overflow: TextOverflow.ellipsis)),
-        ]),
+        title: Flexible(child: Text(trip.title,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+          overflow: TextOverflow.ellipsis)),
         actions: [
           // Member avatars (overlapping circles)
           GestureDetector(
@@ -2301,19 +2309,14 @@ class _TripDetailPageState extends State<_TripDetailPage>
           },
           child: Container(
             width: 52,
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 6),
             decoration: BoxDecoration(
               color: primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(time,
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: primary)),
-              Text('點調整',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 8, color: primary.withValues(alpha: 0.45))),
-            ]),
+            child: Text(time,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: primary)),
           ),
         ),
         const SizedBox(width: 6),
@@ -2363,30 +2366,47 @@ class _TripDetailPageState extends State<_TripDetailPage>
     if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  Widget _buildMapMode(Color primary, FirebaseTrip trip) {
-    // ── 依景點名稱查 DummyData 座標（精確 → 模糊 → 嘉義市區隨機分布）
-    Spot? _lookupSpot(String name) {
-      // 1. 精確比對
-      try { return DummyData.spots.firstWhere((s) => s.name == name); } catch (_) {}
-      // 2. 模糊比對（contains）
-      try { return DummyData.spots.firstWhere(
-        (s) => s.name.contains(name) || name.contains(s.name)); } catch (_) {}
-      return null;
-    }
-    // 若景點比對不到 DummyData，用嘉義市中心附近的偏移座標作為 demo 佔位
-    const _kFallbackLats = [23.480, 23.483, 23.477, 23.486, 23.474];
-    const _kFallbackLngs = [120.449, 120.453, 120.444, 120.458, 120.441];
-    int _fbIdx = 0;
+  // 座標查詢（精確 → 模糊 → 嘉義市區佔位）
+  static Spot? _lookupSpot(String name) {
+    try { return DummyData.spots.firstWhere((s) => s.name == name); } catch (_) {}
+    try { return DummyData.spots.firstWhere(
+      (s) => s.name.contains(name) || name.contains(s.name)); } catch (_) {}
+    return null;
+  }
 
-    final spotLatLngs = trip.spots.map((name) {
+  static const _kFallbackLats = [23.480, 23.483, 23.477, 23.486, 23.474];
+  static const _kFallbackLngs = [120.449, 120.453, 120.444, 120.458, 120.441];
+
+  List<LatLng> _spotsToLatLngs(List<String> names) {
+    int fbIdx = 0;
+    return names.map((name) {
       final s = _lookupSpot(name);
       if (s != null) return LatLng(s.lat, s.lng);
-      // fallback: 散布在嘉義市附近
-      final pt = LatLng(_kFallbackLats[_fbIdx % _kFallbackLats.length],
-                        _kFallbackLngs[_fbIdx % _kFallbackLngs.length]);
-      _fbIdx++;
+      final pt = LatLng(_kFallbackLats[fbIdx % _kFallbackLats.length],
+                        _kFallbackLngs[fbIdx % _kFallbackLngs.length]);
+      fbIdx++;
       return pt;
     }).toList();
+  }
+
+  Widget _buildMapMode(Color primary, FirebaseTrip trip) {
+    final days = trip.days.clamp(1, 99);
+    final totalSpots = trip.spots.length;
+    final spotsPerDay = totalSpots == 0 ? 1
+        : (totalSpots / days).ceil().clamp(1, totalSpots);
+
+    // ── 根據日期篩選器決定顯示哪些景點 ────────────────────────
+    final List<String> filteredNames;
+    if (_mapDayFilter == null) {
+      filteredNames = trip.spots;
+    } else {
+      final d = _mapDayFilter!;
+      final start = (d * spotsPerDay).clamp(0, totalSpots);
+      final end   = ((d + 1) * spotsPerDay).clamp(0, totalSpots);
+      filteredNames = totalSpots == 0 ? [] : trip.spots.sublist(start, end);
+    }
+
+    final spotLatLngs = _spotsToLatLngs(filteredNames);
 
     final mapCenter = spotLatLngs.isNotEmpty
         ? LatLng(
@@ -2396,6 +2416,31 @@ class _TripDetailPageState extends State<_TripDetailPage>
         : _kChiayiCenter;
 
     return Column(children: [
+      // ── 日期篩選器 Chip 列 ──────────────────────────────────
+      SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          children: [
+            // 全部
+            _mapFilterChip('全部', _mapDayFilter == null, primary,
+                () => setState(() => _mapDayFilter = null)),
+            const SizedBox(width: 6),
+            // 各天
+            ...List.generate(days, (d) {
+              final dayDate = trip.startDate.add(Duration(days: d));
+              final label = '${dayDate.month}/${dayDate.day}';
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: _mapFilterChip('Day ${d + 1}  $label',
+                    _mapDayFilter == d, primary,
+                    () => setState(() => _mapDayFilter = d)),
+              );
+            }),
+          ],
+        ),
+      ),
       // ── Mini-map with polylines ───────────────────────────
       Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
@@ -2455,28 +2500,29 @@ class _TripDetailPageState extends State<_TripDetailPage>
       ), // Padding
       // ── Spot count label ──────────────────────────────────
       Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
         child: Row(children: [
           DoodleHeart(color: primary.withValues(alpha: 0.60), size: 11),
           const SizedBox(width: 5),
-          Text('${trip.spots.length} 個景點', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: primary)),
+          Text('${filteredNames.length} 個景點', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: primary)),
           const Spacer(),
           Text('點導航可開啟 Google Maps', style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
         ]),
       ),
       // ── Spot list with real navigation ────────────────────
       Expanded(
-        child: trip.spots.isEmpty
+        child: filteredNames.isEmpty
             ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.add_location_alt_outlined, size: 48, color: primary.withValues(alpha: 0.3)),
                 const SizedBox(height: 12),
-                const Text('還沒有景點', style: TextStyle(color: AppColors.textHint)),
+                Text(_mapDayFilter != null ? '這天還沒有景點' : '還沒有景點',
+                    style: const TextStyle(color: AppColors.textHint)),
               ]))
             : ListView.builder(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                itemCount: trip.spots.length,
+                itemCount: filteredNames.length,
                 itemBuilder: (ctx, i) {
-                  final spotName = trip.spots[i];
+                  final spotName = filteredNames[i];
                   return Container(
                     margin: const EdgeInsets.only(bottom: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -2511,6 +2557,28 @@ class _TripDetailPageState extends State<_TripDetailPage>
                 }),
       ),
     ]);
+  }
+
+  Widget _mapFilterChip(String label, bool active, Color primary, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? primary : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: active ? primary : AppColors.divider),
+          boxShadow: active
+              ? [BoxShadow(color: primary.withValues(alpha: 0.25), blurRadius: 6)]
+              : [],
+        ),
+        child: Text(label,
+          style: TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w700,
+            color: active ? Colors.white : AppColors.textSecondary)),
+      ),
+    );
   }
 
   // ── Candidates tab ─────────────────────────────────────────

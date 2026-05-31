@@ -950,8 +950,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         : rawSpots.where((d) => _categorize(d) == _savedFilter).toList();
 
     return Column(children: [
+      // ── 收藏頁標題 ─────────────────────────────────────────
       Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
         child: Row(children: [
           Text('收藏景點（${rawSpots.length}）',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
@@ -973,7 +974,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           height: 38,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             children: categories.map((c) {
               final sel = _savedFilter == c;
               return GestureDetector(
@@ -1184,15 +1185,19 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
             Image.network(imageUrl,
               width: double.infinity, height: imgH, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+            // 愛心取消收藏 — 右上角
             Positioned(top: 6, right: 6, child: GestureDetector(
               onTap: () => onUnsave(spotId, spotName),
               child: Container(padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), shape: BoxShape.circle),
                 child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)))),
-            Positioned(top: 6, left: 6, child: GestureDetector(
+            // +行程 — 右下角（與無圖片卡片一致）
+            Positioned(bottom: 6, right: 6, child: GestureDetector(
               onTap: () => _showAddToTripSheet(ctx, spotId, spotName),
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(8)),
+              child: Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  borderRadius: BorderRadius.circular(8)),
                 child: Text('+行程', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w700))))),
           ]),
         Padding(
@@ -1548,9 +1553,23 @@ class _TripDetailPageState extends State<_TripDetailPage>
   late final PageController _pageCtrl;
   bool _programmaticPageChange = false;
 
+  // 即時行程資料（由 tripDocStream 更新，候選加入後概覽自動刷新）
+  late FirebaseTrip _trip;
+  StreamSubscription<FirebaseTrip?>? _tripSub;
+  // 候選景點快取（在概覽顯示「待加入」提示）
+  List<Map<String, dynamic>> _pendingCandidates = [];
+  StreamSubscription<List<Map<String, dynamic>>>? _candidatesSub;
+
+  // 概覽：使用者自訂時間 + 景點排序
+  // key = 景點名稱, value = 'HH:mm'
+  final Map<String, String> _spotTimes = {};
+  // 景點顯示順序（可拖排，初始由 trip.spots 給定）
+  List<String> _orderedSpots = [];
+
   @override
   void initState() {
     super.initState();
+    _trip = widget.trip;
     _tabCtrl = TabController(length: 4, vsync: this);
     _pageCtrl = PageController();
     _tabCtrl.addListener(() {
@@ -1560,10 +1579,30 @@ class _TripDetailPageState extends State<_TripDetailPage>
         duration: const Duration(milliseconds: 300), curve: Curves.easeInOut)
         .then((_) => _programmaticPageChange = false);
     });
+
+    _orderedSpots = List<String>.from(widget.trip.spots);
+
+    // 監聽行程文件 → 景點加入後概覽即時更新
+    _tripSub = TripService.tripDocStream(widget.trip.id).listen((t) {
+      if (t != null && mounted) setState(() {
+        _trip = t;
+        // 新景點加到排序末尾（保留已自訂的順序）
+        for (final s in t.spots) {
+          if (!_orderedSpots.contains(s)) _orderedSpots.add(s);
+        }
+        _orderedSpots.removeWhere((s) => !t.spots.contains(s));
+      });
+    });
+    // 監聽候選景點 → 在概覽底部顯示「待加入」預覽
+    _candidatesSub = TripService.tripCandidatesStream(widget.trip.id).listen((items) {
+      if (mounted) setState(() => _pendingCandidates = items);
+    });
   }
 
   @override
   void dispose() {
+    _tripSub?.cancel();
+    _candidatesSub?.cancel();
     _tabCtrl.dispose();
     _pageCtrl.dispose();
     super.dispose();
@@ -1571,7 +1610,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final trip    = widget.trip;
+    final trip    = _trip;   // 用即時資料（由 tripDocStream 更新）
     final primary = Theme.of(context).colorScheme.primary;
 
     final totalSpots = trip.spots.length;
@@ -2104,28 +2143,25 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   Widget _buildScheduleList(List<String> spots, Color primary) {
-    if (spots.isEmpty) {
+    // ── Empty state ──────────────────────────────────────────
+    if (spots.isEmpty && _pendingCandidates.isEmpty) {
       return NotebookBackground(
-        child: Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.add_location_alt_outlined, size: 52, color: primary.withValues(alpha: 0.3)),
-          const SizedBox(height: 12),
-          const Text('這天還沒有景點', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
-          const SizedBox(height: 6),
-          const Text('從候選清單加入景點', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
-        ])),
+        lineColor: primary.withValues(alpha: 0.10),
+        child: Stack(children: [
+          const ScatteredDoodles(),
+          Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            DoodleCircle(color: primary.withValues(alpha: 0.18), size: 72,
+              child: Icon(Icons.add_location_alt_outlined, size: 32, color: primary.withValues(alpha: 0.5))),
+            const SizedBox(height: 14),
+            const Text('這天還沒有景點', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
+            const SizedBox(height: 6),
+            Text('到「候選」頁加入景點', style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.6))),
+          ])),
+        ]),
       );
     }
-    const timeSlots = ['09:00','11:00','13:00','15:00','18:00','20:00'];
-    // 簡短描述（後續可從 Firebase 讀取）
-    const descriptions = [
-      '抵達，準備開始今天的旅程',
-      '感受在地文化與歷史氛圍',
-      '享用在地特色美食',
-      '欣賞嘉義在地景色',
-      '品嚐晚餐：嘉義名物',
-      '夜晚散步，感受城市夜景',
-    ];
-    // 圖片（可替換為真實圖）
+
+    const defaultTimes = ['09:00','10:30','13:00','15:00','18:00','20:00'];
     const images = [
       'https://picsum.photos/seed/spot1/120/80',
       'https://picsum.photos/seed/spot2/120/80',
@@ -2133,64 +2169,181 @@ class _TripDetailPageState extends State<_TripDetailPage>
       'https://picsum.photos/seed/spot4/120/80',
     ];
 
-    return NotebookBackground(
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        itemCount: spots.length,
-        itemBuilder: (_, i) {
-          final isLast = i == spots.length - 1;
-          final time = timeSlots[i % timeSlots.length];
-          final desc = descriptions[i % descriptions.length];
-          final img  = images[i % images.length];
+    // 用 _orderedSpots 過濾出當天景點，保留排序
+    final dayOrdered = _orderedSpots.where(spots.contains).toList();
 
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 時間 + 豎線
-          SizedBox(width: 52, child: Column(children: [
-            Text(time, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: primary)),
-            const SizedBox(height: 4),
-            Container(width: 1.5, height: 90, color: isLast ? Colors.transparent : primary.withValues(alpha: 0.2)),
-          ])),
-          // 圓點
-          Column(children: [
-            const SizedBox(height: 2),
-            Container(width: 10, height: 10,
-              decoration: BoxDecoration(color: primary, shape: BoxShape.circle)),
-            Container(width: 1.5, height: 84, color: isLast ? Colors.transparent : primary.withValues(alpha: 0.2)),
-          ]),
-          const SizedBox(width: 12),
-          // 卡片
-          Expanded(child: Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 8, offset: const Offset(0, 3))],
-            ),
+    return NotebookBackground(
+      lineColor: primary.withValues(alpha: 0.10),
+      child: Stack(children: [
+        const ScatteredDoodles(),
+        Column(children: [
+          // ── 頁首裝飾 ─────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
             child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(spots[i],
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-                const SizedBox(height: 3),
-                Text(desc, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4),
-                    maxLines: 2, overflow: TextOverflow.ellipsis),
-              ])),
-              if (i % 2 == 0) ...[
-                const SizedBox(width: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(img, width: 64, height: 64, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: 64, height: 64, color: primary.withValues(alpha: 0.1),
-                      child: Icon(Icons.image_outlined, color: primary.withValues(alpha: 0.4)))),
-                ),
-              ],
+              HandDrawnUnderline(
+                color: primary.withValues(alpha: 0.28),
+                child: Text('今日行程',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: primary)),
+              ),
+              const Spacer(),
+              DoodleHeart(color: primary.withValues(alpha: 0.40), size: 10),
+              const SizedBox(width: 4),
+              Text('${dayOrdered.length} 個景點  長按可拖排',
+                style: TextStyle(fontSize: 10, color: primary.withValues(alpha: 0.55))),
             ]),
-          )),
-        ]);
-      },
-    ),
+          ),
+
+          // ── 可拖排序的景點清單 ────────────────────────────
+          Expanded(
+            child: ReorderableListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
+              itemCount: dayOrdered.length,
+              onReorder: (o, n) {
+                if (n > o) n--;
+                setState(() {
+                  final s = _orderedSpots.removeAt(
+                      _orderedSpots.indexOf(dayOrdered[o]));
+                  final insertIdx = n < dayOrdered.length - 1
+                      ? _orderedSpots.indexOf(dayOrdered[n > o ? n : n])
+                      : _orderedSpots.length;
+                  _orderedSpots.insert(insertIdx.clamp(0, _orderedSpots.length), s);
+                });
+                HapticFeedback.lightImpact();
+              },
+              itemBuilder: (_, i) {
+                final name = dayOrdered[i];
+                final time = _spotTimes[name] ?? defaultTimes[i % defaultTimes.length];
+                final img  = images[i % images.length];
+                return _buildScheduleItem(key: ValueKey(name),
+                  name: name, time: time, img: img, index: i, primary: primary);
+              },
+            ),
+          ),
+
+          // ── 候選待加入預覽 ───────────────────────────────
+          if (_pendingCandidates.isNotEmpty) ...[
+            JournalDivider(color: primary, label: '候選待加入'),
+            SizedBox(
+              height: 44.0 * _pendingCandidates.take(3).length.toDouble(),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+                children: [
+                  ..._pendingCandidates.take(3).map((item) {
+                    final nm = item['spotName']?.toString() ?? '';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: primary.withValues(alpha: 0.18)),
+                        ),
+                        child: Row(children: [
+                          Icon(Icons.bookmark_border_rounded, size: 13, color: primary.withValues(alpha: 0.45)),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(nm,
+                            style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.60),
+                                fontStyle: FontStyle.italic),
+                            maxLines: 1, overflow: TextOverflow.ellipsis)),
+                          Text('候選', style: TextStyle(fontSize: 9, color: primary.withValues(alpha: 0.40))),
+                        ]),
+                      ),
+                    );
+                  }),
+                  if (_pendingCandidates.length > 3)
+                    Text('…還有 ${_pendingCandidates.length - 3} 個',
+                      style: TextStyle(fontSize: 10, color: primary.withValues(alpha: 0.40))),
+                ],
+              ),
+            ),
+          ],
+        ]),
+      ]),
+    );
+  }
+
+  Widget _buildScheduleItem({
+    required Key key,
+    required String name,
+    required String time,
+    required String img,
+    required int index,
+    required Color primary,
+  }) {
+    return Container(
+      key: key,
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        // 可點擊的時間標籤 ──────────────
+        GestureDetector(
+          onTap: () async {
+            final picked = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay(
+                hour: int.tryParse(time.split(':')[0]) ?? 9,
+                minute: int.tryParse(time.split(':')[1]) ?? 0,
+              ),
+            );
+            if (picked != null && mounted) {
+              setState(() => _spotTimes[name] =
+                  '${picked.hour.toString().padLeft(2,'0')}:${picked.minute.toString().padLeft(2,'0')}');
+            }
+          },
+          child: Container(
+            width: 52,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(time,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: primary)),
+              Text('點調整',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 8, color: primary.withValues(alpha: 0.45))),
+            ]),
+          ),
+        ),
+        const SizedBox(width: 6),
+        // 手繪圓點（無連線） ────────────
+        DoodleCircle(color: primary.withValues(alpha: 0.50), size: 12,
+          child: Container(
+            margin: const EdgeInsets.all(2.5),
+            decoration: BoxDecoration(color: primary, shape: BoxShape.circle))),
+        const SizedBox(width: 8),
+        // 景點卡片 ──────────────────────
+        Expanded(child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.07),
+                blurRadius: 8, offset: const Offset(0, 3))],
+          ),
+          child: Row(children: [
+            Expanded(child: Text(name,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+              maxLines: 2, overflow: TextOverflow.ellipsis)),
+            if (index % 2 == 0) ...[
+              const SizedBox(width: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(img, width: 52, height: 52, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => SizedBox(width: 52, height: 52,
+                    child: Icon(Icons.image_outlined, color: primary.withValues(alpha: 0.3)))),
+              ),
+            ],
+          ]),
+        )),
+        // 拖把手
+        const Padding(
+          padding: EdgeInsets.only(left: 4),
+          child: Icon(Icons.drag_handle_rounded, color: AppColors.textHint, size: 18)),
+      ]),
     );
   }
 
@@ -2203,47 +2356,98 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   Widget _buildMapMode(Color primary, FirebaseTrip trip) {
+    // ── 依景點名稱查 DummyData 座標，畫連線 ──────────────────
+    final spotLatLngs = trip.spots
+        .map((name) {
+          try { return DummyData.spots.firstWhere((s) => s.name == name); }
+          catch (_) { return null; }
+        })
+        .whereType<Spot>()
+        .map((s) => LatLng(s.lat, s.lng))
+        .toList();
+
+    final mapCenter = spotLatLngs.isNotEmpty
+        ? LatLng(
+            spotLatLngs.map((p) => p.latitude).reduce((a, b) => a + b) / spotLatLngs.length,
+            spotLatLngs.map((p) => p.longitude).reduce((a, b) => a + b) / spotLatLngs.length,
+          )
+        : _kChiayiCenter;
+
     return Column(children: [
-      // ── Real FlutterMap mini-map ──────────────────────────
-      Container(
-        height: 200,
-        margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: primary.withValues(alpha: 0.15))),
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: _kChiayiCenter,
-            initialZoom: 13.0,
-            interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag)),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.chiayicity.explore_chiayi',
-              maxZoom: 18),
-            MarkerLayer(markers: [
-              Marker(
-                point: _kChiayiCenter,
-                width: 30, height: 30,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: primary,
-                    shape: BoxShape.circle,
-                    boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.4), blurRadius: 8)]),
-                  child: const Icon(Icons.place_rounded, size: 18, color: Colors.white)),
-              ),
-            ]),
-          ],
-        ),
-      ),
+      // ── Mini-map with polylines ───────────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+        child: SketchyBorderBox(
+          borderColor: primary.withValues(alpha: 0.30),
+          strokeWidth: 1.2,
+          seed: trip.id.hashCode,
+          padding: EdgeInsets.zero,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: SizedBox(
+              height: 210,
+              child: FlutterMap(
+                options: MapOptions(
+                  initialCenter: mapCenter,
+                  initialZoom: spotLatLngs.length > 1 ? 13.5 : 13.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.pinchZoom | InteractiveFlag.drag)),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.chiayicity.explore_chiayi',
+                    maxZoom: 18),
+                  // ── 景點連線 ──
+                  if (spotLatLngs.length > 1)
+                    PolylineLayer(polylines: [
+                      Polyline(
+                        points: spotLatLngs,
+                        color: primary.withValues(alpha: 0.55),
+                        strokeWidth: 2.8,
+                      ),
+                    ]),
+                  // ── 編號 Marker ──
+                  MarkerLayer(markers: [
+                    if (spotLatLngs.isNotEmpty)
+                      ...List.generate(spotLatLngs.length, (i) => Marker(
+                        point: spotLatLngs[i],
+                        width: 30, height: 36,
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Container(
+                            width: 28, height: 28,
+                            decoration: BoxDecoration(
+                              color: primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                              boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.40), blurRadius: 6)]),
+                            child: Center(child: Text('${i + 1}',
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)))),
+                          Container(width: 2, height: 5, color: primary),
+                        ]),
+                      ))
+                    else
+                      Marker(
+                        point: _kChiayiCenter,
+                        width: 30, height: 30,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: primary, shape: BoxShape.circle,
+                            boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.4), blurRadius: 8)]),
+                          child: const Icon(Icons.place_rounded, size: 18, color: Colors.white)),
+                      ),
+                  ]),
+                ],
+              ), // FlutterMap
+            ), // SizedBox
+          ), // ClipRRect
+        ), // SketchyBorderBox
+      ), // Padding
       // ── Spot count label ──────────────────────────────────
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
         child: Row(children: [
-          Icon(Icons.place_rounded, size: 14, color: primary),
-          const SizedBox(width: 4),
+          DoodleHeart(color: primary.withValues(alpha: 0.60), size: 11),
+          const SizedBox(width: 5),
           Text('${trip.spots.length} 個景點', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: primary)),
           const Spacer(),
           Text('點導航可開啟 Google Maps', style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
@@ -2302,19 +2506,32 @@ class _TripDetailPageState extends State<_TripDetailPage>
   Widget _buildCandidatesTab(Color primary, FirebaseTrip trip) {
     final days = trip.days.clamp(1, 99);
     return Column(children: [
-      Container(
-        margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: primary.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12)),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
         child: Row(children: [
-          Icon(Icons.lightbulb_outline_rounded, size: 16, color: primary),
-          const SizedBox(width: 8),
-          Expanded(child: Text('長按拖移排序，點右側按鈕加入指定天的行程',
-            style: TextStyle(fontSize: 11, color: primary, height: 1.3))),
+          HandDrawnUnderline(
+            color: primary.withValues(alpha: 0.28),
+            child: Text('候選景點', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
+          ),
+          const Spacer(),
+          DoodleHeart(color: primary.withValues(alpha: 0.35), size: 9),
         ]),
       ),
+      StitchedBox(
+        color: primary.withValues(alpha: 0.04),
+        stitchColor: primary.withValues(alpha: 0.25),
+        radius: 12,
+        inset: 4, dashWidth: 4, dashGap: 3,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(children: [
+          DoodleLightning(color: primary.withValues(alpha: 0.6), size: 10),
+          const SizedBox(width: 8),
+          Expanded(child: Text('長按拖移排序，點 ＋ 按鈕加入指定天的行程',
+            style: TextStyle(fontSize: 11, color: primary, height: 1.3))),
+          DoodleHeart(color: primary.withValues(alpha: 0.40), size: 9),
+        ]),
+      ),
+      const SizedBox(height: 4),
       Expanded(child: StreamBuilder<List<Map<String, dynamic>>>(
         stream: TripService.tripCandidatesStream(trip.id),
         builder: (ctx, snap) {
@@ -2342,19 +2559,20 @@ class _TripDetailPageState extends State<_TripDetailPage>
               itemBuilder: (_, i) {
                 final item = items[i];
                 final spotName = item['spotName']?.toString() ?? '';
-                return Container(
+                return StitchedBox(
                   key: ValueKey(item['spotId']),
-                  margin: const EdgeInsets.only(bottom: 6),
+                  color: Colors.white,
+                  stitchColor: primary.withValues(alpha: 0.22),
+                  radius: 14, inset: 4, dashWidth: 4, dashGap: 3.5,
                   padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6)]),
+                  boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.06), blurRadius: 6)],
                   child: Row(children: [
-                    Container(width: 24, height: 24,
-                      decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(7)),
-                      child: Center(child: Text('${i + 1}',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)))),
+                    DoodleCircle(color: primary.withValues(alpha: 0.50), size: 28,
+                      child: Container(
+                        margin: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
+                        child: Center(child: Text('${i + 1}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900))))),
                     const SizedBox(width: 10),
                     Expanded(child: Text(spotName,
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
@@ -2388,7 +2606,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
                       onPressed: () => TripService.removeTripCandidate(trip.id, item['spotId'].toString())),
                     const Icon(Icons.drag_handle_rounded, color: AppColors.textHint, size: 18),
                   ]),
-                );
+                ); // StitchedBox
               },
             )),
             // Batch add all button

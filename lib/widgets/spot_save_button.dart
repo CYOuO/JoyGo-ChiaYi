@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/trip_service.dart';
@@ -6,6 +7,7 @@ import '../theme/app_theme.dart';
 
 /// A heart/bookmark button that saves a spot.
 /// Works for both logged-in users (Firebase) and guests (SharedPreferences).
+/// Reactively updates when saved state changes from anywhere in the app.
 class SpotSaveButton extends StatefulWidget {
   final String spotId;
   final String spotName;
@@ -31,6 +33,7 @@ class SpotSaveButton extends StatefulWidget {
 class _SpotSaveButtonState extends State<SpotSaveButton> {
   bool _saved = false;
   bool _busy = false;
+  StreamSubscription<Set<String>>? _sub;
 
   @override
   void initState() {
@@ -38,15 +41,30 @@ class _SpotSaveButtonState extends State<SpotSaveButton> {
     _initState();
   }
 
+  @override
+  void dispose() {
+    _sub?.cancel();
+    LocalFavService.notifier.removeListener(_onGuestChange);
+    super.dispose();
+  }
+
   Future<void> _initState() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      final snap = await TripService.savedSpotIdsStream().first;
-      if (mounted) setState(() => _saved = snap.contains(widget.spotId));
+      // ── Firebase user: subscribe to saved-spot IDs stream ──
+      _sub = TripService.savedSpotIdsStream().listen((ids) {
+        if (mounted) setState(() => _saved = ids.contains(widget.spotId));
+      });
     } else {
+      // ── Guest: listen to the local notifier for reactive updates ──
       await LocalFavService.load();
       if (mounted) setState(() => _saved = LocalFavService.isSaved(widget.spotId));
+      LocalFavService.notifier.addListener(_onGuestChange);
     }
+  }
+
+  void _onGuestChange() {
+    if (mounted) setState(() => _saved = LocalFavService.isSaved(widget.spotId));
   }
 
   Future<void> _toggle(BuildContext ctx) async {

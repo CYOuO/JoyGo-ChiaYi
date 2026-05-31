@@ -161,8 +161,13 @@ class SketchyBorderBox extends StatelessWidget {
 
 class _NotebookLinesPainter extends CustomPainter {
   final Color lineColor;
+  final Color marginColor;
   final double spacing;
-  const _NotebookLinesPainter({required this.lineColor, this.spacing = 28});
+  const _NotebookLinesPainter({
+    required this.lineColor,
+    required this.marginColor,
+    this.spacing = 28,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -173,27 +178,34 @@ class _NotebookLinesPainter extends CustomPainter {
     for (double y = spacing; y < size.height; y += spacing) {
       canvas.drawLine(Offset(16, y), Offset(size.width - 16, y), paint);
     }
-    // Red margin line (left)
+    // Margin line (left) — uses theme-aware color
     canvas.drawLine(
-      Offset(42, 0), Offset(42, size.height),
-      Paint()..color = const Color(0x30E57373)..strokeWidth = 0.7);
+      const Offset(42, 0), Offset(42, size.height),
+      Paint()..color = marginColor..strokeWidth = 0.7);
   }
 
   @override
-  bool shouldRepaint(covariant _NotebookLinesPainter old) => false;
+  bool shouldRepaint(covariant _NotebookLinesPainter old) =>
+      old.lineColor != lineColor || old.marginColor != marginColor;
 }
 
 class NotebookBackground extends StatelessWidget {
   final Widget child;
   final Color lineColor;
+  final Color? marginColor; // null = auto from theme
   final double lineSpacing;
   const NotebookBackground({super.key, required this.child,
-    this.lineColor = const Color(0x188FAABE), this.lineSpacing = 28});
+    this.lineColor = const Color(0x188FAABE),
+    this.marginColor,
+    this.lineSpacing = 28});
 
   @override
   Widget build(BuildContext context) {
+    final mc = marginColor ??
+        Theme.of(context).colorScheme.primary.withValues(alpha: 0.18);
     return CustomPaint(
-      painter: _NotebookLinesPainter(lineColor: lineColor, spacing: lineSpacing),
+      painter: _NotebookLinesPainter(
+          lineColor: lineColor, marginColor: mc, spacing: lineSpacing),
       child: child,
     );
   }
@@ -292,6 +304,247 @@ class DoodleCircle extends StatelessWidget {
       child: CustomPaint(
         painter: _DoodleCirclePainter(color: c),
         child: Center(child: child)));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DoodleHeart — 手繪愛心裝飾
+// ═══════════════════════════════════════════════════════════
+
+class _DoodleHeartPainter extends CustomPainter {
+  final Color color;
+  const _DoodleHeartPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final cx = w / 2;
+    final p = Paint()..color = color..style = PaintingStyle.fill;
+    // More proportional heart — taller than wide
+    final path = Path()
+      ..moveTo(cx, h * 0.88)           // bottom tip
+      ..cubicTo(w * -0.05, h * 0.60,   // left outer ctrl
+                w * -0.05, h * 0.10,   // left inner ctrl
+                cx,         h * 0.30)  // top centre dip
+      ..cubicTo(w * 1.05,  h * 0.10,   // right inner ctrl
+                w * 1.05,  h * 0.60,   // right outer ctrl
+                cx,         h * 0.88)  // back to bottom tip
+      ..close();
+    canvas.drawPath(path, p);
+  }
+  @override
+  bool shouldRepaint(covariant _DoodleHeartPainter old) => old.color != color;
+}
+
+class DoodleHeart extends StatelessWidget {
+  final Color? color;
+  final double size;
+  const DoodleHeart({super.key, this.color, this.size = 12});
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.primary.withValues(alpha: 0.55);
+    return SizedBox(width: size, height: size,
+      child: CustomPaint(painter: _DoodleHeartPainter(color: c)));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DoodleLightning — 手繪閃電裝飾
+// ═══════════════════════════════════════════════════════════
+
+class _DoodleLightningPainter extends CustomPainter {
+  final Color color;
+  const _DoodleLightningPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final p = Paint()..color = color..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(w * 0.63, 0)
+      ..lineTo(w * 0.22, h * 0.50)
+      ..lineTo(w * 0.52, h * 0.50)
+      ..lineTo(w * 0.37, h)
+      ..lineTo(w * 0.78, h * 0.50)
+      ..lineTo(w * 0.48, h * 0.50)
+      ..close();
+    canvas.drawPath(path, p);
+  }
+  @override
+  bool shouldRepaint(covariant _DoodleLightningPainter old) => old.color != color;
+}
+
+class DoodleLightning extends StatelessWidget {
+  final Color? color;
+  final double size;
+  const DoodleLightning({super.key, this.color, this.size = 10});
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? const Color(0xFFE8A020).withValues(alpha: 0.85);
+    return SizedBox(width: size, height: size * 1.4,
+      child: CustomPaint(painter: _DoodleLightningPainter(color: c)));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DoodleCloud — 手繪雲朵裝飾
+// ═══════════════════════════════════════════════════════════
+
+class _DoodleCloudPainter extends CustomPainter {
+  final Color color;
+  const _DoodleCloudPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final p = Paint()..color = color..style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(w * 0.28, h * 0.60), w * 0.22, p);
+    canvas.drawCircle(Offset(w * 0.50, h * 0.46), w * 0.27, p);
+    canvas.drawCircle(Offset(w * 0.72, h * 0.58), w * 0.20, p);
+    canvas.drawRect(Rect.fromLTWH(w * 0.08, h * 0.56, w * 0.84, h * 0.36), p);
+  }
+  @override
+  bool shouldRepaint(covariant _DoodleCloudPainter old) => old.color != color;
+}
+
+class DoodleCloud extends StatelessWidget {
+  final Color? color;
+  final double width;
+  const DoodleCloud({super.key, this.color, this.width = 28});
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Colors.white.withValues(alpha: 0.65);
+    return SizedBox(width: width, height: width * 0.6,
+      child: CustomPaint(painter: _DoodleCloudPainter(color: c)));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DoodleButton — 手繪縫釦裝飾
+// ═══════════════════════════════════════════════════════════
+
+class _DoodleButtonPainter extends CustomPainter {
+  final Color color;
+  const _DoodleButtonPainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2, cy = size.height / 2;
+    final r  = size.width / 2;
+    canvas.drawCircle(Offset(cx, cy), r - 1,
+        Paint()..color = color..style = PaintingStyle.stroke..strokeWidth = 1.4);
+    final hr = r * 0.14, off = r * 0.30;
+    final fill = Paint()..color = color..style = PaintingStyle.fill;
+    for (final dx in [-off, off])
+      for (final dy in [-off, off])
+        canvas.drawCircle(Offset(cx + dx, cy + dy), hr, fill);
+    final thread = Paint()..color = color..strokeWidth = 0.7..style = PaintingStyle.stroke;
+    canvas.drawLine(Offset(cx - off, cy - off), Offset(cx + off, cy + off), thread);
+    canvas.drawLine(Offset(cx + off, cy - off), Offset(cx - off, cy + off), thread);
+  }
+  @override
+  bool shouldRepaint(covariant _DoodleButtonPainter old) => old.color != color;
+}
+
+class DoodleButton extends StatelessWidget {
+  final Color? color;
+  final double size;
+  const DoodleButton({super.key, this.color, this.size = 15});
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.primary.withValues(alpha: 0.45);
+    return SizedBox(width: size, height: size,
+      child: CustomPaint(painter: _DoodleButtonPainter(color: c)));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  JournalDivider — 帶裝飾的手帳分隔線
+// ═══════════════════════════════════════════════════════════
+
+class JournalDivider extends StatelessWidget {
+  final Color? color;
+  final String label;
+  const JournalDivider({super.key, this.color, this.label = ''});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.primary.withValues(alpha: 0.28);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(children: [
+        DoodleHeart(color: c.withValues(alpha: 0.70), size: 9),
+        const SizedBox(width: 6),
+        Expanded(child: Container(height: 0.8, color: c)),
+        if (label.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(label,
+              style: TextStyle(fontSize: 10, color: c, fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5)),
+          ),
+          Expanded(child: Container(height: 0.8, color: c)),
+        ],
+        const SizedBox(width: 6),
+        DoodleLightning(color: c.withValues(alpha: 0.70), size: 7),
+      ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  JournalPageHeader — 手帳頁面裝飾標題列
+// ═══════════════════════════════════════════════════════════
+
+class JournalPageHeader extends StatelessWidget {
+  final String title;
+  final Color? color;
+  final List<Widget>? trailing;
+  const JournalPageHeader({super.key, required this.title, this.color, this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = color ?? Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Row(children: [
+        DoodleButton(color: c.withValues(alpha: 0.35), size: 13),
+        const SizedBox(width: 8),
+        HandDrawnUnderline(
+          color: c.withValues(alpha: 0.30),
+          child: Text(title,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: c)),
+        ),
+        const SizedBox(width: 8),
+        DoodleHeart(color: c.withValues(alpha: 0.40), size: 9),
+        const Spacer(),
+        ...?trailing,
+      ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ScatteredDoodles — 隨機散布小裝飾（背景用）
+// ═══════════════════════════════════════════════════════════
+
+class ScatteredDoodles extends StatelessWidget {
+  final Color? color;
+  const ScatteredDoodles({super.key, this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.12);
+    return IgnorePointer(
+      child: SizedBox.expand(
+        child: Stack(children: [
+          Positioned(top: 18, right: 24, child: DoodleHeart(color: c, size: 11)),
+          Positioned(top: 55, left: 18, child: DoodleCloud(color: c, width: 22)),
+          Positioned(top: 110, right: 40, child: DoodleLightning(color: c, size: 8)),
+          Positioned(top: 165, left: 30, child: DoodleButton(color: c, size: 12)),
+          Positioned(top: 220, right: 20, child: DoodleHeart(color: c, size: 8)),
+          Positioned(top: 270, left: 22, child: DoodleLightning(color: c, size: 7)),
+          Positioned(top: 330, right: 38, child: DoodleCloud(color: c, width: 18)),
+          Positioned(top: 380, left: 15, child: DoodleButton(color: c, size: 10)),
+        ]),
+      ),
+    );
   }
 }
 

@@ -77,6 +77,13 @@ class TripService {
         .map((s) => s.docs.map(FirebaseTrip.fromDoc).toList());
   }
 
+  /// 即時監聽單一行程文件（行程詳情頁用，景點加入後即時更新）
+  static Stream<FirebaseTrip?> tripDocStream(String tripId) =>
+      _db.collection('trips').doc(tripId).snapshots().map((snap) {
+        if (!snap.exists) return null;
+        return FirebaseTrip.fromDoc(snap);
+      });
+
   static Future<String> createTrip({
     required String title,
     required DateTime startDate,

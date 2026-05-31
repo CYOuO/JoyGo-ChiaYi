@@ -126,33 +126,69 @@ class HomeScreen extends StatefulWidget {
 //  波浪裁切器 — 底端不規則大波浪（三段正弦疊加，製造有機感）
 // ══════════════════════════════════════════════════════════════
 class _WaveClipper extends CustomClipper<Path> {
-  final double animValue; // 0.0 ~ 1.0，驅動波浪水平位移
+  final double animValue;
   const _WaveClipper(this.animValue);
 
   @override
   Path getClip(Size s) {
-    // 平緩波浪：單一正弦，半個周期橫跨全寬，振幅 18px，視覺上微微起伏
     final base = s.height - 48.0;
     final p = Path()..lineTo(0, base + 8);
-
-    final cp1x = s.width * 0.25;
-    final cp2x = s.width * 0.75;
-    // 一個柔和的三次貝茲曲線：左端略低 → 中間略高 → 右端略低
     p.cubicTo(
-      cp1x, base - 14,   // 控制點 1：左四分之一，往上
-      cp2x, base + 22,   // 控制點 2：右四分之一，往下
-      s.width, base + 4, // 終點：右端
+      s.width * 0.25, base - 14,
+      s.width * 0.75, base + 22,
+      s.width,        base + 4,
     );
-
     p.lineTo(s.width, 0);
     p.lineTo(0, 0);
     p.close();
     return p;
   }
 
-
   @override
   bool shouldReclip(_WaveClipper old) => old.animValue != animValue;
+}
+
+// ── 第二層波浪線 Painter（純描邊，增加層次感）─────────────────
+class _WaveLinePainter extends CustomPainter {
+  final Color color;
+  const _WaveLinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size s) {
+    // 比主波浪高 24px，略不同相位，製造雙層浪效果
+    final base = s.height - 72.0;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+
+    final path = Path()..moveTo(0, base + 6);
+    // 與主波浪控制點相反（右高左低），形成交錯感
+    path.cubicTo(
+      s.width * 0.30, base - 10,
+      s.width * 0.70, base + 18,
+      s.width,        base + 2,
+    );
+    canvas.drawPath(path, paint);
+
+    // 更高的第三層（更細更淡）
+    final base2 = s.height - 90.0;
+    final paint2 = Paint()
+      ..color = color.withValues(alpha: color.a * 0.5)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    final path2 = Path()..moveTo(0, base2 + 4);
+    path2.cubicTo(
+      s.width * 0.35, base2 - 8,
+      s.width * 0.65, base2 + 14,
+      s.width,        base2,
+    );
+    canvas.drawPath(path2, paint2);
+  }
+
+  @override
+  bool shouldRepaint(covariant _WaveLinePainter old) => old.color != color;
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -693,6 +729,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Stack(
                     children: [
+                      // ── 第二層波浪線（層次感）────────────────────
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: _WaveLinePainter(
+                            color: Colors.white.withValues(alpha: 0.22)),
+                        ),
+                      ),
                       // ── 裝飾圓：大圓靜態，小圓輕微呼吸動畫 ────────
                       _StaticCircle(right: -40, top: -30, size: 190, alpha: 0.10),
                       _AnimatedCircle(right: 30, top: 28,  size: 75,  alpha: 0.07,

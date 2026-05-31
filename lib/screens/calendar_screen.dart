@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
+import '../theme/fabric_textures.dart';
 
 // ═══════════════════════════════════════════════════════════
 //  Event model  (only 政府活動 + 個人行程; no govNews / no personal)
@@ -206,7 +207,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
         children: [
           _buildMonthHeader(primary, l10n),
           _buildWeekdayRow(l10n),
-          Expanded(flex: 7, child: _buildDayGrid(primary)),
+          Expanded(flex: 9, child: _buildDayGrid(primary)),  // 更多空間給日曆
+          JournalDivider(color: primary, label: '活動'),
           _buildFilterRow(primary, l10n),
           Expanded(flex: 4, child: _buildEventList(selectedEvents, primary, l10n)),
         ],
@@ -396,8 +398,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   // ── Month header（可愛版）────────────────────────────────────
   Widget _buildMonthHeader(Color primary, AppL10n l10n) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
       child: Row(children: [
+        // 上月按鈕
         GestureDetector(
           onTap: _prevMonth,
           child: Container(
@@ -412,10 +415,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
         Expanded(
           child: Center(
             child: Column(children: [
-              Text('${_focused.year}年',
-                style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
-              Text(l10n.monthName(_focused.month),
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: AppColors.textPrimary)),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                DoodleHeart(color: primary.withValues(alpha: 0.35), size: 8),
+                const SizedBox(width: 4),
+                Text('${_focused.year}年',
+                  style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 4),
+                DoodleHeart(color: primary.withValues(alpha: 0.35), size: 8),
+              ]),
+              HandDrawnUnderline(
+                color: primary.withValues(alpha: 0.25),
+                child: Text(l10n.monthName(_focused.month),
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary)),
+              ),
             ]),
           ),
         ),
@@ -602,29 +615,28 @@ class _CalendarScreenState extends State<CalendarScreen> {
   // ── Event list for selected day ───────────────────────────
   Widget _buildEventList(List<CalEvent> events, Color primary, AppL10n l10n) {
     if (_selected == null) {
-      return Center(child: Text(l10n.calNoEvent, style: const TextStyle(color: AppColors.textHint)));
+      return Center(child: Text(l10n.calNoEvent,
+          style: const TextStyle(color: AppColors.textHint)));
     }
-    final dateLabel = '${_selected!.month}/${_selected!.day}（${l10n.weekdayShort[_selected!.weekday % 7]}）';
+    final dateLabel =
+        '${_selected!.month}/${_selected!.day}（${l10n.weekdayShort[_selected!.weekday % 7]}）';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-          child: Text(dateLabel,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
-        ),
-        Expanded(
-          child: events.isEmpty
-              ? Center(child: Text(l10n.calNoEvent, style: const TextStyle(color: AppColors.textHint, fontSize: 13)))
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: events.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
-                  itemBuilder: (_, i) => _EventTile(event: events[i], primary: primary, l10n: l10n),
-                ),
-        ),
-      ],
+    return NotebookBackground(
+      lineColor: primary.withValues(alpha: 0.08),
+      child: events.isEmpty
+          ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              DoodleHeart(color: primary.withValues(alpha: 0.20), size: 26),
+              const SizedBox(height: 8),
+              Text(l10n.calNoEvent,
+                  style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
+            ]))
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
+              itemCount: events.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemBuilder: (_, i) =>
+                  _EventTile(event: events[i], primary: primary, l10n: l10n),
+            ),
     );
   }
 }
@@ -736,28 +748,37 @@ class _EventTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final isTrip = event.type == CalEventType.userTrip;
+    return StitchedBox(
+      color: AppColors.surface,
+      stitchColor: _color.withValues(alpha: 0.28),
+      radius: 12, inset: 3.5, dashWidth: 4, dashGap: 3,
+      boxShadow: [BoxShadow(color: _color.withValues(alpha: 0.08), blurRadius: 6, offset: const Offset(0, 1))],
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border(left: BorderSide(color: _color, width: 3)),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withValues(alpha: 0.04),
-          blurRadius: 6, offset: const Offset(0, 1))],
-      ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // 左側色條 + 裝飾
+        Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(width: 3, height: 36, decoration: BoxDecoration(
+            color: _color, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 4),
+          isTrip
+              ? DoodleHeart(color: _color.withValues(alpha: 0.60), size: 9)
+              : DoodleLightning(color: _color.withValues(alpha: 0.60), size: 7),
+        ]),
+        const SizedBox(width: 10),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: _color.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(_typeLabel,
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: _color)),
               ),
-              child: Text(_typeLabel,
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: _color)),
-            ),
+            ]),
             const SizedBox(height: 4),
             Text(event.title,
               maxLines: 2, overflow: TextOverflow.ellipsis,

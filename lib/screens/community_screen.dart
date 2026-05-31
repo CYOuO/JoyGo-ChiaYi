@@ -1278,33 +1278,40 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 
   Widget _buildMyPostsTab() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.edit_outlined, size: 60, color: AppColors.textHint),
-          const SizedBox(height: 16),
-          const Text(
-            '尚未發布任何行程',
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            '分享你的嘉義旅行，讓更多人看見！',
-            style: TextStyle(color: AppColors.textHint),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.add_rounded),
-            label: const Text('發布行程'),
-          ),
-        ],
-      ),
+    final primary = Theme.of(context).colorScheme.primary;
+    return StreamBuilder<List<CommunityPost>>(
+      stream: CommunityService.myPostsStream(),
+      builder: (ctx, snap) {
+        if (snap.connectionState == ConnectionState.waiting && snap.data == null) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final posts = snap.data ?? [];
+        if (posts.isEmpty) {
+          return Center(child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.edit_note_rounded, size: 60, color: AppColors.textHint.withValues(alpha: 0.5)),
+              const SizedBox(height: 16),
+              const Text('還沒有發布貼文',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.textPrimary)),
+              const SizedBox(height: 8),
+              const Text('分享你的嘉義旅行，讓更多人看見！',
+                style: TextStyle(color: AppColors.textHint)),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                onPressed: () => _showCreatePostSheet(context, primary),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('發布行程'),
+              ),
+            ],
+          ));
+        }
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+          itemCount: posts.length,
+          itemBuilder: (_, i) => _firebasePostCard(posts[i], primary),
+        );
+      },
     );
   }
 }

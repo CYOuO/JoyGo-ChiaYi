@@ -1313,7 +1313,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 ],
               ]),
               const SizedBox(height: 8),
-              // 類別 + 地址（從 DummyData）
+              // 詳細資訊（從 DummyData 補充）
               if (info != null) ...[
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1322,8 +1322,8 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     borderRadius: BorderRadius.circular(8)),
                   child: Text(info.category,
                     style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700))),
-                const SizedBox(height: 10),
-                if (info.address.isNotEmpty) Row(children: [
+                const SizedBox(height: 12),
+                if (info.address.isNotEmpty) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textHint),
                   const SizedBox(width: 4),
                   Expanded(child: Text(info.address,
@@ -1334,13 +1334,34 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   Row(children: [
                     const Icon(Icons.access_time_rounded, size: 14, color: AppColors.textHint),
                     const SizedBox(width: 4),
-                    Text(info.openHours, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
+                    Expanded(child: Text(info.openHours,
+                        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                   ]),
                 ],
                 if (info.description.isNotEmpty) ...[
                   const Divider(height: 24),
-                  Text(info.description, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.7)),
+                  const Text('關於此景點',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                  const SizedBox(height: 6),
+                  Text(info.description,
+                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.75)),
                 ],
+              ] else ...[
+                // 無 DummyData 對應時，至少顯示說明
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceMoss,
+                    borderRadius: BorderRadius.circular(12)),
+                  child: Row(children: [
+                    Icon(Icons.info_outline_rounded, size: 18, color: AppColors.textHint),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(
+                      '此景點的詳細資訊尚未建立。\n可前往地圖查看位置或導航。',
+                      style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.6))),
+                  ]),
+                ),
               ],
               const SizedBox(height: 20),
               // 操作按鈕
@@ -2510,26 +2531,45 @@ class _TripDetailPageState extends State<_TripDetailPage>
 
   static const _kChiayiCenter = LatLng(23.480, 120.449);
 
-  void _openNavigation(String spotName) async {
-    // 先查精確座標，有的話直接導航；沒有就搜尋
+  Future<void> _openNavigation(String spotName) async {
     final spot = _lookupSpot(spotName);
-    final Uri uri;
+
+    // 策略 1：geo: 導航 URI（Android 原生 + Google Maps App 均支援）
     if (spot != null) {
-      // Google Maps 導航（會啟動 Google Maps App 或 Web 的路線規劃）
-      uri = Uri.parse(
+      final geoUri = Uri.parse(
+          'geo:${spot.lat},${spot.lng}'
+          '?q=${spot.lat},${spot.lng}(${Uri.encodeComponent(spotName)})');
+      if (await canLaunchUrl(geoUri)) {
+        await launchUrl(geoUri, mode: LaunchMode.externalApplication);
+        return;
+      }
+    }
+
+    // 策略 2：Google Maps 網頁路線規劃（有座標）
+    if (spot != null) {
+      final webNav = Uri.parse(
         'https://www.google.com/maps/dir/?api=1'
         '&destination=${spot.lat},${spot.lng}'
-        '&destination_place_id=${Uri.encodeComponent(spotName)}'
         '&travelmode=driving',
       );
-    } else {
-      uri = Uri.parse(
-        'https://www.google.com/maps/search/?api=1'
-        '&query=${Uri.encodeComponent('$spotName 嘉義')}',
-      );
+      if (await canLaunchUrl(webNav)) {
+        await launchUrl(webNav, mode: LaunchMode.externalApplication);
+        return;
+      }
+      // fallback：在 App 內開啟網頁
+      await launchUrl(webNav, mode: LaunchMode.inAppWebView);
+      return;
     }
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+    // 策略 3：Google Maps 名稱搜尋
+    final searchUri = Uri.parse(
+      'https://www.google.com/maps/search/?api=1'
+      '&query=${Uri.encodeComponent('$spotName 嘉義')}',
+    );
+    if (await canLaunchUrl(searchUri)) {
+      await launchUrl(searchUri, mode: LaunchMode.externalApplication);
+    } else {
+      await launchUrl(searchUri, mode: LaunchMode.inAppWebView);
     }
   }
 

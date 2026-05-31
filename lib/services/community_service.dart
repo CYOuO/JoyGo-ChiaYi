@@ -128,8 +128,6 @@ class CommunityService {
     String type = 'all',
     bool byLikes = false,
   }) {
-    // Single-field orderBy avoids composite index requirements.
-    // Type filtering is done client-side.
     final query = _posts.orderBy(
       byLikes ? 'likeCount' : 'createdAt',
       descending: true,
@@ -139,6 +137,21 @@ class CommunityService {
       if (type != 'all') posts = posts.where((p) => p.type == type).toList();
       return posts;
     });
+  }
+
+  /// 目前使用者自己發的貼文（依 createdAt 降序）
+  static Stream<List<CommunityPost>> myPostsStream() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return const Stream.empty();
+    // 只 where authorId，client 排序，避免 composite index
+    return _posts
+        .where('authorId', isEqualTo: uid)
+        .snapshots()
+        .map((snap) {
+          final list = snap.docs.map(CommunityPost.fromDoc).toList();
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   // ── 建立貼文 ──────────────────────────────────────────────────

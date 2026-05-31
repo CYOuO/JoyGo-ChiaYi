@@ -89,12 +89,16 @@ class TripService {
   static Stream<List<FirebaseTrip>> tripsStream() {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
+    // 只用單欄位 where，排序在 client 端，避免 Firestore composite index 需求
     return _db
         .collection('trips')
         .where('uid', isEqualTo: uid)
-        .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((s) => s.docs.map(FirebaseTrip.fromDoc).toList());
+        .map((s) {
+          final list = s.docs.map(FirebaseTrip.fromDoc).toList();
+          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          return list;
+        });
   }
 
   /// 即時監聽單一行程文件（行程詳情頁用，景點加入後即時更新）

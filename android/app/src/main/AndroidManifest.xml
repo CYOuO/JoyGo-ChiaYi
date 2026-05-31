@@ -49,5 +49,21 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- 允許查詢可以開啟 http/https 的應用（瀏覽器）-->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
+        <!-- 允許查詢 geo: 導航 URI（Google Maps、HERE 等）-->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="geo"/>
+        </intent>
+        <!-- 直接指定 Google Maps 套件 -->
+        <package android:name="com.google.android.apps.maps"/>
     </queries>
 </manifest>

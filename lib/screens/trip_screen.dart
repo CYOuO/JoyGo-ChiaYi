@@ -1172,69 +1172,77 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     final hasImage = imageUrl.isNotEmpty;
     final imgH     = hasImage ? (index.isEven ? 150.0 : 190.0) : 0.0;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return StitchedBox(
+      color: Colors.white,
+      stitchColor: primary.withValues(alpha: 0.22),
+      radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
+      boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 3))],
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3))],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (hasImage)
-          Stack(children: [
-            Image.network(imageUrl,
-              width: double.infinity, height: imgH, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-            // 愛心取消收藏 — 右上角
-            Positioned(top: 6, right: 6, child: GestureDetector(
-              onTap: () => onUnsave(spotId, spotName),
-              child: Container(padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), shape: BoxShape.circle),
-                child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)))),
-            // +行程 — 右下角（與無圖片卡片一致）
-            Positioned(bottom: 6, right: 6, child: GestureDetector(
-              onTap: () => _showAddToTripSheet(ctx, spotId, spotName),
-              child: Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(8)),
-                child: Text('+行程', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w700))))),
-          ]),
-        Padding(
-          padding: EdgeInsets.fromLTRB(10, hasImage ? 8 : 12, 10, 10),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (!hasImage)
-              Row(children: [
-                Expanded(child: Text(spotName,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                  maxLines: 2, overflow: TextOverflow.ellipsis)),
-                GestureDetector(
-                  onTap: () => onUnsave(spotId, spotName),
-                  child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)),
-              ])
-            else
-              Text(spotName,
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 4),
-            Row(children: [
-              if (rating > 0) ...[
-                const Icon(Icons.star_rounded, size: 11, color: AppColors.accentStraw),
-                Text(' ${rating.toStringAsFixed(1)} ', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-              ],
-              if (!hasImage) ...[
-                const Spacer(),
-                GestureDetector(
-                  onTap: () => _showAddToTripSheet(ctx, spotId, spotName),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
-                    child: Text('+行程', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w700)))),
-              ],
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (hasImage)
+            Stack(children: [
+              Image.network(imageUrl,
+                width: double.infinity, height: imgH, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+              // 愛心取消收藏 — 右上角
+              Positioned(top: 6, right: 6, child: GestureDetector(
+                onTap: () => onUnsave(spotId, spotName),
+                child: Container(padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.92), shape: BoxShape.circle),
+                  child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)))),
+              // +行程 — 右下角
+              Positioned(bottom: 6, right: 6, child: GestureDetector(
+                onTap: () => _showAddToTripSheet(ctx, spotId, spotName),
+                child: Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(8)),
+                  child: Text('+行程', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w700))))),
             ]),
-          ]),
-        ),
-      ]),
+          Padding(
+            padding: EdgeInsets.fromLTRB(10, hasImage ? 8 : 12, 10, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (!hasImage)
+                Row(children: [
+                  Expanded(child: HandDrawnUnderline(
+                    color: primary.withValues(alpha: 0.22),
+                    child: Text(spotName,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
+                      maxLines: 2, overflow: TextOverflow.ellipsis))),
+                  const SizedBox(width: 6),
+                  GestureDetector(
+                    onTap: () => onUnsave(spotId, spotName),
+                    child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)),
+                ])
+              else
+                HandDrawnUnderline(
+                  color: primary.withValues(alpha: 0.20),
+                  child: Text(spotName,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+              const SizedBox(height: 5),
+              Row(children: [
+                if (rating > 0) ...[
+                  DoodleHeart(color: AppColors.error.withValues(alpha: 0.70), size: 10),
+                  const SizedBox(width: 3),
+                  Text(rating.toStringAsFixed(1), style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                ],
+                if (!hasImage) ...[
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _showAddToTripSheet(ctx, spotId, spotName),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(6)),
+                      child: Text('+行程', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w700)))),
+                ],
+              ]),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -2356,15 +2364,29 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   Widget _buildMapMode(Color primary, FirebaseTrip trip) {
-    // ── 依景點名稱查 DummyData 座標，畫連線 ──────────────────
-    final spotLatLngs = trip.spots
-        .map((name) {
-          try { return DummyData.spots.firstWhere((s) => s.name == name); }
-          catch (_) { return null; }
-        })
-        .whereType<Spot>()
-        .map((s) => LatLng(s.lat, s.lng))
-        .toList();
+    // ── 依景點名稱查 DummyData 座標（精確 → 模糊 → 嘉義市區隨機分布）
+    Spot? _lookupSpot(String name) {
+      // 1. 精確比對
+      try { return DummyData.spots.firstWhere((s) => s.name == name); } catch (_) {}
+      // 2. 模糊比對（contains）
+      try { return DummyData.spots.firstWhere(
+        (s) => s.name.contains(name) || name.contains(s.name)); } catch (_) {}
+      return null;
+    }
+    // 若景點比對不到 DummyData，用嘉義市中心附近的偏移座標作為 demo 佔位
+    const _kFallbackLats = [23.480, 23.483, 23.477, 23.486, 23.474];
+    const _kFallbackLngs = [120.449, 120.453, 120.444, 120.458, 120.441];
+    int _fbIdx = 0;
+
+    final spotLatLngs = trip.spots.map((name) {
+      final s = _lookupSpot(name);
+      if (s != null) return LatLng(s.lat, s.lng);
+      // fallback: 散布在嘉義市附近
+      final pt = LatLng(_kFallbackLats[_fbIdx % _kFallbackLats.length],
+                        _kFallbackLngs[_fbIdx % _kFallbackLngs.length]);
+      _fbIdx++;
+      return pt;
+    }).toList();
 
     final mapCenter = spotLatLngs.isNotEmpty
         ? LatLng(
@@ -2408,33 +2430,22 @@ class _TripDetailPageState extends State<_TripDetailPage>
                     ]),
                   // ── 編號 Marker ──
                   MarkerLayer(markers: [
-                    if (spotLatLngs.isNotEmpty)
-                      ...List.generate(spotLatLngs.length, (i) => Marker(
-                        point: spotLatLngs[i],
-                        width: 30, height: 36,
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(
-                              color: primary,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.40), blurRadius: 6)]),
-                            child: Center(child: Text('${i + 1}',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)))),
-                          Container(width: 2, height: 5, color: primary),
-                        ]),
-                      ))
-                    else
-                      Marker(
-                        point: _kChiayiCenter,
-                        width: 30, height: 30,
-                        child: Container(
+                    ...List.generate(spotLatLngs.length, (i) => Marker(
+                      point: spotLatLngs[i],
+                      width: 30, height: 36,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          width: 28, height: 28,
                           decoration: BoxDecoration(
-                            color: primary, shape: BoxShape.circle,
-                            boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.4), blurRadius: 8)]),
-                          child: const Icon(Icons.place_rounded, size: 18, color: Colors.white)),
-                      ),
+                            color: primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.40), blurRadius: 6)]),
+                          child: Center(child: Text('${i + 1}',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11)))),
+                        Container(width: 2, height: 5, color: primary),
+                      ]),
+                    )),
                   ]),
                 ],
               ), // FlutterMap

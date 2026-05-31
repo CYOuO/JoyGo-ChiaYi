@@ -89,7 +89,7 @@ class _CalApiService {
         final title   = _p(raw, ['活動名稱','標題','名稱','name','Name','title','Title','Subject']) ?? '無標題';
         final dateStr = _p(raw, ['活動開始日期','發布日期','日期','date','Date','建立時間','PublishDate','StartDate']) ?? '';
         final date    = _parseDate(dateStr) ?? DateTime.now();
-        final endStr  = _p(raw, ['活動結束日期','EndDate','endDate']);
+        final endStr  = _p(raw, ['活動結束日期','ActiveEnd','EndDate','endDate','結束日期','活動截止日期']);
         final endDate = endStr != null ? _parseDate(endStr) : null;
         final loc     = _p(raw, ['活動地點','地點','Location','location','venue']);
         final url2    = _p(raw, ['連結','url','URL','link','詳細連結','WebUrl']);
@@ -491,13 +491,24 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final startOffset = firstDay.weekday % 7; // Sun=0
     final today       = DateTime.now();
 
-    // Compute trip ranges
+    // Compute trip ranges (blue bar)
     final tripRanges = widget.userTrips.map((t) =>
       (start: DateTime(t.date.year, t.date.month, t.date.day),
        end: t.endDate != null
            ? DateTime(t.endDate!.year, t.endDate!.month, t.endDate!.day)
            : DateTime(t.date.year, t.date.month, t.date.day))
     ).toList();
+
+    // Compute gov event ranges (coral bar — multi-day events)
+    final govRanges = _apiEvents
+        .where((e) => e.endDate != null &&
+            !DateTime(e.date.year, e.date.month, e.date.day)
+                .isAtSameMomentAs(DateTime(e.endDate!.year, e.endDate!.month, e.endDate!.day)))
+        .map((e) => (
+          start: DateTime(e.date.year, e.date.month, e.date.day),
+          end:   DateTime(e.endDate!.year, e.endDate!.month, e.endDate!.day),
+        ))
+        .toList();
 
     _RangeEdge _rangeEdge(DateTime d) {
       for (final r in tripRanges) {
@@ -508,6 +519,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
       }
       return _RangeEdge.none;
     }
+
+    // 政府活動是否在此日的某個範圍內
+    bool _hasGovRange(DateTime d) =>
+        govRanges.any((r) => !d.isBefore(r.start) && !d.isAfter(r.end));
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
@@ -547,6 +562,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
               dayNum: dayNum, isToday: isToday,
               isSelected: isSel, events: events,
               isSunSat: isSunSat, rangeEdge: edge,
+              hasGovRange: _hasGovRange(date),
               primary: primary,
             ),
           );
@@ -648,12 +664,14 @@ class _DayCell extends StatelessWidget {
   final int dayNum;
   final bool isToday, isSelected, isSunSat;
   final _RangeEdge rangeEdge;
+  final bool hasGovRange;
   final List<CalEvent> events;
   final Color primary;
   const _DayCell({
     required this.dayNum, required this.isToday,
     required this.isSelected, required this.isSunSat,
     this.rangeEdge = _RangeEdge.none,
+    this.hasGovRange = false,
     required this.events, required this.primary,
   });
 
@@ -710,13 +728,23 @@ class _DayCell extends StatelessWidget {
                 ],
               ),
             ),
-            // Rounded capsule underline for range dates
+            // 行程範圍藍色底線
             if (inRange)
               Container(
                 margin: const EdgeInsets.only(top: 2),
                 width: 16, height: 3,
                 decoration: BoxDecoration(
                   color: primary.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(1.5),
+                ),
+              ),
+            // 政府活動範圍珊瑚色底線
+            if (hasGovRange && !inRange)
+              Container(
+                margin: const EdgeInsets.only(top: 2),
+                width: 14, height: 2.5,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF8FAB).withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(1.5),
                 ),
               ),

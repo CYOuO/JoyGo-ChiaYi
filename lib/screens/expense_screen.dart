@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
+import '../theme/fabric_textures.dart';
 
 // ═══════════════════════════════════════════════
 // MODELS
@@ -535,36 +536,49 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     const Text('點下方「新增消費」開始記帳', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
                   ]),
                 )
-              : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
-                  children: [
-                    for (final dateKey in sortedKeys) ...[
-                      _dateHeader(dateKey),
-                      ...grouped[dateKey]!.map((e) => _expenseCard(e)),
-                    ],
-                  ],
-                ),
+              : Builder(builder: (ctx) {
+                  final p = Theme.of(ctx).colorScheme.primary;
+                  return NotebookBackground(
+                    lineColor: p.withValues(alpha: 0.07),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 120),
+                      children: [
+                        for (final dateKey in sortedKeys) ...[
+                          _dateHeader(dateKey),
+                          ...grouped[dateKey]!.map((e) => _expenseCard(e)),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
         ),
       ],
     );
   }
 
   Widget _buildSummaryStrip() {
-    final perPerson =
-        _members.isNotEmpty ? (_totalAmount / _members.length).round() : 0;
-    return Container(
-      color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        children: [
-          _stripStat('總花費', 'NT\$ $_totalAmount', Theme.of(context).colorScheme.primary),
-          _vLine(),
-          _stripStat('人數', '${_members.length} 人', AppColors.textSecondary),
-          _vLine(),
-          _stripStat('筆數', '${_expenses.length} 筆', AppColors.textSecondary),
-          _vLine(),
-          _stripStat('每人均攤', 'NT\$ $perPerson', AppColors.accentTerra),
-        ],
+    final primary = Theme.of(context).colorScheme.primary;
+    final perPerson = _members.isNotEmpty ? (_totalAmount / _members.length).round() : 0;
+    return NotebookBackground(
+      lineColor: primary.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: StitchedBox(
+          color: Colors.white,
+          stitchColor: primary.withValues(alpha: 0.22),
+          radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.07), blurRadius: 10, offset: const Offset(0, 3))],
+          child: Row(children: [
+            _stripStat('總花費', 'NT\$ $_totalAmount', primary),
+            _vLine(),
+            _stripStat('人數', '${_members.length} 人', AppColors.textSecondary),
+            _vLine(),
+            _stripStat('筆數', '${_expenses.length} 筆', AppColors.textSecondary),
+            _vLine(),
+            _stripStat('均攤', 'NT\$ $perPerson', AppColors.accentTerra),
+          ]),
+        ),
       ),
     );
   }
@@ -591,29 +605,22 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       width: 1, height: 28, color: AppColors.divider);
 
   Widget _dateHeader(String date) {
+    final primary = Theme.of(context).colorScheme.primary;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
-      child: Row(
-        children: [
-          Container(
-            width: 3,
-            height: 14,
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            date,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(2, 14, 4, 6),
+      child: Row(children: [
+        DoodleHeart(color: primary.withValues(alpha: 0.50), size: 10),
+        const SizedBox(width: 6),
+        HandDrawnUnderline(
+          color: primary.withValues(alpha: 0.25),
+          child: Text(date,
+            style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: primary)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: Container(height: 0.7, color: primary.withValues(alpha: 0.18))),
+        const SizedBox(width: 6),
+        DoodleLightning(color: primary.withValues(alpha: 0.35), size: 7),
+      ]),
     );
   }
 
@@ -643,16 +650,16 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       onDismissed: (_) {
         setState(() => _expenses.removeWhere((x) => x.id == e.id));
       },
-      child: GestureDetector(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: GestureDetector(
         onTap: () => _showExpenseDetail(context, e),
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
+        child: StitchedBox(
+          color: Colors.white,
+          stitchColor: catColor.withValues(alpha: 0.28),
+          radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
           padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceWarm,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.divider),
-          ),
+          boxShadow: [BoxShadow(color: catColor.withValues(alpha: 0.07), blurRadius: 8, offset: const Offset(0, 2))],
           child: Row(
             children: [
               // Icon circle
@@ -727,7 +734,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             ],
           ),
         ),
-      ),
+        ), // GestureDetector
+      ), // Padding
     );
   }
 
@@ -1745,13 +1753,13 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   // ── helpers ──
   Widget _sectionCard({required Widget child}) {
-    return Container(
+    final primary = Theme.of(context).colorScheme.primary;
+    return StitchedBox(
+      color: Colors.white,
+      stitchColor: primary.withValues(alpha: 0.20),
+      radius: 18, inset: 4.5, dashWidth: 4, dashGap: 3,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceWarm,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.divider),
-      ),
+      boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 3))],
       child: child,
     );
   }

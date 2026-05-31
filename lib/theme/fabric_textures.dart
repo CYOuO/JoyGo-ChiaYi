@@ -530,18 +530,19 @@ class ScatteredDoodles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.12);
+    final c = (color ?? Theme.of(context).colorScheme.primary).withValues(alpha: 0.11);
+    // 只用右側定位，避免遮住左側時間軸（timeline 區域約佔左側 80px）
     return IgnorePointer(
       child: SizedBox.expand(
         child: Stack(children: [
-          Positioned(top: 18, right: 24, child: DoodleHeart(color: c, size: 11)),
-          Positioned(top: 55, left: 18, child: DoodleCloud(color: c, width: 22)),
-          Positioned(top: 110, right: 40, child: DoodleLightning(color: c, size: 8)),
-          Positioned(top: 165, left: 30, child: DoodleButton(color: c, size: 12)),
-          Positioned(top: 220, right: 20, child: DoodleHeart(color: c, size: 8)),
-          Positioned(top: 270, left: 22, child: DoodleLightning(color: c, size: 7)),
-          Positioned(top: 330, right: 38, child: DoodleCloud(color: c, width: 18)),
-          Positioned(top: 380, left: 15, child: DoodleButton(color: c, size: 10)),
+          Positioned(top: 16,  right: 20, child: DoodleHeart(color: c, size: 10)),
+          Positioned(top: 60,  right: 44, child: DoodleLightning(color: c, size: 8)),
+          Positioned(top: 110, right: 18, child: DoodleCloud(color: c, width: 20)),
+          Positioned(top: 175, right: 36, child: DoodleHeart(color: c, size: 8)),
+          Positioned(top: 230, right: 22, child: DoodleLightning(color: c, size: 7)),
+          Positioned(top: 290, right: 48, child: DoodleCloud(color: c, width: 16)),
+          Positioned(top: 350, right: 14, child: DoodleHeart(color: c, size: 9)),
+          Positioned(top: 410, right: 38, child: DoodleLightning(color: c, size: 6)),
         ]),
       ),
     );

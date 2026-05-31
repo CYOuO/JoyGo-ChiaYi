@@ -932,7 +932,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _QuickItem(HugeIcons.strokeRoundedLocation06, '地圖探索', const Color(0xFFE6F0E6),
         () => widget.onSwitchTab?.call(2)), // 探索 = 新 index 2
       _QuickItem(HugeIcons.strokeRoundedCalendar03, '行程管理', const Color(0xFFF5EFE6),
-        () => widget.onSwitchTab?.call(2)), // 行程 = 新 index 1
+        () => widget.onSwitchTab?.call(1)), // 行程 = 新 index 1
       _QuickItem(HugeIcons.strokeRoundedWallet01, '旅遊分帳', const Color(0xFFEDF5ED),
         () => Navigator.push(context, _goRoute(const ExpenseScreen()))),
       _QuickItem(HugeIcons.strokeRoundedUserGroup, '旅遊社群', const Color(0xFFEBEFF2),
@@ -940,7 +940,10 @@ class _HomeScreenState extends State<HomeScreen> {
       _QuickItem(HugeIcons.strokeRoundedTicket01, '活動行事曆', const Color(0xFFF0EBF5),
         () => widget.onGoToTripCalendar?.call()),
       _QuickItem(HugeIcons.strokeRoundedBus01, '交通動態', const Color(0xFFE8F0F5),
-        () => Navigator.push(context, _goRoute(const TransportScreen()))),
+        () => Navigator.push(context, _goRoute(TransportScreen(
+            // 🌟 神奇攔截器：把交通動態傳出來的舊版 1 (行程) 自動轉換成新版 2 (地圖)
+            onSwitchTab: (idx) => widget.onSwitchTab?.call(idx == 1 ? 2 : idx)
+        )))),
       _QuickItem(HugeIcons.strokeRoundedStar, '集章成就', const Color(0xFFF5F0E8),
         () => widget.onSwitchTab?.call(4)),
       _QuickItem(HugeIcons.strokeRoundedCamera01, '打卡相機', const Color(0xFFF0EDF5),

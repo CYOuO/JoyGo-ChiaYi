@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
+import '../services/expense_service.dart';
+import '../services/trip_service.dart';
 
 // ═══════════════════════════════════════════════
 // MODELS
@@ -10,15 +14,47 @@ import '../theme/fabric_textures.dart';
 class Member {
   final String id;
   final String name;
-  final String emoji;
-  double balance; // 正 = 被欠；負 = 欠人
+  final String? photoUrl;
+  final String? uid;        // Firebase UID（外部成員為 null）
+  final bool isExternal;
+  double balance;
 
   Member({
     required this.id,
     required this.name,
-    required this.emoji,
+    this.photoUrl,
+    this.uid,
+    this.isExternal = false,
     this.balance = 0,
   });
+
+  /// 從 TripMember 轉換
+  factory Member.fromTripMember(TripMember m) =>
+      Member(id: m.id, name: m.name, photoUrl: m.photoUrl, uid: m.uid, isExternal: m.isExternal);
+
+  String get initial => name.isNotEmpty ? name[0] : '?';
+}
+
+/// 將 List<TripMember> 同步回 _members (Member 格式)
+List<Member> _toMemberList(List<TripMember> list) =>
+    list.map(Member.fromTripMember).toList();
+
+/// 頂層函式，可在任意 State 使用
+Widget _buildMemberAvatar(BuildContext context, Member m, {double radius = 18}) {
+  final primary = Theme.of(context).colorScheme.primary;
+  if (m.photoUrl != null && m.photoUrl!.isNotEmpty) {
+    return CircleAvatar(radius: radius, backgroundImage: NetworkImage(m.photoUrl!));
+  }
+  return CircleAvatar(
+    radius: radius,
+    backgroundColor: m.isExternal
+        ? const Color(0xFFE8A020).withValues(alpha: 0.25)
+        : primary.withValues(alpha: 0.15),
+    child: Text(m.initial,
+      style: TextStyle(
+        fontSize: radius * 0.75, fontWeight: FontWeight.w700,
+        color: m.isExternal ? const Color(0xFFB06010) : primary)),
+  );
 }
 
 class ExpenseItem {
@@ -70,7 +106,9 @@ class Settlement {
 
 class ExpenseScreen extends StatefulWidget {
   final bool embedded;
-  const ExpenseScreen({super.key, this.embedded = false});
+  /// 嵌入在行程詳情時傳入 tripId；獨立使用時為 null
+  final String? tripId;
+  const ExpenseScreen({super.key, this.embedded = false, this.tripId});
 
   @override
   State<ExpenseScreen> createState() => _ExpenseScreenState();
@@ -80,29 +118,39 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
-  // ── Trips ──
-  final List<_TripEntry> _trips = [
-    _TripEntry(id: 'trip1', name: '嘉義週末輕旅行', icon: '🗓️'),
-    _TripEntry(id: 'trip2', name: '親子阿里山一日遊', icon: '⛰️'),
-  ];
-  String? _selectedTripId;    // null = 全部
-  String? _selectedCategory;  // null = 全部分類
+  // ── Firebase streams ──────────────────────────────────────
+  StreamSubscription<List<TripMember>>?    _membersSub;
+  StreamSubscription<List<ExpenseRecord>>? _expensesSub;
+  StreamSubscription<List<FirebaseTrip>>?  _tripsSub;
 
-  // ── Members ──
-  final List<Member> _members = [
-    Member(id: 'm1', name: '我', emoji: '🙋'),
-    Member(id: 'm2', name: '小美', emoji: '👩'),
-    Member(id: 'm3', name: '小明', emoji: '👦'),
-    Member(id: 'm4', name: '阿強', emoji: '🧑'),
-  ];
+  // ── Live data (Firebase → local models) ──────────────────
+  List<TripMember>   _fbMembers  = [];
+  List<ExpenseRecord> _fbExpenses = [];
+  List<FirebaseTrip>  _fbTrips   = [];
 
-  // ── Expenses ──
-  late List<ExpenseItem> _expenses;
+  // ── 轉換後的 local models（UI 使用）─────────────────────
+  List<Member>      get _members  => _toMemberList(_fbMembers);
+  List<ExpenseItem> get _expenses =>
+      _fbExpenses.map((r) => ExpenseItem(
+        id:             r.id,
+        icon:           _catIcon(r.category),
+        title:          r.title,
+        category:       r.category,
+        amount:         r.amount,
+        paidById:       r.paidByMemberId,
+        splitMemberIds: r.splitMemberIds,
+        date:           r.date,
+        tripId:         _activeTripId,
+      )).toList();
+
+  // 選取的行程（獨立模式用）
+  String? _selectedTripId;
+  String? _selectedCategory;
+
+  String? get _activeTripId => widget.tripId ?? _selectedTripId;
 
   List<ExpenseItem> get _filteredExpenses {
-    var list = _selectedTripId == null
-        ? _expenses
-        : _expenses.where((e) => e.tripId == _selectedTripId).toList();
+    var list = _expenses;
     if (_selectedCategory != null) {
       list = list.where((e) => e.category == _selectedCategory).toList();
     }
@@ -113,79 +161,47 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _expenses = _buildDummyExpenses();
+    _subscribeToData();
   }
 
-  List<ExpenseItem> _buildDummyExpenses() {
-    final allIds = _members.map((m) => m.id).toList();
-    return [
-      ExpenseItem(
-        id: 'e1', icon: '🏠', title: '民宿住宿（兩晚）',
-        category: '住宿', amount: 3600,
-        paidById: 'm3', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 7), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e2', icon: '🚗', title: '租車費用',
-        category: '交通', amount: 1800,
-        paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 7), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e3', icon: '🎫', title: '阿里山門票',
-        category: '門票', amount: 800,
-        paidById: 'm2', splitMemberIds: allIds,
-        date: DateTime(2025, 5, 18), tripId: 'trip2',
-      ),
-      ExpenseItem(
-        id: 'e4', icon: '🍜', title: '林聰明沙鍋魚頭午餐',
-        category: '餐飲', amount: 680,
-        paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 8), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e5', icon: '🌙', title: '文化路夜市晚餐',
-        category: '餐飲', amount: 520,
-        paidById: 'm4', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 8), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e6', icon: '🧃', title: '便利商店零食',
-        category: '餐飲', amount: 240,
-        paidById: 'm2', splitMemberIds: ['m1', 'm2', 'm3'],
-        date: DateTime(2025, 6, 9), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e7', icon: '🎁', title: '嘉義伴手禮',
-        category: '購物', amount: 960,
-        paidById: 'm3', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 9), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e8', icon: '⛽', title: '加油費',
-        category: '交通', amount: 450,
-        paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 6, 9), tripId: 'trip1',
-      ),
-      ExpenseItem(
-        id: 'e9', icon: '🍱', title: '嘉義火雞肉飯午餐',
-        category: '餐飲', amount: 320,
-        paidById: 'm1', splitMemberIds: allIds,
-        date: DateTime(2025, 5, 18), tripId: 'trip2',
-      ),
-    ];
+  void _subscribeToData() {
+    // 訂閱行程列表（獨立模式）
+    _tripsSub = TripService.tripsStream().listen((trips) {
+      if (mounted) setState(() => _fbTrips = trips);
+    });
+
+    // 若有 tripId（嵌入 or 已選取行程），訂閱成員 + 消費
+    final tid = _activeTripId;
+    if (tid != null) _subscribeToTrip(tid);
+  }
+
+  void _subscribeToTrip(String tripId) {
+    _membersSub?.cancel();
+    _expensesSub?.cancel();
+
+    _membersSub = ExpenseService.membersStream(tripId).listen((m) {
+      if (mounted) setState(() => _fbMembers = m);
+    });
+    _expensesSub = ExpenseService.expensesStream(tripId).listen((e) {
+      if (mounted) setState(() => _fbExpenses = e);
+    });
+
+    // 確保自己在成員清單
+    ExpenseService.ensureSelfInMembers(tripId);
   }
 
   @override
   void dispose() {
+    _membersSub?.cancel();
+    _expensesSub?.cancel();
+    _tripsSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
 
-  // ── Computed ──
+  // ── Computed ──────────────────────────────────────────────
 
-  int get _totalAmount =>
-      _filteredExpenses.fold(0, (sum, e) => sum + e.amount);
+  int get _totalAmount => _filteredExpenses.fold(0, (s, e) => s + e.amount);
 
   Map<String, int> get _memberTotals {
     final map = {for (final m in _members) m.id: 0};
@@ -210,45 +226,23 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Map<String, int> get _memberBalance {
     final paid = _memberTotals;
     final should = _memberShouldPay;
-    return {
-      for (final m in _members)
-        m.id: (paid[m.id] ?? 0) - (should[m.id] ?? 0)
-    };
+    return {for (final m in _members) m.id: (paid[m.id] ?? 0) - (should[m.id] ?? 0)};
   }
 
   List<Settlement> get _settlements {
     final balance = Map<String, int>.from(_memberBalance);
-    final settlements = <Settlement>[];
-
+    final result = <Settlement>[];
     while (true) {
-      final debtors = balance.entries
-          .where((e) => e.value < -1)
-          .toList()
-        ..sort((a, b) => a.value.compareTo(b.value));
-      final creditors = balance.entries
-          .where((e) => e.value > 1)
-          .toList()
-        ..sort((a, b) => b.value.compareTo(a.value));
-
+      final debtors   = balance.entries.where((e) => e.value < -1).toList()..sort((a,b) => a.value.compareTo(b.value));
+      final creditors = balance.entries.where((e) => e.value > 1) .toList()..sort((a,b) => b.value.compareTo(a.value));
       if (debtors.isEmpty || creditors.isEmpty) break;
-
-      final debtor = debtors.first;
-      final creditor = creditors.first;
-      final amount = debtor.value.abs() < creditor.value
-          ? debtor.value.abs()
-          : creditor.value;
-
-      settlements.add(Settlement(
-        fromId: debtor.key,
-        toId: creditor.key,
-        amount: amount,
-      ));
-
-      balance[debtor.key] = balance[debtor.key]! + amount;
-      balance[creditor.key] = balance[creditor.key]! - amount;
+      final debtor = debtors.first, creditor = creditors.first;
+      final amt = debtor.value.abs() < creditor.value ? debtor.value.abs() : creditor.value;
+      result.add(Settlement(fromId: debtor.key, toId: creditor.key, amount: amt));
+      balance[debtor.key]   = balance[debtor.key]!   + amt;
+      balance[creditor.key] = balance[creditor.key]! - amt;
     }
-
-    return settlements;
+    return result;
   }
 
   // ── Category helpers ──
@@ -263,6 +257,39 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   Color _catColor(String cat) =>
       _categoryColors[cat] ?? AppColors.textHint;
+
+  static const _categoryIcons = <String, IconData>{
+    '住宿': Icons.hotel_rounded,
+    '交通': Icons.directions_car_rounded,
+    '餐飲': Icons.restaurant_rounded,
+    '門票': Icons.confirmation_number_rounded,
+    '購物': Icons.shopping_bag_rounded,
+    '其他': Icons.more_horiz_rounded,
+  };
+  String _catIcon(String cat) {
+    // 已移除 emoji；icon widget 另外用 _catIconData
+    return cat;
+  }
+  IconData _catIconData(String cat) =>
+      _categoryIcons[cat] ?? Icons.receipt_long_rounded;
+
+  /// 成員頭像（有 photoUrl 用圖，否則顯示首字）
+  Widget _memberAvatar(Member m, {double radius = 20}) {
+    final primary = Theme.of(context).colorScheme.primary;
+    if (m.photoUrl != null && m.photoUrl!.isNotEmpty) {
+      return CircleAvatar(radius: radius, backgroundImage: NetworkImage(m.photoUrl!));
+    }
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: m.isExternal
+          ? AppColors.accentStraw.withValues(alpha: 0.25)
+          : primary.withValues(alpha: 0.15),
+      child: Text(m.initial,
+        style: TextStyle(
+          fontSize: radius * 0.8, fontWeight: FontWeight.w700,
+          color: m.isExternal ? AppColors.accentTerra : primary)),
+    );
+  }
 
   // ── 分類篩選列 ──
   Widget _buildCategoryFilter() {
@@ -364,12 +391,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             children: [
               Text(
                 _selectedTripId == null
-                    ? '全部行程'
-                    : _trips
-                        .firstWhere((t) => t.id == _selectedTripId,
-                            orElse: () => _TripEntry(
-                                id: '', name: '全部行程', icon: '📋'))
-                        .name,
+                    ? '選擇行程'
+                    : _fbTrips
+                        .where((t) => t.id == _selectedTripId)
+                        .map((t) => t.title)
+                        .firstOrNull ?? '選擇行程',
                 style: const TextStyle(
                     fontWeight: FontWeight.w800, fontSize: 16),
                 overflow: TextOverflow.ellipsis,
@@ -433,8 +459,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                 style: TextStyle(
                     fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            _tripPickerItem(null, '全部行程', '📋'),
-            ..._trips.map((t) => _tripPickerItem(t.id, t.name, t.icon)),
+            ..._fbTrips.map((t) => _tripPickerItem(t.id, t.title, t.icon)),
             const Divider(height: 20),
             Builder(builder: (bCtx) {
               final p = Theme.of(bCtx).colorScheme.primary;
@@ -470,6 +495,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       onTap: () {
         setState(() => _selectedTripId = id);
         Navigator.pop(context);
+        if (id != null) _subscribeToTrip(id);
       },
     );
   }
@@ -491,14 +517,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
           ElevatedButton(
             onPressed: () {
-              final name = ctrl.text.trim();
-              if (name.isNotEmpty) {
-                setState(() => _trips.add(_TripEntry(
-                  id: 'trip${DateTime.now().millisecondsSinceEpoch}',
-                  name: name, icon: '🗓️',
-                )));
-              }
+              // 記帳行程在 TripScreen 建立；這裡只提示
               Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                content: Text('請到「行程管理」頁面建立行程'),
+                behavior: SnackBarBehavior.floating));
             },
             child: const Text('新增'),
           ),
@@ -508,6 +531,17 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   Widget _buildExpenseListTab() {
+    // 獨立模式且未選行程 → 提示
+    if (_activeTripId == null) {
+      return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.receipt_long_rounded, size: 52, color: AppColors.textHint.withValues(alpha: 0.4)),
+        const SizedBox(height: 12),
+        const Text('請先選擇行程', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+        const SizedBox(height: 6),
+        const Text('點上方行程名稱選擇', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+      ]));
+    }
+
     // Group by date
     final grouped = <String, List<ExpenseItem>>{};
     for (final e in _filteredExpenses) {
@@ -626,7 +660,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   Widget _expenseCard(ExpenseItem e) {
     final payer = _members.firstWhere((m) => m.id == e.paidById,
-        orElse: () => Member(id: '', name: '?', emoji: '?'));
+        orElse: () => Member(id: '', name: '?'));
     final catColor = _catColor(e.category);
     final shareCount = e.splitMemberIds.length;
     final perShare = shareCount > 0 ? (e.amount / shareCount).round() : 0;
@@ -648,7 +682,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         return await _confirmDelete(context);
       },
       onDismissed: (_) {
-        setState(() => _expenses.removeWhere((x) => x.id == e.id));
+        final tid = _activeTripId;
+        if (tid != null) {
+          ExpenseService.deleteExpense(tid, e.id);
+        }
+        setState(() => _fbExpenses.removeWhere((x) => x.id == e.id));
       },
       child: Padding(
         padding: const EdgeInsets.only(bottom: 10),
@@ -662,18 +700,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           boxShadow: [BoxShadow(color: catColor.withValues(alpha: 0.07), blurRadius: 8, offset: const Offset(0, 2))],
           child: Row(
             children: [
-              // Icon circle
+              // Category icon circle (Material icon)
               Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: catColor.withOpacity(0.13),
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(e.icon,
-                      style: const TextStyle(fontSize: 20)),
-                ),
+                width: 46, height: 46,
+                decoration: BoxDecoration(color: catColor.withValues(alpha: 0.13), shape: BoxShape.circle),
+                child: Center(child: Icon(_catIconData(e.category), color: catColor, size: 22)),
               ),
               const SizedBox(width: 12),
               // Info
@@ -697,7 +728,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                         _tag(e.category, catColor),
                         const SizedBox(width: 6),
                         Text(
-                          '${payer.emoji} ${payer.name} 付款',
+                          '${payer.name} 付款',
                           style: const TextStyle(
                               fontSize: 11,
                               color: AppColors.textHint),
@@ -865,18 +896,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: AppColors.surfaceMoss,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(m.emoji,
-                  style: const TextStyle(fontSize: 18)),
-            ),
-          ),
+          _memberAvatar(m, radius: 19),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -965,9 +985,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   Widget _settlementRow(Settlement s) {
     final from = _members.firstWhere((m) => m.id == s.fromId,
-        orElse: () => Member(id: '', name: '?', emoji: '?'));
+        orElse: () => Member(id: '', name: '?'));
     final to = _members.firstWhere((m) => m.id == s.toId,
-        orElse: () => Member(id: '', name: '?', emoji: '?'));
+        orElse: () => Member(id: '', name: '?'));
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -981,8 +1001,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         children: [
           // From
           Column(children: [
-            Text(from.emoji,
-                style: const TextStyle(fontSize: 22)),
+            _memberAvatar(from, radius: 18),
+            const SizedBox(height: 4),
             Text(from.name,
                 style: const TextStyle(
                     fontSize: 11,
@@ -1034,8 +1054,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           ),
           // To
           Column(children: [
-            Text(to.emoji,
-                style: const TextStyle(fontSize: 22)),
+            _memberAvatar(to, radius: 18),
+            const SizedBox(height: 4),
             Text(to.name,
                 style: const TextStyle(
                     fontSize: 11,
@@ -1117,11 +1137,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
               tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              leading: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), shape: BoxShape.circle),
-                child: Center(child: Text(m.emoji, style: const TextStyle(fontSize: 20))),
-              ),
+              leading: _memberAvatar(m, radius: 20),
               title: Row(children: [
                 Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                 const SizedBox(width: 6),
@@ -1254,9 +1270,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                   padding: const EdgeInsets.only(bottom: 12),
                   child: Row(
                     children: [
-                      Text(m.emoji,
-                          style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
+                      _memberAvatar(m, radius: 14),
+                      const SizedBox(width: 6),
                       SizedBox(
                         width: 36,
                         child: Text(m.name,
@@ -1431,15 +1446,31 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   // ════════════════════════════════
 
   void _showAddExpense(BuildContext context) {
+    final tid = _activeTripId;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _AddExpenseSheet(
         members: _members,
-        trips: _trips,
+        trips: _fbTrips.map((t) => _TripEntry(id: t.id, name: t.title, icon: t.icon)).toList(),
         initialTripId: _selectedTripId,
-        onAdd: (e) => setState(() => _expenses.insert(0, e)),
+        onAdd: (e) {
+          // 儲存到 Firebase（若有 tripId）
+          if (tid != null) {
+            ExpenseService.addExpense(tid, ExpenseRecord(
+              id: '',
+              title:          e.title,
+              category:       e.category,
+              amount:         e.amount,
+              paidByMemberId: e.paidById,
+              splitMemberIds: e.splitMemberIds,
+              date:           e.date,
+              createdAt:      DateTime.now(),
+            ));
+          }
+          // Firebase stream 會自動更新 _fbExpenses，不需要 setState
+        },
       ),
     );
   }
@@ -1448,7 +1479,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       BuildContext context, ExpenseItem e) {
     final payer = _members.firstWhere((m) => m.id == e.paidById,
         orElse: () =>
-            Member(id: '', name: '?', emoji: '?'));
+            Member(id: '', name: '?'));
     final perShare = e.splitMemberIds.isNotEmpty
         ? (e.amount / e.splitMemberIds.length).round()
         : 0;
@@ -1503,8 +1534,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             const Divider(),
             const SizedBox(height: 12),
             _detailRow('分類', e.category),
-            _detailRow('付款人',
-                '${payer.emoji} ${payer.name}'),
+            _detailRow('付款人', payer.name),
             _detailRow('分攤方式',
                 '${e.splitMemberIds.length} 人平均分攤'),
             _detailRow(
@@ -1522,11 +1552,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                 final m = _members.firstWhere(
                     (x) => x.id == mid,
                     orElse: () => Member(
-                        id: '', name: '?', emoji: '?'));
+                        id: '', name: '?'));
                 return Builder(builder: (bCtx) {
                   final p = Theme.of(bCtx).colorScheme.primary;
                   return Chip(
-                    label: Text('${m.emoji} ${m.name}'),
+                    label: Text(m.name),
                     backgroundColor: p.withValues(alpha: 0.12),
                     side: BorderSide.none,
                     labelStyle: TextStyle(
@@ -1567,64 +1597,79 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   void _showMemberManager(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final tid = _activeTripId;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setLocal) => Container(
-          padding: const EdgeInsets.all(24),
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            borderRadius:
-                BorderRadius.vertical(top: Radius.circular(24)),
+      isScrollControlled: true,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 14),
+          Row(children: [
+            const Text('旅伴管理', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () => _showAddExternalMember(context),
+              icon: Icon(Icons.person_add_outlined, color: primary, size: 18),
+              label: Text('加外部旅伴', style: TextStyle(color: primary)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          ..._members.map((m) => ListTile(
+            leading: _memberAvatar(m, radius: 18),
+            title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+            subtitle: m.isExternal ? Text('外部成員', style: TextStyle(fontSize: 11, color: AppColors.textHint)) : null,
+            trailing: m.uid == FirebaseAuth.instance.currentUser?.uid
+                ? const Text('（我）', style: TextStyle(color: AppColors.textHint, fontSize: 12))
+                : IconButton(
+                    icon: const Icon(Icons.remove_circle_outline, color: AppColors.error, size: 20),
+                    onPressed: () async {
+                      if (tid != null) await ExpenseService.removeMember(tid, m.id);
+                    },
+                  ),
+          )),
+        ]),
+      ),
+    );
+  }
+
+  void _showAddExternalMember(BuildContext context) {
+    final ctrl = TextEditingController();
+    final primary = Theme.of(context).colorScheme.primary;
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('加入外部旅伴', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('外部旅伴沒有 app 帳號，只需要輸入姓名即可參與分帳。',
+            style: TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.5)),
+          const SizedBox(height: 12),
+          TextField(controller: ctrl, autofocus: true,
+            decoration: const InputDecoration(labelText: '旅伴姓名', hintText: '例如：阿強、小美')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () async {
+              final name = ctrl.text.trim();
+              if (name.isEmpty) return;
+              final tid = _activeTripId;
+              if (tid != null) await ExpenseService.addExternalMember(tid, name);
+              if (context.mounted) Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: primary),
+            child: const Text('加入', style: TextStyle(color: Colors.white)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('旅伴管理',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 16),
-              ...(_members
-                  .asMap()
-                  .entries
-                  .map((entry) => ListTile(
-                        leading: Text(entry.value.emoji,
-                            style: const TextStyle(
-                                fontSize: 22)),
-                        title: Text(entry.value.name,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.w600)),
-                        trailing: entry.key == 0
-                            ? const Text('（我）',
-                                style: TextStyle(
-                                    color: AppColors.textHint,
-                                    fontSize: 12))
-                            : IconButton(
-                                icon: const Icon(
-                                    Icons.remove_circle_outline,
-                                    color: AppColors.error),
-                                onPressed: () {
-                                  setState(() => _members
-                                      .removeAt(entry.key));
-                                  setLocal(() {});
-                                },
-                              ),
-                      ))),
-              const Divider(),
-              TextButton.icon(
-                onPressed: () =>
-                    _showAddMember(context, setLocal),
-                icon: Icon(Icons.person_add_outlined,
-                    color: Theme.of(ctx).colorScheme.primary),
-                label: const Text('新增旅伴'),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -1695,13 +1740,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           ElevatedButton(
             onPressed: () {
               if (nameCtrl.text.trim().isNotEmpty) {
-                final m = Member(
-                  id: 'm${DateTime.now().millisecondsSinceEpoch}',
-                  name: nameCtrl.text.trim(),
-                  emoji: selectedEmoji,
-                );
-                setState(() => _members.add(m));
-                setLocal(() {});
+                // 已改為 _showAddExternalMember (Firebase 版)
+                // This old dialog is no longer used
               }
               Navigator.pop(context);
             },
@@ -2112,9 +2152,7 @@ class _AddExpenseSheetState
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(m.emoji,
-                                style: const TextStyle(
-                                    fontSize: 18)),
+                            _buildMemberAvatar(context, m, radius: 12),
                             const SizedBox(width: 6),
                             Text(
                               m.name,
@@ -2214,9 +2252,7 @@ class _AddExpenseSheetState
                                   color: primary),
                             if (sel)
                               const SizedBox(width: 4),
-                            Text(m.emoji,
-                                style: const TextStyle(
-                                    fontSize: 16)),
+                            _buildMemberAvatar(context, m, radius: 10),
                             const SizedBox(width: 4),
                             Text(m.name,
                                 style: TextStyle(

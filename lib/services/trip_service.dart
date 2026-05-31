@@ -14,8 +14,16 @@ class FirebaseTrip {
   final int days;
   final bool isCompleted;
   final String? coverUrl;
-  final String icon; // custom emoji / icon for the trip
+  final String icon;
   final DateTime createdAt;
+
+  // ── 景點詳細資訊（存在行程文件內）────────────────────────────
+  /// 各景點到達時間  key = spotName, value = 'HH:mm'
+  final Map<String, String> spotTimes;
+  /// 各景點預算（元）key = spotName, value = budget int
+  final Map<String, int> spotBudgets;
+  /// 各景點備注       key = spotName, value = note string
+  final Map<String, String> spotNotes;
 
   const FirebaseTrip({
     required this.id,
@@ -29,10 +37,19 @@ class FirebaseTrip {
     this.coverUrl,
     this.icon = '🗺️',
     required this.createdAt,
+    this.spotTimes  = const {},
+    this.spotBudgets= const {},
+    this.spotNotes  = const {},
   });
 
   factory FirebaseTrip.fromDoc(DocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
+    Map<String, T> _toMap<T>(dynamic raw, T Function(dynamic) cast) {
+      if (raw is Map) {
+        return {for (final e in raw.entries) e.key.toString(): cast(e.value)};
+      }
+      return {};
+    }
     return FirebaseTrip(
       id:          doc.id,
       uid:         d['uid']         as String? ?? '',
@@ -45,6 +62,9 @@ class FirebaseTrip {
       coverUrl:    d['coverUrl']    as String?,
       icon:        d['icon']        as String? ?? '🗺️',
       createdAt:   (d['createdAt']  as Timestamp?)?.toDate() ?? DateTime.now(),
+      spotTimes:   _toMap<String>(d['spotTimes'],   (v) => v.toString()),
+      spotBudgets: _toMap<int>   (d['spotBudgets'], (v) => (v as num).toInt()),
+      spotNotes:   _toMap<String>(d['spotNotes'],   (v) => v.toString()),
     );
   }
 
@@ -117,6 +137,22 @@ class TripService {
       'spots': FieldValue.arrayUnion([spotName]),
     });
   }
+
+  /// 更新景點排序（整體替換 spots 陣列）
+  static Future<void> updateSpotOrder(String tripId, List<String> ordered) =>
+      _db.collection('trips').doc(tripId).update({'spots': ordered});
+
+  /// 儲存景點到達時間
+  static Future<void> setSpotTime(String tripId, String spotName, String time) =>
+      _db.collection('trips').doc(tripId).update({'spotTimes.$spotName': time});
+
+  /// 儲存景點預算
+  static Future<void> setSpotBudget(String tripId, String spotName, int budget) =>
+      _db.collection('trips').doc(tripId).update({'spotBudgets.$spotName': budget});
+
+  /// 儲存景點備注
+  static Future<void> setSpotNote(String tripId, String spotName, String note) =>
+      _db.collection('trips').doc(tripId).update({'spotNotes.$spotName': note});
 
   static Future<void> updateTrip(String tripId, Map<String, dynamic> data) =>
       _db.collection('trips').doc(tripId).update(data);

@@ -15,15 +15,21 @@ class SpotSaveButton extends StatefulWidget {
   final double rating;
   final double size;
   final Color? bgColor;
+  final String description;
+  final String address;
+  final String category;
 
   const SpotSaveButton({
     super.key,
     required this.spotId,
     required this.spotName,
-    this.imageUrl = '',
-    this.rating = 0.0,
-    this.size = 16,
+    this.imageUrl    = '',
+    this.rating      = 0.0,
+    this.size        = 16,
     this.bgColor,
+    this.description = '',
+    this.address     = '',
+    this.category    = '',
   });
 
   @override
@@ -76,9 +82,12 @@ class _SpotSaveButtonState extends State<SpotSaveButton> {
       if (user != null) {
         nowSaved = await TripService.toggleSavedSpot(
           widget.spotId,
-          spotName: widget.spotName,
-          imageUrl: widget.imageUrl,
-          rating: widget.rating,
+          spotName:    widget.spotName,
+          imageUrl:    widget.imageUrl,
+          rating:      widget.rating,
+          description: widget.description,
+          address:     widget.address,
+          category:    widget.category,
         );
       } else {
         nowSaved = await LocalFavService.toggle(widget.spotId);

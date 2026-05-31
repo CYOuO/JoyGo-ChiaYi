@@ -1582,10 +1582,13 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(width: 6),
           // ── Save button ──────────────────────────────────────
           SpotSaveButton(
-            spotId:   s.id,
-            spotName: s.name,
-            imageUrl: s.imageUrl,
-            size: 15,
+            spotId:      s.id,
+            spotName:    s.name,
+            imageUrl:    s.imageUrl,
+            size:        15,
+            description: s.description,
+            address:     s.address,
+            category:    s.category,
           ),
           const SizedBox(width: 4),
           const Icon(Icons.chevron_right_rounded,

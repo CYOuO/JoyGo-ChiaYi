@@ -276,8 +276,11 @@ class TripService {
   static Future<bool> toggleSavedSpot(
     String spotId, {
     required String spotName,
-    String imageUrl = '',
-    double rating = 0.0,
+    String imageUrl  = '',
+    double rating    = 0.0,
+    String description = '',
+    String address   = '',
+    String category  = '',
   }) async {
     final uid = _uid;
     if (uid == null) return false;
@@ -288,11 +291,14 @@ class TripService {
       return false;
     } else {
       await ref.set({
-        'spotId':   spotId,
-        'spotName': spotName,
-        'imageUrl': imageUrl,
-        'rating':   rating,
-        'savedAt':  FieldValue.serverTimestamp(),
+        'spotId':      spotId,
+        'spotName':    spotName,
+        'imageUrl':    imageUrl,
+        'rating':      rating,
+        if (description.isNotEmpty) 'description': description,
+        if (address.isNotEmpty)     'address':     address,
+        if (category.isNotEmpty)    'category':    category,
+        'savedAt':     FieldValue.serverTimestamp(),
       });
       return true;
     }

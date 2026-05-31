@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
@@ -1213,8 +1216,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
                       maxLines: 2, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 3),
+                    // 底線固定寬度 32px，與卡片寬度無關，視覺更統一
                     Container(height: 2, width: 32,
-                      decoration: BoxDecoration(color: primary.withValues(alpha: 0.30), borderRadius: BorderRadius.circular(1))),
+                      decoration: BoxDecoration(color: primary.withValues(alpha: 0.28), borderRadius: BorderRadius.circular(1))),
                   ])),
                   const SizedBox(width: 6),
                   GestureDetector(
@@ -1262,12 +1266,16 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     Color primary,
     Future<void> Function(String, String) onUnsave,
   ) {
-    final spotId   = d['spotId']?.toString() ?? d['__id']?.toString() ?? '';
-    final spotName = d['spotName']?.toString() ?? '';
-    final imageUrl = d['imageUrl']?.toString() ?? '';
-    final rating   = (d['rating'] as num?)?.toDouble() ?? 0.0;
+    final spotId      = d['spotId']?.toString() ?? d['__id']?.toString() ?? '';
+    final spotName    = d['spotName']?.toString() ?? '';
+    final imageUrl    = d['imageUrl']?.toString() ?? '';
+    final rating      = (d['rating'] as num?)?.toDouble() ?? 0.0;
+    // 從 Firebase saved-spot 文件讀取額外資訊（新版儲存時一起存入）
+    final fbDesc      = d['description']?.toString() ?? '';
+    final fbAddress   = d['address']?.toString() ?? '';
+    final fbCategory  = d['category']?.toString() ?? '';
 
-    // 嘗試從 DummyData 補充更多資訊
+    // 嘗試從 DummyData 補充更多資訊（DummyData 景點才有）
     Spot? info;
     try { info = DummyData.spots.firstWhere((s) => s.id == spotId || s.name == spotName); } catch (_) {}
 
@@ -1313,56 +1321,79 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 ],
               ]),
               const SizedBox(height: 8),
-              // 詳細資訊（從 DummyData 補充）
-              if (info != null) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: primary.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(8)),
-                  child: Text(info.category,
-                    style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700))),
-                const SizedBox(height: 12),
-                if (info.address.isNotEmpty) Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textHint),
-                  const SizedBox(width: 4),
-                  Expanded(child: Text(info.address,
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
-                ]),
-                if (info.openHours.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    const Icon(Icons.access_time_rounded, size: 14, color: AppColors.textHint),
+              // ── 類別標籤 ─────────────────────────────────────────
+              Builder(builder: (_) {
+                final cat = info?.category ?? fbCategory;
+                if (cat.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8)),
+                    child: Text(cat,
+                      style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700))),
+                );
+              }),
+
+              // ── 地址 ──────────────────────────────────────────────
+              Builder(builder: (_) {
+                final addr = info?.address ?? fbAddress;
+                if (addr.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textHint),
                     const SizedBox(width: 4),
-                    Expanded(child: Text(info.openHours,
-                        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+                    Expanded(child: Text(addr,
+                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
                   ]),
-                ],
-                if (info.description.isNotEmpty) ...[
+                );
+              }),
+
+              // ── 開放時間（DummyData 才有）─────────────────────────
+              if (info != null && info.openHours.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Row(children: [
+                  const Icon(Icons.access_time_rounded, size: 14, color: AppColors.textHint),
+                  const SizedBox(width: 4),
+                  Expanded(child: Text(info.openHours,
+                      style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))),
+                ]),
+              ],
+
+              // ── 簡介（DummyData 或 Firebase 欄位）────────────────
+              Builder(builder: (_) {
+                final desc = info?.description ?? fbDesc;
+                if (desc.isEmpty) {
+                  // 完全沒有任何描述時的 fallback
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceMoss,
+                        borderRadius: BorderRadius.circular(12)),
+                      child: Row(children: [
+                        const Icon(Icons.place_rounded, size: 18, color: AppColors.textHint),
+                        const SizedBox(width: 10),
+                        Expanded(child: Text(
+                          '此景點尚無詳細介紹。\n點「在地圖上查看」可查看位置。',
+                          style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.6))),
+                      ]),
+                    ),
+                  );
+                }
+                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   const Divider(height: 24),
                   const Text('關於此景點',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
                   const SizedBox(height: 6),
-                  Text(info.description,
+                  Text(desc,
                     style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.75)),
-                ],
-              ] else ...[
-                // 無 DummyData 對應時，至少顯示說明
-                const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceMoss,
-                    borderRadius: BorderRadius.circular(12)),
-                  child: Row(children: [
-                    Icon(Icons.info_outline_rounded, size: 18, color: AppColors.textHint),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text(
-                      '此景點的詳細資訊尚未建立。\n可前往地圖查看位置或導航。',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.6))),
-                  ]),
-                ),
-              ],
+                ]);
+              }),
               const SizedBox(height: 20),
               // 操作按鈕
               Row(children: [
@@ -1830,6 +1861,12 @@ class _TripDetailPageState extends State<_TripDetailPage>
             ),
           ),
           IconButton(
+            icon: Icon(Icons.photo_camera_rounded, color: primary, size: 18),
+            tooltip: '更換封面',
+            constraints: const BoxConstraints.tightFor(width: 38, height: 38),
+            padding: EdgeInsets.zero,
+            onPressed: () => _changeCoverPhoto(context)),
+          IconButton(
             icon: Icon(Icons.share_rounded, color: primary, size: 18),
             tooltip: '分享邀請',
             constraints: const BoxConstraints.tightFor(width: 38, height: 38),
@@ -1906,7 +1943,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
             },
             children: [
               _buildScheduleList(daySpots[_selectedDay.clamp(0, daySpots.length - 1)], primary),
-              _buildMapMode(primary, trip),
+              _buildMapMode(primary, trip, daySpots),  // 傳 daySpots，保證天數切割一致
               _buildCandidatesTab(primary, trip),
               _buildExpenseTab(primary, trip),
             ],
@@ -2175,6 +2212,84 @@ class _TripDetailPageState extends State<_TripDetailPage>
               color: sel ? Colors.white : AppColors.textHint)),
       ),
     ));
+  }
+
+  // ── 更換封面照片 ──────────────────────────────────────────────
+  Future<void> _changeCoverPhoto(BuildContext context) async {
+    final primary = Theme.of(context).colorScheme.primary;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 14),
+          Text('更換封面照片', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primary)),
+          const SizedBox(height: 16),
+          ListTile(
+            leading: Icon(Icons.photo_camera_rounded, color: primary),
+            title: const Text('拍攝新照片'),
+            onTap: () => Navigator.pop(context, 'camera'),
+          ),
+          ListTile(
+            leading: Icon(Icons.photo_library_rounded, color: primary),
+            title: const Text('從相簿選取'),
+            onTap: () => Navigator.pop(context, 'gallery'),
+          ),
+        ]),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+
+    final picker = ImagePicker();
+    final XFile? file = await picker.pickImage(
+      source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1200,
+    );
+    if (file == null || !context.mounted) return;
+
+    // 顯示上傳進度
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [
+        SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+        const SizedBox(width: 12),
+        const Text('正在上傳封面照片...'),
+      ]),
+      duration: const Duration(seconds: 10),
+      behavior: SnackBarBehavior.floating,
+    ));
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref('trip_covers/${_trip.id}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await ref.putFile(File(file.path));
+      final url = await ref.getDownloadURL();
+      await TripService.updateTrip(_trip.id, {'coverUrl': url});
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('封面已更新 ✓'),
+          backgroundColor: primary,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('上傳失敗，請稍後再試'),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
   }
 
   void _showMembersSheet(BuildContext ctx, FirebaseTrip trip, Color primary) {
@@ -2596,26 +2711,15 @@ class _TripDetailPageState extends State<_TripDetailPage>
     }).toList();
   }
 
-  Widget _buildMapMode(Color primary, FirebaseTrip trip) {
-    final days = trip.days.clamp(1, 99);
-    final totalSpots = trip.spots.length;
-    final spotsPerDay = totalSpots == 0 ? 1
-        : (totalSpots / days).ceil().clamp(1, totalSpots);
-
-    // ── 根據日期篩選器決定顯示哪些景點（用 _orderedSpots）──────
-    // 確保 _orderedSpots 包含所有 trip.spots（可能因 Firebase 更新而增加）
-    final effectiveOrder = _orderedSpots.isNotEmpty
-        ? _orderedSpots.where(trip.spots.contains).toList()
-        : List<String>.from(trip.spots);
-
+  Widget _buildMapMode(Color primary, FirebaseTrip trip, List<List<String>> daySpots) {
+    // ── 用與概覽完全相同的 daySpots 切割，保證 marker 一致 ─────
     final List<String> filteredNames;
     if (_mapDayFilter == null) {
-      filteredNames = effectiveOrder;
+      // 全部：flatten daySpots 保持順序
+      filteredNames = daySpots.expand((d) => d).toList();
     } else {
-      final d = _mapDayFilter!;
-      final start = (d * spotsPerDay).clamp(0, effectiveOrder.length);
-      final end   = ((d + 1) * spotsPerDay).clamp(0, effectiveOrder.length);
-      filteredNames = effectiveOrder.isEmpty ? [] : effectiveOrder.sublist(start, end);
+      final d = _mapDayFilter!.clamp(0, daySpots.length - 1);
+      filteredNames = daySpots[d];
     }
 
     final spotLatLngs = _spotsToLatLngs(filteredNames);
@@ -2639,13 +2743,15 @@ class _TripDetailPageState extends State<_TripDetailPage>
             _mapFilterChip('全部', _mapDayFilter == null, primary,
                 () => setState(() => _mapDayFilter = null)),
             const SizedBox(width: 6),
-            // 各天
-            ...List.generate(days, (d) {
+            // 各天（顯示日期 + 景點數）
+            ...List.generate(daySpots.length, (d) {
               final dayDate = trip.startDate.add(Duration(days: d));
               final label = '${dayDate.month}/${dayDate.day}';
+              final count = daySpots[d].length;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
-                child: _mapFilterChip('Day ${d + 1}  $label',
+                child: _mapFilterChip(
+                    'Day ${d + 1}  $label${count > 0 ? " ($count)" : ""}',
                     _mapDayFilter == d, primary,
                     () => setState(() => _mapDayFilter = d)),
               );

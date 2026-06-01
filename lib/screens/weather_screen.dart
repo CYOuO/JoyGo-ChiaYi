@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/rail_service.dart'; // 🌟 引入統一的 Service
 
 class WeatherScreen extends StatefulWidget {
   const WeatherScreen({super.key});
@@ -10,35 +12,22 @@ class WeatherScreen extends StatefulWidget {
 class _WeatherScreenState extends State<WeatherScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-
   static const _weekDays = ['今天','明天','週三','週四','週五','週六','週日'];
 
-  // 嘉義市一週天氣
-  static const _cityWeather = [
-    {'high':32,'low':25,'icon':'⛅','desc':'多雲時晴','rain':20,'humid':75,'wind':12},
-    {'high':30,'low':24,'icon':'🌧️','desc':'午後雷陣雨','rain':70,'humid':82,'wind':8},
-    {'high':28,'low':23,'icon':'🌦️','desc':'陰有雨','rain':60,'humid':85,'wind':10},
-    {'high':31,'low':24,'icon':'🌤️','desc':'晴時多雲','rain':15,'humid':72,'wind':14},
-    {'high':33,'low':26,'icon':'☀️','desc':'晴天','rain':5,'humid':68,'wind':9},
-    {'high':34,'low':26,'icon':'☀️','desc':'晴天','rain':5,'humid':65,'wind':11},
-    {'high':31,'low':25,'icon':'⛅','desc':'多雲','rain':25,'humid':78,'wind':13},
-  ];
-
-  // 嘉義縣一週天氣
-  static const _countyWeather = [
-    {'high':28,'low':20,'icon':'🌤️','desc':'晴時多雲','rain':15,'humid':70,'wind':10},
-    {'high':25,'low':18,'icon':'🌧️','desc':'山區有雨','rain':65,'humid':80,'wind':7},
-    {'high':23,'low':17,'icon':'🌫️','desc':'晨霧濃','rain':40,'humid':88,'wind':5},
-    {'high':27,'low':19,'icon':'🌦️','desc':'多雲有雨','rain':50,'humid':78,'wind':8},
-    {'high':29,'low':20,'icon':'☀️','desc':'晴天','rain':10,'humid':65,'wind':12},
-    {'high':30,'low':21,'icon':'🌤️','desc':'晴時多雲','rain':20,'humid':68,'wind':11},
-    {'high':27,'low':19,'icon':'⛅','desc':'多雲','rain':30,'humid':75,'wind':9},
-  ];
+  Future<List<Map<String, dynamic>>>? _cityWeatherFuture;
+  Future<List<Map<String, dynamic>>>? _countyWeatherFuture;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _cityWeatherFuture = _fetchWeather('Chiayi');
+    _countyWeatherFuture = _fetchWeather('ChiayiCounty');
+  }
+
+  // 🌟 修正：直接呼叫 RailService，徹底解決 IP 不同步的問題
+  Future<List<Map<String, dynamic>>> _fetchWeather(String cityType) async {
+    return await RailService.getWeather(cityType);
   }
 
   @override
@@ -65,10 +54,47 @@ class _WeatherScreenState extends State<WeatherScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildWeatherTab('嘉義市', '23.4780° N, 120.4407° E', _cityWeather),
-          _buildWeatherTab('嘉義縣・阿里山', '23.5083° N, 120.8034° E', _countyWeather),
+          _buildWeatherTabWrapper('嘉義市', '23.4780° N, 120.4407° E', _cityWeatherFuture),
+          _buildWeatherTabWrapper('嘉義縣・阿里山', '23.5083° N, 120.8034° E', _countyWeatherFuture),
         ],
       ),
+    );
+  }
+
+  Widget _buildWeatherTabWrapper(String name, String coord, Future<List<Map<String, dynamic>>>? future) {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.textHint),
+                const SizedBox(height: 12),
+                const Text('無法取得天氣資料，請稍後重試', style: TextStyle(color: AppColors.textHint)),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _cityWeatherFuture = _fetchWeather('Chiayi');
+                      _countyWeatherFuture = _fetchWeather('ChiayiCounty');
+                    });
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('重新整理'),
+                )
+              ],
+            ),
+          );
+        }
+        return _buildWeatherTab(name, coord, snapshot.data!);
+      },
     );
   }
 
@@ -77,7 +103,6 @@ class _WeatherScreenState extends State<WeatherScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // ── Today hero card ──
         Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
@@ -117,10 +142,7 @@ class _WeatherScreenState extends State<WeatherScreen>
             ],
           ),
         ),
-
         const SizedBox(height: 16),
-
-        // ── 7-day forecast ──
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -141,10 +163,7 @@ class _WeatherScreenState extends State<WeatherScreen>
             ],
           ),
         ),
-
         const SizedBox(height: 16),
-
-        // ── UV & Comfort ──
         Row(children: [
           Expanded(child: _infoCard('☀️', 'UV 指數', '8 高', '建議塗抹防曬 SPF50+', AppColors.accentTerra)),
           const SizedBox(width: 12),
@@ -180,7 +199,8 @@ class _WeatherScreenState extends State<WeatherScreen>
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(children: [
         SizedBox(width: 34,
-          child: Text(_weekDays[i],
+          child: Text(
+            i < _weekDays.length ? _weekDays[i] : '第 ${i+1} 天',
             style: TextStyle(
               fontWeight: isToday ? FontWeight.w800 : FontWeight.w500,
               fontSize: 13,
@@ -191,7 +211,6 @@ class _WeatherScreenState extends State<WeatherScreen>
         const SizedBox(width: 8),
         Expanded(child: Text(d['desc'] as String,
           style: const TextStyle(fontSize: 12, color: AppColors.textHint))),
-        // Rain prob bar
         SizedBox(width: 36, child: Column(children: [
           Text('$rain%', style: TextStyle(fontSize: 10,
             color: rain > 50 ? AppColors.accentSky : AppColors.textHint)),

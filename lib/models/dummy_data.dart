@@ -1,3 +1,5 @@
+import 'package:flutter/material.dart';
+
 // ===== MODELS =====
 
 class Spot {
@@ -82,7 +84,7 @@ class Achievement {
   final String id;
   final String title;
   final String description;
-  final String icon;
+  final String icon; // legacy emoji key — use achievementIcon() for display
   final bool isUnlocked;
   final int progress;
   final int total;
@@ -98,6 +100,21 @@ class Achievement {
     required this.total,
     required this.rarity,
   });
+
+  // Convert emoji icon key → IconData
+  IconData get iconData {
+    switch (icon) {
+      case '🗺️': return Icons.map_rounded;
+      case '🍜': return Icons.ramen_dining_rounded;
+      case '⛰️': return Icons.landscape_rounded;
+      case '🦃': return Icons.restaurant_rounded;
+      case '🏆': return Icons.emoji_events_rounded;
+      case '🌙': return Icons.nightlight_round;
+      case '👑': return Icons.workspace_premium_rounded;
+      case '🍗': return Icons.lunch_dining_rounded;
+      default:   return Icons.star_rounded;
+    }
+  }
 }
 
 // ===== DUMMY DATA =====

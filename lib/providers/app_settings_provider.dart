@@ -9,12 +9,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ThemePreset {
   final String name;
-  final String emoji;
   final Color  primary;
   final Color  primaryDark;
   final Color  primaryMist;
   const ThemePreset({
-    required this.name,   required this.emoji,
+    required this.name,
+    String emoji = '',   // retained for backward compat, unused
     required this.primary, required this.primaryDark, required this.primaryMist,
   });
 }

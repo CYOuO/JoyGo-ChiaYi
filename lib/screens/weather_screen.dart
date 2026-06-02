@@ -1,7 +1,21 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import '../services/rail_service.dart'; // 🌟 引入統一的 Service
+import '../services/rail_service.dart'; // 統一 Service
+import '../theme/fabric_textures.dart';
+
+// Map weather icon key → (IconData, Color)
+(IconData, Color) _weatherIcon(String key) {
+  switch (key) {
+    case '⛅': case 'partly_cloudy': return (Icons.cloud_rounded, const Color(0xFF7AB8CC));
+    case '🌧️': case 'rain':         return (Icons.grain_rounded,  const Color(0xFF5A8FAF));
+    case '🌦️': case 'rain_sun':     return (Icons.grain_rounded,  const Color(0xFF5A9FC0));
+    case '🌤️': case 'mostly_sunny': return (Icons.wb_sunny_rounded, const Color(0xFFE8C46A));
+    case '☀️': case 'sunny':        return (Icons.wb_sunny_rounded, const Color(0xFFFFB300));
+    case '🌫️': case 'foggy':        return (Icons.blur_on_rounded, const Color(0xFF90A4AE));
+    default:                         return (Icons.cloud_rounded,  const Color(0xFF7AB8CC));
+  }
+}
 
 class WeatherScreen extends StatefulWidget {
   const WeatherScreen({super.key});
@@ -42,7 +56,16 @@ class _WeatherScreenState extends State<WeatherScreen>
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: const Text('嘉義天氣'),
+        title: Builder(builder: (bCtx) {
+          final p = Theme.of(bCtx).colorScheme.primary;
+          return Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.cloud_rounded, size: 18, color: p),
+            const SizedBox(width: 6),
+            const Text('嘉義天氣', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            const SizedBox(width: 6),
+            DoodleHeart(color: p.withValues(alpha: 0.50), size: 10),
+          ]);
+        }),
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -100,6 +123,7 @@ class _WeatherScreenState extends State<WeatherScreen>
 
   Widget _buildWeatherTab(String name, String coord, List<Map<String, dynamic>> data) {
     final today = data[0];
+    final (todayIconData, todayIconColor) = _weatherIcon(today['icon'] as String);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -125,7 +149,7 @@ class _WeatherScreenState extends State<WeatherScreen>
                 ]),
                 const Spacer(),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text(today['icon'] as String, style: const TextStyle(fontSize: 52)),
+                  Icon(todayIconData, size: 52, color: Colors.white.withOpacity(0.95)),
                   Row(children: [
                     Text('${today['high']}°', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18)),
                     Text(' / ${today['low']}°', style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 14)),
@@ -134,22 +158,21 @@ class _WeatherScreenState extends State<WeatherScreen>
               ]),
               const SizedBox(height: 18),
               Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                _todayDetail('☔', '降雨機率', '${today['rain']}%'),
-                _todayDetail('💧', '相對濕度', '${today['humid']}%'),
-                _todayDetail('💨', '風速', '${today['wind']}km/h'),
-                _todayDetail('🌡️', '體感', '${(today['high'] as int) + 2}°C'),
+                _todayDetail(Icons.umbrella_rounded, '降雨機率', '${today['rain']}%'),
+                _todayDetail(Icons.water_drop_rounded, '相對濕度', '${today['humid']}%'),
+                _todayDetail(Icons.air_rounded, '風速', '${today['wind']}km/h'),
+                _todayDetail(Icons.thermostat_rounded, '體感', '${(today['high'] as int) + 2}°C'),
               ]),
             ],
           ),
         ),
         const SizedBox(height: 16),
-        Container(
+        // ── 7-day forecast ──
+        StitchedBox(
+          color: AppColors.surfaceWarm,
+          stitchColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+          radius: 20, inset: 4, dashWidth: 4, dashGap: 3,
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceWarm,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.divider),
-          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -165,24 +188,24 @@ class _WeatherScreenState extends State<WeatherScreen>
         ),
         const SizedBox(height: 16),
         Row(children: [
-          Expanded(child: _infoCard('☀️', 'UV 指數', '8 高', '建議塗抹防曬 SPF50+', AppColors.accentTerra)),
+          Expanded(child: _infoCard(Icons.wb_sunny_rounded, 'UV 指數', '8 高', '建議塗抹防曬 SPF50+', AppColors.accentTerra)),
           const SizedBox(width: 12),
-          Expanded(child: _infoCard('😊', '舒適度', '悶熱', '相對濕度偏高，注意補水', AppColors.accentSky)),
+          Expanded(child: _infoCard(Icons.sentiment_satisfied_rounded, '舒適度', '悶熱', '相對濕度偏高，注意補水', AppColors.accentSky)),
         ]),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _infoCard('🌅', '日出日落', '05:15 / 18:45', '日照時間 13小時30分', AppColors.accentStraw)),
+          Expanded(child: _infoCard(Icons.wb_twilight_rounded, '日出日落', '05:15 / 18:45', '日照時間 13小時30分', AppColors.accentStraw)),
           const SizedBox(width: 12),
-          Expanded(child: _infoCard('🌊', '天氣警報', '無', '目前無特殊天氣警報', Theme.of(context).colorScheme.primary)),
+          Expanded(child: _infoCard(Icons.waves_rounded, '天氣警報', '無', '目前無特殊天氣警報', Theme.of(context).colorScheme.primary)),
         ]),
         const SizedBox(height: 40),
       ],
     );
   }
 
-  Widget _todayDetail(String icon, String label, String val) {
+  Widget _todayDetail(IconData icon, String label, String val) {
     return Column(children: [
-      Text(icon, style: const TextStyle(fontSize: 18)),
+      Icon(icon, size: 18, color: Colors.white.withOpacity(0.9)),
       const SizedBox(height: 3),
       Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
       Text(label, style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 9)),
@@ -194,6 +217,7 @@ class _WeatherScreenState extends State<WeatherScreen>
     final low = d['low'] as int;
     final rain = d['rain'] as int;
     final isToday = i == 0;
+    final (iconData, iconColor) = _weatherIcon(d['icon'] as String);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
@@ -207,7 +231,7 @@ class _WeatherScreenState extends State<WeatherScreen>
               color: isToday ? Theme.of(context).colorScheme.primary : AppColors.textSecondary,
             ))),
         const SizedBox(width: 10),
-        Text(d['icon'] as String, style: const TextStyle(fontSize: 18)),
+        Icon(iconData, size: 20, color: iconColor),
         const SizedBox(width: 8),
         Expanded(child: Text(d['desc'] as String,
           style: const TextStyle(fontSize: 12, color: AppColors.textHint))),
@@ -228,17 +252,15 @@ class _WeatherScreenState extends State<WeatherScreen>
     );
   }
 
-  Widget _infoCard(String icon, String label, String val, String sub, Color color) {
-    return Container(
+  Widget _infoCard(IconData icon, String label, String val, String sub, Color color) {
+    return StitchedBox(
+      color: color.withValues(alpha: 0.08),
+      stitchColor: color.withValues(alpha: 0.28),
+      radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.2)),
-      ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text(icon, style: const TextStyle(fontSize: 18)),
+          Icon(icon, size: 18, color: color),
           const SizedBox(width: 6),
           Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w700)),
         ]),

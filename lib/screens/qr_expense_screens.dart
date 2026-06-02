@@ -44,7 +44,7 @@ class QrShareScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('🏯', style: TextStyle(fontSize: 18)),
+                      const Icon(Icons.account_balance_rounded, size: 18),
                       const SizedBox(width: 6),
                       Text(
                         '探索諸羅',
@@ -138,7 +138,7 @@ class QrShareScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      const Text('✏️', style: TextStyle(fontSize: 18)),
+                      const Icon(Icons.edit_rounded, size: 18),
                       const SizedBox(width: 8),
                       Text(
                         '共同編輯功能',
@@ -172,7 +172,7 @@ class QrShareScreen extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ...['😊', '😄', '😎'].map((emoji) {
+                      ...[Icons.person_rounded, Icons.face_rounded, Icons.face_3_rounded].map((iconData) {
                         return Container(
                           width: 30,
                           height: 30,
@@ -183,7 +183,7 @@ class QrShareScreen extends StatelessWidget {
                             border: Border.all(
                                 color: Theme.of(context).colorScheme.primary, width: 1.5),
                           ),
-                          child: Center(child: Text(emoji)),
+                          child: Center(child: Icon(iconData, size: 16, color: Theme.of(context).colorScheme.primary)),
                         );
                       }),
                       GestureDetector(
@@ -314,11 +314,11 @@ class ExpenseSplitScreen extends StatefulWidget {
 
 class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
   final List<_Expense> _expenses = [
-    _Expense('🍜', '林聰明沙鍋魚頭', 350, '小明'),
-    _Expense('🚌', '阿里山來回交通', 600, '小美'),
-    _Expense('🎫', '阿里山門票', 800, '大家各付'),
-    _Expense('🏨', '民宿住宿', 2400, '小強'),
-    _Expense('🍧', '御品元冰品', 180, '小美'),
+    _Expense(Icons.ramen_dining_rounded, '林聰明沙鍋魚頭', 350, '小明'),
+    _Expense(Icons.directions_bus_rounded, '阿里山來回交通', 600, '小美'),
+    _Expense(Icons.confirmation_number_rounded, '阿里山門票', 800, '大家各付'),
+    _Expense(Icons.hotel_rounded, '民宿住宿', 2400, '小強'),
+    _Expense(Icons.icecream_rounded, '御品元冰品', 180, '小美'),
   ];
 
   final List<String> _members = ['小明', '小美', '小強', '我'];
@@ -451,7 +451,7 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
-              child: Text(expense.icon, style: const TextStyle(fontSize: 20)),
+              child: Icon(expense.icon, size: 20, color: Theme.of(context).colorScheme.primary),
             ),
           ),
           const SizedBox(width: 12),
@@ -590,7 +590,7 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
           children: [
             const Row(
               children: [
-                Text('💸', style: TextStyle(fontSize: 24)),
+                Icon(Icons.account_balance_wallet_rounded, size: 24),
                 SizedBox(width: 10),
                 Text(
                   '分帳結算',
@@ -629,7 +629,8 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
                         color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
                       ),
-                      child: const Center(child: Text('😊')),
+                      child: Center(child: Text(m.isNotEmpty ? m[0] : '?',
+                          style: const TextStyle(fontWeight: FontWeight.w700))),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -695,7 +696,8 @@ class _ExpenseSplitScreenState extends State<ExpenseSplitScreen> {
 }
 
 class _Expense {
-  final String icon, name, paidBy;
+  final IconData icon;
+  final String name, paidBy;
   final int amount;
 
   _Expense(this.icon, this.name, this.amount, this.paidBy);

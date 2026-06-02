@@ -12,7 +12,20 @@
           "package_name": "com.example.chiayicity_claudep_1"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "152569932828-7l826lts5n5kpa1k7voch1rhod487oja.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.chiayicity_claudep_1",
+            "certificate_hash": "1277d3a1e6620fc3f287e246f01262808c0c0d2a"
+          }
+        },
+        {
+          "client_id": "152569932828-d8lpm1f8shc4bdiaut96fcvksvdg1gq9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyAM9pwEYM7L-FPDYRD-ubA2lGzuEHWsjs4"
@@ -20,7 +33,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "152569932828-d8lpm1f8shc4bdiaut96fcvksvdg1gq9.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "152569932828-fit0e9tufrrnu5jg7bv24r58nn4rcvs3.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.chiayicityClaudep1"
+              }
+            }
+          ]
         }
       }
     }

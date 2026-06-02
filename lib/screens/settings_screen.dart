@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_settings_provider.dart';
 import '../theme/app_theme.dart';
+import '../theme/fabric_textures.dart';
 import 'firebase_seed_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -23,27 +24,29 @@ class SettingsScreen extends StatelessWidget {
               color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(
-          l10n.settings,
-          style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              fontSize: 18,
-              color: AppColors.textPrimary),
-        ),
+        title: Builder(builder: (bCtx) {
+          final p = Theme.of(bCtx).colorScheme.primary;
+          return Row(mainAxisSize: MainAxisSize.min, children: [
+            DoodleLightning(color: p.withValues(alpha: 0.65), size: 12),
+            const SizedBox(width: 6),
+            Text(l10n.settings, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
+            const SizedBox(width: 6),
+            DoodleHeart(color: p.withValues(alpha: 0.50), size: 10),
+          ]);
+        }),
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 12),
         children: [
           // ── 主題顏色 ──────────────────────────────────────
           _SectionHeader(title: l10n.themeColor, icon: Icons.palette_rounded),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: StitchedBox(
+            color: AppColors.surface,
+            stitchColor: primary.withValues(alpha: 0.20),
+            radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider),
-            ),
             child: Column(
               children: [
                 Wrap(
@@ -82,12 +85,7 @@ class SettingsScreen extends StatelessWidget {
                         child: selected
                             ? const Icon(Icons.check_rounded,
                                 color: Colors.white, size: 22)
-                            : Center(
-                                child: Text(
-                                  preset.emoji,
-                                  style: const TextStyle(fontSize: 20),
-                                ),
-                              ),
+                            : const SizedBox.shrink(),
                       ),
                     );
                   }),
@@ -97,7 +95,7 @@ class SettingsScreen extends StatelessWidget {
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: Text(
-                    '${settings.currentTheme.emoji} ${settings.currentTheme.name}',
+                    settings.currentTheme.name,
                     key: ValueKey(settings.themeIndex),
                     style: TextStyle(
                       fontSize: 13,
@@ -108,7 +106,8 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ],
             ),
-          ),
+            ),  // StitchedBox
+          ),    // Padding
 
           const SizedBox(height: 20),
 
@@ -129,13 +128,13 @@ class SettingsScreen extends StatelessWidget {
 
           // ── 開發者工具 ────────────────────────────────────
           _SectionHeader(title: '開發者工具', icon: Icons.developer_mode_rounded),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider),
-            ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: StitchedBox(
+            color: AppColors.surface,
+            stitchColor: primary.withValues(alpha: 0.20),
+            radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+            padding: EdgeInsets.zero,
             child: ListTile(
               leading: Container(
                 width: 36, height: 36,
@@ -151,7 +150,8 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const FirebaseSeedScreen())),
             ),
-          ),
+            ),   // StitchedBox
+          ),     // Padding
 
           const SizedBox(height: 32),
         ],
@@ -176,26 +176,27 @@ class _NotificationSettingsState extends State<_NotificationSettings> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: StitchedBox(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
+        stitchColor: primary.withValues(alpha: 0.20),
+        radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+        padding: EdgeInsets.zero,
+        child: Column(children: [
+          _notifTile('推播通知', '接收 App 所有通知', Icons.notifications_active_rounded,
+              _pushEnabled, primary, (v) => setState(() => _pushEnabled = v)),
+          const Divider(height: 1, indent: 54),
+          _notifTile('最新消息', '嘉義市政府新聞與活動', Icons.newspaper_rounded,
+              _newsEnabled, primary, (v) => setState(() => _newsEnabled = v)),
+          const Divider(height: 1, indent: 54),
+          _notifTile('社群互動', '按讚、留言、追蹤通知', Icons.people_rounded,
+              _communityEnabled, primary, (v) => setState(() => _communityEnabled = v)),
+          const Divider(height: 1, indent: 54),
+          _notifTile('行程提醒', '出發前一天自動提醒', Icons.calendar_today_rounded,
+              _tripEnabled, primary, (v) => setState(() => _tripEnabled = v)),
+        ]),
       ),
-      child: Column(children: [
-        _notifTile('推播通知', '接收 App 所有通知', Icons.notifications_active_rounded,
-            _pushEnabled, primary, (v) => setState(() => _pushEnabled = v)),
-        const Divider(height: 1, indent: 54),
-        _notifTile('最新消息', '嘉義市政府新聞與活動', Icons.newspaper_rounded,
-            _newsEnabled, primary, (v) => setState(() => _newsEnabled = v)),
-        const Divider(height: 1, indent: 54),
-        _notifTile('社群互動', '按讚、留言、追蹤通知', Icons.people_rounded,
-            _communityEnabled, primary, (v) => setState(() => _communityEnabled = v)),
-        const Divider(height: 1, indent: 54),
-        _notifTile('行程提醒', '出發前一天自動提醒', Icons.calendar_today_rounded,
-            _tripEnabled, primary, (v) => setState(() => _tripEnabled = v)),
-      ]),
     );
   }
 

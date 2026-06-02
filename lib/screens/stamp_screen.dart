@@ -1,10 +1,12 @@
 ﻿import 'dart:async';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import '../theme/app_theme.dart';
+import '../theme/fabric_textures.dart';
 import '../models/dummy_data.dart';
 import 'camera_screen.dart';
 
@@ -87,12 +89,13 @@ class _StampScreenState extends State<StampScreen>
       if (last != null && now.difference(last) < _kCheckinCooldown) continue;
 
       // ✅ Auto check-in!
+      HapticFeedback.heavyImpact(); // ⑤ 打卡成功重震動
       _lastCheckinTime[spot.id] = now;
       final newCount = (_visitedSpots[spot.id] ?? 0) + 1;
       setState(() => _visitedSpots[spot.id] = newCount);
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('🎉「${spot.name}」自動打卡成功！第 $newCount 次造訪'),
+        content: Text('「${spot.name}」自動打卡成功！第 $newCount 次造訪'),
         backgroundColor: _getStampColor(newCount),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -205,10 +208,7 @@ class _StampScreenState extends State<StampScreen>
                   children: [
                     Row(
                       children: [
-                        const Text(
-                          '🗺️',
-                          style: TextStyle(fontSize: 32),
-                        ),
+                        const Icon(Icons.map_rounded, size: 32, color: Colors.white),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Column(
@@ -276,31 +276,15 @@ class _StampScreenState extends State<StampScreen>
                 final visitCount = _visitedSpots[spot.id] ?? 0;
                 final isVisited = visitCount > 0;
 
+                final stampC = _getStampColor(visitCount);
                 return GestureDetector(
                   onTap: () => _showStampDetail(context, spot, visitCount),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    decoration: BoxDecoration(
-                      color: isVisited
-                          ? AppColors.surface
-                          : AppColors.surfaceMoss.withOpacity(0.5),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isVisited
-                            ? _getStampColor(visitCount)
-                            : AppColors.surfaceMoss,
-                        width: isVisited ? 2 : 1,
-                      ),
-                      boxShadow: isVisited
-                          ? [
-                              BoxShadow(
-                                color: _getStampColor(visitCount).withOpacity(0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, 3),
-                              ),
-                            ]
-                          : [],
-                    ),
+                  child: StitchedBox(
+                    color: isVisited ? AppColors.surface : AppColors.surfaceMoss.withValues(alpha: 0.5),
+                    stitchColor: isVisited ? stampC.withValues(alpha: 0.40) : AppColors.divider,
+                    radius: 20, inset: 5, dashWidth: 4, dashGap: 3,
+                    boxShadow: isVisited ? [BoxShadow(color: stampC.withValues(alpha: 0.25), blurRadius: 10, offset: const Offset(0, 3))] : null,
+                    padding: EdgeInsets.zero,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -329,10 +313,7 @@ class _StampScreenState extends State<StampScreen>
                                       .withOpacity(0.15),
                                 ),
                                 child: Center(
-                                  child: Text(
-                                    _spotEmoji(spot.category),
-                                    style: const TextStyle(fontSize: 24),
-                                  ),
+                                  child: Icon(_spotIconData(spot.category), size: 24, color: AppColors.textSecondary),
                                 ),
                               ),
                               Positioned(
@@ -380,10 +361,7 @@ class _StampScreenState extends State<StampScreen>
                                   0.2126, 0.7152, 0.0722, 0, 0,
                                   0,      0,      0,      1, 0,
                                 ]),
-                                child: Text(
-                                  _spotEmoji(spot.category),
-                                  style: const TextStyle(fontSize: 24),
-                                ),
+                                child: Icon(_spotIconData(spot.category), size: 24, color: AppColors.textHint),
                               ),
                             ),
                           ),
@@ -441,34 +419,125 @@ class _StampScreenState extends State<StampScreen>
     return AppColors.stampBronze;
   }
 
-  String _spotEmoji(String category) {
+  IconData _spotIconData(String category) {
     switch (category) {
-      case 'restaurant':
-        return '🍜';
-      case 'attraction':
-        return '🏛️';
-      case 'hotel':
-        return '🏨';
-      case 'youbike':
-        return '🚲';
-      default:
-        return '📍';
+      case 'restaurant': return Icons.ramen_dining_rounded;
+      case 'attraction': return Icons.account_balance_rounded;
+      case 'hotel':      return Icons.hotel_rounded;
+      case 'youbike':    return Icons.pedal_bike_rounded;
+      default:           return Icons.place_rounded;
     }
   }
 
+
+  List<Achievement> _computeAchievements() {
+    final base = DummyData.achievements;
+    final spots = DummyData.spots;
+
+    // Count restaurant spots visited
+    final restaurantCount = spots
+        .where((s) => s.category == 'restaurant' && (_visitedSpots[s.id] ?? 0) > 0)
+        .length;
+
+    // Count spots with name containing '阿里山'
+    final alishanCount = spots
+        .where((s) => s.name.contains('阿里山') && (_visitedSpots[s.id] ?? 0) > 0)
+        .length;
+
+    // Count visit times for spots with name containing '火雞'
+    final turkeyVisits = spots
+        .where((s) => s.name.contains('火雞'))
+        .fold<int>(0, (sum, s) => sum + (_visitedSpots[s.id] ?? 0));
+
+    // Count spots with name containing '雞肉飯'
+    final chickenRiceCount = spots
+        .where((s) => s.name.contains('雞肉飯') && (_visitedSpots[s.id] ?? 0) > 0)
+        .length;
+
+    List<Achievement> result = [];
+    int unlockedSoFar = 0;
+
+    for (final a in base) {
+      int progress;
+      int total;
+      bool isUnlocked;
+
+      switch (a.id) {
+        case '1':
+          progress = _visitedSpots.length.clamp(0, 1);
+          total = 1;
+          isUnlocked = progress >= 1;
+          break;
+        case '2':
+          progress = restaurantCount.clamp(0, 5);
+          total = 5;
+          isUnlocked = progress >= 5;
+          break;
+        case '3':
+          progress = alishanCount.clamp(0, 8);
+          total = 8;
+          isUnlocked = progress >= 8;
+          break;
+        case '4':
+          progress = turkeyVisits.clamp(0, 3);
+          total = 3;
+          isUnlocked = progress >= 3;
+          break;
+        case '5':
+          progress = _visitedSpots.length.clamp(0, 50);
+          total = 50;
+          isUnlocked = progress >= 50;
+          break;
+        case '6':
+          progress = (_visitedSpots['2'] ?? 0).clamp(0, 3);
+          total = 3;
+          isUnlocked = progress >= 3;
+          break;
+        case '7':
+          progress = unlockedSoFar.clamp(0, 6);
+          total = 6;
+          isUnlocked = progress >= 6;
+          break;
+        case '8':
+          progress = chickenRiceCount.clamp(0, 30);
+          total = 30;
+          isUnlocked = progress >= 30;
+          break;
+        default:
+          progress = a.progress;
+          total = a.total;
+          isUnlocked = a.isUnlocked;
+      }
+
+      final computed = Achievement(
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        icon: a.icon,
+        isUnlocked: isUnlocked,
+        progress: progress,
+        total: total,
+        rarity: a.rarity,
+      );
+      if (isUnlocked) unlockedSoFar++;
+      result.add(computed);
+    }
+    return result;
+  }
+
   Widget _buildAchievementTab() {
-    final achievements = DummyData.achievements;
+    final achievements = _computeAchievements();
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         // Achievement stats
         Row(
           children: [
-            _achieveStat('已解鎖', '${achievements.where((a) => a.isUnlocked).length}', AppColors.stampGold),
+            _achieveStat('已解鎖', '${achievements.where((a) => a.isUnlocked).length}', const Color(0xFFC09848)),
             const SizedBox(width: 12),
-            _achieveStat('進行中', '${achievements.where((a) => !a.isUnlocked).length}', Theme.of(context).colorScheme.primary),
+            _achieveStat('進行中', '${achievements.where((a) => !a.isUnlocked).length}', const Color(0xFF8878B0)),
             const SizedBox(width: 12),
-            _achieveStat('總成就', '${achievements.length}', AppColors.textHint),
+            _achieveStat('總成就', '${achievements.length}', const Color(0xFF6A9888)),
           ],
         ),
         const SizedBox(height: 20),
@@ -510,25 +579,43 @@ class _StampScreenState extends State<StampScreen>
     );
   }
 
+  // Map achievement icon → unique display color
+  static Color _achievementIconColor(Achievement a) {
+    switch (a.iconData) {
+      case Icons.map_rounded:            return const Color(0xFF3A86C8);
+      case Icons.ramen_dining_rounded:   return const Color(0xFFE07040);
+      case Icons.landscape_rounded:      return const Color(0xFF5A9F6A);
+      case Icons.restaurant_rounded:     return const Color(0xFFD45A5A);
+      case Icons.emoji_events_rounded:   return const Color(0xFFCFA84C);
+      case Icons.nightlight_round:       return const Color(0xFF5A5AAF);
+      case Icons.workspace_premium_rounded: return const Color(0xFFBF4090);
+      case Icons.lunch_dining_rounded:   return const Color(0xFFD4784A);
+      default:                           return const Color(0xFF8A9CC5);
+    }
+  }
+
   Widget _buildAchievementCard(Achievement achievement) {
+    final iconColor = achievement.isUnlocked
+        ? _achievementIconColor(achievement)
+        : AppColors.textHint;
     Color rarityColor;
     String rarityLabel;
 
     switch (achievement.rarity) {
       case 'gold':
-        rarityColor = AppColors.stampGold;
+        rarityColor = const Color(0xFFC09848);  // 沉穩焦糖金
         rarityLabel = '黃金';
         break;
       case 'silver':
-        rarityColor = AppColors.stampSilver;
+        rarityColor = const Color(0xFF8878B0);  // 煙燻薰衣草
         rarityLabel = '白銀';
         break;
       case 'special':
-        rarityColor = AppColors.error;
+        rarityColor = const Color(0xFFB86878);  // 玫瑰深粉
         rarityLabel = '特別';
         break;
       default:
-        rarityColor = AppColors.stampBronze;
+        rarityColor = const Color(0xFFAA7860);  // 赤陶棕
         rarityLabel = '青銅';
     }
 
@@ -540,14 +627,14 @@ class _StampScreenState extends State<StampScreen>
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: achievement.isUnlocked
-              ? rarityColor.withOpacity(0.4)
+              ? iconColor.withOpacity(0.35)
               : AppColors.surfaceMoss,
           width: achievement.isUnlocked ? 1.5 : 1,
         ),
         boxShadow: [
           BoxShadow(
             color: achievement.isUnlocked
-                ? rarityColor.withOpacity(0.1)
+                ? iconColor.withOpacity(0.12)
                 : AppColors.cardShadow,
             blurRadius: 8,
           ),
@@ -561,24 +648,21 @@ class _StampScreenState extends State<StampScreen>
             height: 60,
             decoration: BoxDecoration(
               color: achievement.isUnlocked
-                  ? rarityColor.withOpacity(0.15)
+                  ? iconColor.withOpacity(0.12)
                   : AppColors.surfaceMoss,
               shape: BoxShape.circle,
               border: Border.all(
-                color: achievement.isUnlocked ? rarityColor : AppColors.textHint.withOpacity(0.3),
+                color: achievement.isUnlocked ? iconColor.withOpacity(0.6) : AppColors.textHint.withOpacity(0.3),
                 width: 2,
               ),
             ),
             child: Center(
               child: achievement.isUnlocked
-                  ? Text(achievement.icon, style: const TextStyle(fontSize: 26))
+                  ? Icon(achievement.iconData, size: 26, color: iconColor)
                   : Stack(
                       alignment: Alignment.center,
                       children: [
-                        Text(achievement.icon,
-                            style: TextStyle(
-                                fontSize: 26,
-                                color: Colors.black.withOpacity(0.15))),
+                        Icon(achievement.iconData, size: 26, color: Colors.black.withOpacity(0.12)),
                         const Icon(Icons.lock_rounded,
                             color: AppColors.textHint, size: 20),
                       ],
@@ -695,14 +779,13 @@ class _StampScreenState extends State<StampScreen>
                     border: Border.all(color: stampColor, width: 3),
                     color: stampColor.withOpacity(0.1),
                   ),
-                  child: Center(child: Text(_spotEmoji(spot.category),
-                      style: const TextStyle(fontSize: 36))),
+                  child: Center(child: Icon(_spotIconData(spot.category), size: 36, color: stampColor)),
                 ),
                 const SizedBox(height: 12),
                 Text('✓ 已踩點 $visitCount 次',
                   style: TextStyle(color: stampColor, fontWeight: FontWeight.w700, fontSize: 16)),
               ] else ...[
-                const Text('🔒', style: TextStyle(fontSize: 48)),
+                const Icon(Icons.lock_rounded, size: 48, color: AppColors.textHint),
                 const SizedBox(height: 12),
                 const Text('尚未踩點',
                   style: TextStyle(color: AppColors.textHint, fontWeight: FontWeight.w700, fontSize: 16)),
@@ -878,7 +961,7 @@ class _StampScreenState extends State<StampScreen>
                                 onTap: () =>
                                     _showStampDetail(context, spot, count),
                                 child: _StampMarker(
-                                  emoji: _spotEmoji(spot.category),
+                                  icon: _spotIconData(spot.category),
                                   color: color,
                                   count: count,
                                 ),
@@ -955,19 +1038,8 @@ class _StampScreenState extends State<StampScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      count > 0
-                          ? Text(_spotEmoji(spot.category),
-                              style: const TextStyle(fontSize: 20))
-                          : ColorFiltered(
-                              colorFilter: const ColorFilter.matrix([
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0.2126, 0.7152, 0.0722, 0, 0,
-                                0, 0, 0, 0.6, 0,
-                              ]),
-                              child: Text(_spotEmoji(spot.category),
-                                  style: const TextStyle(fontSize: 20)),
-                            ),
+                      Icon(_spotIconData(spot.category), size: 20,
+                          color: count > 0 ? _getStampColor(count) : AppColors.textHint),
                       const SizedBox(height: 3),
                       Text(
                         spot.name,
@@ -1030,10 +1102,10 @@ class _StampScreenState extends State<StampScreen>
               ),
             ),
             const SizedBox(height: 16),
-            _howToStep('1️⃣', '前往景點', '實際到訪景點，開啟App定位'),
-            _howToStep('2️⃣', '掃描/拍照', '使用打卡相機拍照留念'),
-            _howToStep('3️⃣', '驗證成功', '系統確認位置，印章立即點亮！'),
-            _howToStep('4️⃣', '累積次數', '同一景點多次造訪，印章顏色越來越深'),
+            _howToStep('1', '前往景點', '實際到訪景點，開啟App定位'),
+            _howToStep('2', '掃描/拍照', '使用打卡相機拍照留念'),
+            _howToStep('3', '驗證成功', '系統確認位置，印章立即點亮！'),
+            _howToStep('4', '累積次數', '同一景點多次造訪，印章顏色越來越深'),
             const SizedBox(height: 8),
           ],
         ),
@@ -1071,11 +1143,11 @@ class _StampScreenState extends State<StampScreen>
 
 // ── 集章地圖 Marker（可愛印章風格）──────────────────────────
 class _StampMarker extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
   final Color  color;
   final int    count;
   const _StampMarker({
-    required this.emoji,
+    required this.icon,
     required this.color,
     required this.count,
   });
@@ -1118,19 +1190,8 @@ class _StampMarker extends StatelessWidget {
                       ],
               ),
               alignment: Alignment.center,
-              child: visited
-                  ? Text(emoji,
-                      style: const TextStyle(fontSize: 18, height: 1))
-                  : ColorFiltered(
-                      colorFilter: const ColorFilter.matrix([
-                        0.21, 0.72, 0.07, 0, 0,
-                        0.21, 0.72, 0.07, 0, 0,
-                        0.21, 0.72, 0.07, 0, 0,
-                        0, 0, 0, 0.5, 0,
-                      ]),
-                      child: Text(emoji,
-                          style: const TextStyle(fontSize: 18, height: 1)),
-                    ),
+              child: Icon(icon, size: 18,
+                  color: visited ? color : Colors.grey.shade400),
             ),
             // 次數 Badge
             if (count > 0)

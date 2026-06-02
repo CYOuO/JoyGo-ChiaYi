@@ -1,4 +1,6 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -62,20 +64,14 @@ class _SpotCardState extends State<SpotCard>
     widget.onLike?.call();
   }
 
-  String get _categoryIcon {
+  IconData get _categoryIconData {
     switch (widget.category) {
-      case 'restaurant':
-        return '🍜';
-      case 'attraction':
-        return '🏛️';
-      case 'hotel':
-        return '🏨';
-      case 'youbike':
-        return '🚲';
-      case 'aed':
-        return '❤️';
-      default:
-        return '📍';
+      case 'restaurant':  return Icons.ramen_dining_rounded;
+      case 'attraction':  return Icons.account_balance_rounded;
+      case 'hotel':       return Icons.hotel_rounded;
+      case 'youbike':     return Icons.pedal_bike_rounded;
+      case 'aed':         return Icons.favorite_rounded;
+      default:            return Icons.place_rounded;
     }
   }
 
@@ -116,9 +112,10 @@ class _SpotCardState extends State<SpotCard>
                       height: 120,
                       color: AppColors.surfaceMoss,
                       child: Center(
-                        child: Text(
-                          _categoryIcon,
-                          style: const TextStyle(fontSize: 40),
+                        child: Icon(
+                          _categoryIconData,
+                          size: 40,
+                          color: AppColors.textHint,
                         ),
                       ),
                     ),
@@ -133,9 +130,10 @@ class _SpotCardState extends State<SpotCard>
                         color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text(
-                        _categoryIcon,
-                        style: const TextStyle(fontSize: 12),
+                      child: Icon(
+                        _categoryIconData,
+                        size: 14,
+                        color: Colors.white,
                       ),
                     ),
                   ),
@@ -332,7 +330,7 @@ class SectionHeader extends StatelessWidget {
 // ===== CATEGORY CHIP =====
 class CategoryChip extends StatelessWidget {
   final String label;
-  final String icon;
+  final IconData icon;
   final bool isSelected;
   final VoidCallback onTap;
 
@@ -347,8 +345,6 @@ class CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    // ignore: unused_local_variable
-    final mist    = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
     return GestureDetector(
       onTap: onTap,
       child: AnimatedContainer(
@@ -375,7 +371,7 @@ class CategoryChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(icon, style: const TextStyle(fontSize: 14)),
+            Icon(icon, size: 14, color: isSelected ? Colors.white : AppColors.textSecondary),
             const SizedBox(width: 4),
             Text(
               label,
@@ -857,4 +853,540 @@ class PolaroidCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ③ ShimmerBox — 通用骨架載入閃光元件
+// ═══════════════════════════════════════════════════════════
+
+class ShimmerBox extends StatefulWidget {
+  final double? width;
+  final double height;
+  final double radius;
+  final bool dark;
+  const ShimmerBox({
+    super.key,
+    this.width,
+    required this.height,
+    this.radius = 8,
+    this.dark = false,
+  });
+
+  @override State<ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
+    _anim = Tween<double>(begin: -1.5, end: 2.5)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final base  = widget.dark ? const Color(0xFFE0E0E0) : const Color(0xFFEEEEEE);
+    final shine = widget.dark ? const Color(0xFFF5F5F5) : const Color(0xFFFAFAFA);
+    return AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Container(
+        width: widget.width,
+        height: widget.height,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(widget.radius),
+          gradient: LinearGradient(
+            begin: Alignment(_anim.value - 1, 0),
+            end:   Alignment(_anim.value,     0),
+            stops: const [0.0, 0.5, 1.0],
+            colors: [base, shine, base],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Shorthand skeleton layouts
+class NewsCardSkeleton extends StatelessWidget {
+  const NewsCardSkeleton({super.key});
+  @override Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+    child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        ShimmerBox(width: 56, height: 18, radius: 6),
+        Spacer(),
+        ShimmerBox(width: 36, height: 12, radius: 4),
+      ]),
+      SizedBox(height: 10),
+      ShimmerBox(height: 16, radius: 4),
+      SizedBox(height: 6),
+      ShimmerBox(width: 180, height: 14, radius: 4),
+    ]),
+  );
+}
+
+class TripCardSkeleton extends StatelessWidget {
+  const TripCardSkeleton({super.key});
+  @override Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 16),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+        boxShadow: [const BoxShadow(color: Color(0x0A000000), blurRadius: 8)]),
+    child: const Column(children: [
+      ShimmerBox(height: 140, radius: 0),
+      Padding(
+        padding: EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ShimmerBox(width: 160, height: 18, radius: 5),
+          SizedBox(height: 8),
+          ShimmerBox(width: 100, height: 13, radius: 4),
+          SizedBox(height: 12),
+          Row(children: [
+            Expanded(child: ShimmerBox(height: 36, radius: 10)),
+            SizedBox(width: 8),
+            Expanded(child: ShimmerBox(height: 36, radius: 10)),
+          ]),
+        ]),
+      ),
+    ]),
+  );
+}
+
+class SpotCardSkeleton extends StatelessWidget {
+  const SpotCardSkeleton({super.key});
+  @override Widget build(BuildContext context) => Container(
+    width: 200,
+    margin: const EdgeInsets.only(right: 12),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+    child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ShimmerBox(height: 120, radius: 0),
+      Padding(padding: EdgeInsets.all(12), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ShimmerBox(width: 120, height: 15, radius: 4),
+          SizedBox(height: 6),
+          ShimmerBox(width: 80, height: 12, radius: 4),
+        ],
+      )),
+    ]),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
+//  ② IllustratedEmptyState — 插畫空頁面
+// ═══════════════════════════════════════════════════════════
+
+enum EmptyScene { trip, expense, notification, saved, community, map }
+
+class IllustratedEmptyState extends StatefulWidget {
+  final EmptyScene scene;
+  final String title;
+  final String body;
+  final Widget? action;
+  final Color? color;
+
+  const IllustratedEmptyState({
+    super.key,
+    required this.scene,
+    required this.title,
+    required this.body,
+    this.action,
+    this.color,
+  });
+
+  @override State<IllustratedEmptyState> createState() => _IllustratedEmptyStateState();
+}
+
+class _IllustratedEmptyStateState extends State<IllustratedEmptyState>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _floatAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
+    _floatAnim = Tween<double>(begin: -6, end: 6)
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = widget.color ?? Theme.of(context).colorScheme.primary;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          AnimatedBuilder(
+            animation: _floatAnim,
+            builder: (_, child) => Transform.translate(
+              offset: Offset(0, _floatAnim.value), child: child),
+            child: SizedBox(
+              width: 180, height: 160,
+              child: CustomPaint(
+                painter: _EmptyScenePainter(scene: widget.scene, color: color),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(widget.title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.3)),
+          const SizedBox(height: 8),
+          Text(widget.body,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.6)),
+          if (widget.action != null) ...[const SizedBox(height: 20), widget.action!],
+        ]),
+      ),
+    );
+  }
+}
+
+class _EmptyScenePainter extends CustomPainter {
+  final EmptyScene scene;
+  final Color color;
+  const _EmptyScenePainter({required this.scene, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    switch (scene) {
+      case EmptyScene.trip:      _paintTrain(canvas, size); break;
+      case EmptyScene.expense:   _paintPiggyBank(canvas, size); break;
+      case EmptyScene.notification: _paintBell(canvas, size); break;
+      case EmptyScene.saved:     _paintHeart(canvas, size); break;
+      case EmptyScene.community: _paintBubbles(canvas, size); break;
+      case EmptyScene.map:       _paintCompass(canvas, size); break;
+    }
+  }
+
+  // ── Train (Trip) ────────────────────────────────────────
+  void _paintTrain(Canvas canvas, Size s) {
+    final c = color;
+    final fill = Paint()..color = c.withValues(alpha: 0.12)..style = PaintingStyle.fill;
+    final stroke = Paint()..color = c.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+    final trackP = Paint()..color = c.withValues(alpha: 0.25)..style = PaintingStyle.stroke..strokeWidth = 2;
+
+    // Mountains background
+    final mPath = Path()
+      ..moveTo(0, s.height * 0.7)
+      ..lineTo(s.width * 0.2, s.height * 0.35)
+      ..lineTo(s.width * 0.4, s.height * 0.7)
+      ..moveTo(s.width * 0.35, s.height * 0.7)
+      ..lineTo(s.width * 0.6, s.height * 0.25)
+      ..lineTo(s.width * 0.85, s.height * 0.7);
+    canvas.drawPath(mPath, Paint()..color = c.withValues(alpha: 0.10)..style = PaintingStyle.fill);
+    canvas.drawPath(mPath, stroke..strokeWidth = 1.5);
+    stroke.strokeWidth = 2.5;
+
+    // Track
+    canvas.drawLine(Offset(0, s.height * 0.78), Offset(s.width, s.height * 0.78), trackP);
+    for (double x = 10; x < s.width; x += 18) {
+      canvas.drawLine(Offset(x, s.height * 0.75), Offset(x, s.height * 0.81), trackP);
+    }
+
+    // Train body
+    final trainRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.1, s.height * 0.52, s.width * 0.55, s.height * 0.24),
+      const Radius.circular(8));
+    canvas.drawRRect(trainRect, fill);
+    canvas.drawRRect(trainRect, stroke);
+
+    // Cab
+    final cabRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.55, s.height * 0.56, s.width * 0.22, s.height * 0.20),
+      const Radius.circular(6));
+    canvas.drawRRect(cabRect, fill);
+    canvas.drawRRect(cabRect, stroke);
+
+    // Windows
+    for (int i = 0; i < 3; i++) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(s.width * (0.14 + i * 0.15), s.height * 0.57, s.width * 0.10, s.height * 0.10),
+          const Radius.circular(3)),
+        Paint()..color = c.withValues(alpha: 0.18));
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(s.width * (0.14 + i * 0.15), s.height * 0.57, s.width * 0.10, s.height * 0.10),
+          const Radius.circular(3)),
+        stroke..strokeWidth = 1.5);
+      stroke.strokeWidth = 2.5;
+    }
+
+    // Wheels
+    for (double x in [s.width * 0.18, s.width * 0.36, s.width * 0.54, s.width * 0.67]) {
+      canvas.drawCircle(Offset(x, s.height * 0.78), 8, fill);
+      canvas.drawCircle(Offset(x, s.height * 0.78), 8, stroke..strokeWidth = 2);
+      stroke.strokeWidth = 2.5;
+    }
+
+    // Smoke puffs
+    for (int i = 0; i < 3; i++) {
+      final r = 6.0 + i * 4;
+      canvas.drawCircle(
+        Offset(s.width * 0.22 + i * 8, s.height * 0.42 - i * 8),
+        r, Paint()..color = c.withValues(alpha: 0.08 - i * 0.02));
+    }
+  }
+
+  // ── Piggy Bank (Expense) ────────────────────────────────
+  void _paintPiggyBank(Canvas canvas, Size s) {
+    final c = color;
+    final fill = Paint()..color = c.withValues(alpha: 0.12);
+    final stroke = Paint()..color = c.withValues(alpha: 0.55)..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+    final coinFill = Paint()..color = const Color(0xFFE8C46A).withValues(alpha: 0.5);
+
+    // Body
+    canvas.drawOval(Rect.fromCenter(center: Offset(s.width * 0.45, s.height * 0.58), width: s.width * 0.52, height: s.height * 0.42), fill);
+    canvas.drawOval(Rect.fromCenter(center: Offset(s.width * 0.45, s.height * 0.58), width: s.width * 0.52, height: s.height * 0.42), stroke);
+
+    // Snout
+    canvas.drawOval(Rect.fromCenter(center: Offset(s.width * 0.68, s.height * 0.60), width: s.width * 0.18, height: s.height * 0.12), Paint()..color = c.withValues(alpha: 0.08));
+    canvas.drawOval(Rect.fromCenter(center: Offset(s.width * 0.68, s.height * 0.60), width: s.width * 0.18, height: s.height * 0.12), stroke..strokeWidth = 1.8);
+    stroke.strokeWidth = 2.5;
+
+    // Nostrils
+    canvas.drawCircle(Offset(s.width * 0.64, s.height * 0.61), 2.5, Paint()..color = c.withValues(alpha: 0.3));
+    canvas.drawCircle(Offset(s.width * 0.72, s.height * 0.61), 2.5, Paint()..color = c.withValues(alpha: 0.3));
+
+    // Eye
+    canvas.drawCircle(Offset(s.width * 0.58, s.height * 0.50), 4, Paint()..color = c.withValues(alpha: 0.5));
+
+    // Coin slot
+    canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(s.width * 0.36, s.height * 0.32, s.width * 0.18, 5), const Radius.circular(3)), stroke..strokeWidth = 2);
+    stroke.strokeWidth = 2.5;
+
+    // Legs
+    for (double x in [s.width * 0.3, s.width * 0.42, s.width * 0.54]) {
+      canvas.drawRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, s.height * 0.74, s.width * 0.08, s.height * 0.15),
+        const Radius.circular(5)), fill);
+      canvas.drawRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, s.height * 0.74, s.width * 0.08, s.height * 0.15),
+        const Radius.circular(5)), stroke..strokeWidth = 1.8);
+      stroke.strokeWidth = 2.5;
+    }
+
+    // Scattered coins
+    for (final pos in [Offset(s.width * 0.08, s.height * 0.72), Offset(s.width * 0.82, s.height * 0.65), Offset(s.width * 0.85, s.height * 0.80)]) {
+      canvas.drawCircle(pos, 11, coinFill);
+      canvas.drawCircle(pos, 11, stroke..strokeWidth = 1.5);
+      stroke.strokeWidth = 2.5;
+    }
+
+    // Zzz
+    final textPainter = TextPainter(
+      text: TextSpan(text: 'Zzz', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: c.withValues(alpha: 0.4))),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    textPainter.paint(canvas, Offset(s.width * 0.12, s.height * 0.22));
+  }
+
+  // ── Bell (Notification) ─────────────────────────────────
+  void _paintBell(Canvas canvas, Size s) {
+    final c = color;
+    final fill = Paint()..color = c.withValues(alpha: 0.12);
+    final stroke = Paint()..color = c.withValues(alpha: 0.55)..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+
+    // Bell body
+    final bellPath = Path()
+      ..moveTo(s.width * 0.50, s.height * 0.12)
+      ..cubicTo(s.width * 0.32, s.height * 0.15, s.width * 0.18, s.height * 0.35, s.width * 0.15, s.height * 0.65)
+      ..lineTo(s.width * 0.85, s.height * 0.65)
+      ..cubicTo(s.width * 0.82, s.height * 0.35, s.width * 0.68, s.height * 0.15, s.width * 0.50, s.height * 0.12)
+      ..close();
+    canvas.drawPath(bellPath, fill);
+    canvas.drawPath(bellPath, stroke);
+
+    // Bell base
+    canvas.drawRRect(RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.18, s.height * 0.64, s.width * 0.64, s.height * 0.07),
+      const Radius.circular(4)), fill);
+    canvas.drawRRect(RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.18, s.height * 0.64, s.width * 0.64, s.height * 0.07),
+      const Radius.circular(4)), stroke..strokeWidth = 2);
+    stroke.strokeWidth = 2.5;
+
+    // Clapper
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.77), s.width * 0.06, fill);
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.77), s.width * 0.06, stroke..strokeWidth = 2);
+    stroke.strokeWidth = 2.5;
+
+    // Stars
+    for (final star in [Offset(s.width * 0.15, s.height * 0.18), Offset(s.width * 0.82, s.height * 0.24), Offset(s.width * 0.72, s.height * 0.10)]) {
+      _drawStar(canvas, star, 6, c.withValues(alpha: 0.35));
+    }
+
+    // Moon
+    final moonPath = Path()
+      ..addOval(Rect.fromCenter(center: Offset(s.width * 0.88, s.height * 0.42), width: 22, height: 22))
+      ..addOval(Rect.fromCenter(center: Offset(s.width * 0.96, s.height * 0.39), width: 20, height: 20));
+    canvas.drawPath(moonPath, Paint()..color = c.withValues(alpha: 0.18)..blendMode = BlendMode.srcOver);
+    canvas.drawArc(Rect.fromCenter(center: Offset(s.width * 0.88, s.height * 0.42), width: 22, height: 22), -0.8, 2.5, false, stroke..strokeWidth = 2);
+    stroke.strokeWidth = 2.5;
+  }
+
+  // ── Heart Pin (Saved) ───────────────────────────────────
+  void _paintHeart(Canvas canvas, Size s) {
+    final c = color;
+    final fill = Paint()..color = c.withValues(alpha: 0.12);
+    final stroke = Paint()..color = c.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+
+    // Map pin shape
+    final pinPath = Path()
+      ..addOval(Rect.fromCenter(center: Offset(s.width * 0.50, s.height * 0.38), width: s.width * 0.50, height: s.height * 0.48))
+      ..moveTo(s.width * 0.50, s.height * 0.62)
+      ..lineTo(s.width * 0.50, s.height * 0.82);
+    canvas.drawPath(Path()
+      ..addOval(Rect.fromCenter(center: Offset(s.width * 0.50, s.height * 0.38), width: s.width * 0.50, height: s.height * 0.48))
+      ..moveTo(s.width * 0.38, s.height * 0.62)
+      ..lineTo(s.width * 0.50, s.height * 0.82)
+      ..lineTo(s.width * 0.62, s.height * 0.62), fill);
+    canvas.drawPath(pinPath, stroke);
+
+    // Heart inside pin
+    _drawHeart(canvas, Offset(s.width * 0.50, s.height * 0.36), s.width * 0.14, c.withValues(alpha: 0.6));
+
+    // Dotted trail of smaller pins
+    for (int i = 1; i <= 3; i++) {
+      final x = s.width * (0.15 + i * 0.18);
+      final y = s.height * (0.72 + i * 0.04);
+      canvas.drawCircle(Offset(x, y), 5, Paint()..color = c.withValues(alpha: 0.15 + i * 0.05));
+    }
+
+    // Sparkles
+    _drawStar(canvas, Offset(s.width * 0.78, s.height * 0.18), 5, c.withValues(alpha: 0.4));
+    _drawStar(canvas, Offset(s.width * 0.20, s.height * 0.22), 4, c.withValues(alpha: 0.3));
+  }
+
+  // ── Speech Bubbles (Community) ──────────────────────────
+  void _paintBubbles(Canvas canvas, Size s) {
+    final c = color;
+    final fill1 = Paint()..color = c.withValues(alpha: 0.12);
+    final fill2 = Paint()..color = c.withValues(alpha: 0.07);
+    final stroke = Paint()..color = c.withValues(alpha: 0.5)..style = PaintingStyle.stroke..strokeWidth = 2.5..strokeCap = StrokeCap.round;
+
+    // Left bubble
+    final b1 = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(s.width * 0.04, s.height * 0.12, s.width * 0.50, s.height * 0.32),
+        const Radius.circular(14)))
+      ..moveTo(s.width * 0.14, s.height * 0.44)
+      ..lineTo(s.width * 0.08, s.height * 0.56)
+      ..lineTo(s.width * 0.26, s.height * 0.44);
+    canvas.drawPath(b1, fill1);
+    canvas.drawRRect(RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.04, s.height * 0.12, s.width * 0.50, s.height * 0.32),
+      const Radius.circular(14)), stroke);
+
+    // Right bubble
+    final b2 = Path()
+      ..addRRect(RRect.fromRectAndRadius(
+        Rect.fromLTWH(s.width * 0.44, s.height * 0.46, s.width * 0.52, s.height * 0.30),
+        const Radius.circular(14)))
+      ..moveTo(s.width * 0.74, s.height * 0.76)
+      ..lineTo(s.width * 0.88, s.height * 0.84)
+      ..lineTo(s.width * 0.72, s.height * 0.76);
+    canvas.drawPath(b2, fill2);
+    canvas.drawRRect(RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.44, s.height * 0.46, s.width * 0.52, s.height * 0.30),
+      const Radius.circular(14)), stroke..strokeWidth = 2);
+    stroke.strokeWidth = 2.5;
+
+    // Dots inside bubbles
+    for (double x in [0.15, 0.28, 0.41]) {
+      canvas.drawCircle(Offset(s.width * x, s.height * 0.28), 5, Paint()..color = c.withValues(alpha: 0.25));
+    }
+    for (double x in [0.54, 0.64, 0.74]) {
+      canvas.drawCircle(Offset(s.width * x, s.height * 0.61), 4, Paint()..color = c.withValues(alpha: 0.18));
+    }
+
+    // Cherry blossom dots
+    for (final pos in [Offset(s.width * 0.90, s.height * 0.10), Offset(s.width * 0.82, s.height * 0.90), Offset(s.width * 0.06, s.height * 0.78)]) {
+      for (int i = 0; i < 5; i++) {
+        final angle = i * 72 * 3.14159 / 180;
+        canvas.drawCircle(Offset(pos.dx + 8 * cos(angle), pos.dy + 8 * sin(angle)), 3, Paint()..color = const Color(0xFFD4A8C7).withValues(alpha: 0.5));
+      }
+    }
+  }
+
+  // ── Compass (Map) ───────────────────────────────────────
+  void _paintCompass(Canvas canvas, Size s) {
+    final c = color;
+    final fill = Paint()..color = c.withValues(alpha: 0.10);
+    final stroke = Paint()..color = c.withValues(alpha: 0.55)..style = PaintingStyle.stroke..strokeWidth = 2.5;
+
+    // Outer circle
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.50), s.width * 0.38, fill);
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.50), s.width * 0.38, stroke);
+
+    // Inner ring
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.50), s.width * 0.22, fill..color = c.withValues(alpha: 0.06));
+    canvas.drawCircle(Offset(s.width * 0.50, s.height * 0.50), s.width * 0.22, stroke..strokeWidth = 1.5);
+    stroke.strokeWidth = 2.5;
+
+    // N/S/E/W labels
+    for (final entry in [('N', 0.50, 0.10), ('S', 0.50, 0.90), ('E', 0.88, 0.50), ('W', 0.12, 0.50)]) {
+      final tp = TextPainter(
+        text: TextSpan(text: entry.$1, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: c.withValues(alpha: 0.5))),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(s.width * entry.$2 - tp.width / 2, s.height * entry.$3 - tp.height / 2));
+    }
+
+    // Needle (North red)
+    final center = Offset(s.width * 0.50, s.height * 0.50);
+    canvas.drawPath(Path()
+      ..moveTo(center.dx, center.dy - s.height * 0.28)
+      ..lineTo(center.dx - 8, center.dy)
+      ..lineTo(center.dx, center.dy + s.height * 0.15)
+      ..lineTo(center.dx + 8, center.dy)
+      ..close(), Paint()..color = c.withValues(alpha: 0.55)..style = PaintingStyle.fill);
+
+    // Center dot
+    canvas.drawCircle(center, 6, Paint()..color = Colors.white);
+    canvas.drawCircle(center, 6, stroke..strokeWidth = 2);
+  }
+
+  // ── Helpers ────────────────────────────────────────────
+  void _drawStar(Canvas canvas, Offset center, double r, Color c) {
+    final paint = Paint()..color = c..style = PaintingStyle.fill;
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      final outerAngle = (i * 72 - 90) * 3.14159 / 180;
+      final innerAngle = outerAngle + 36 * 3.14159 / 180;
+      final pt = Offset(center.dx + r * cos(outerAngle), center.dy + r * sin(outerAngle));
+      final pi = Offset(center.dx + r * 0.4 * cos(innerAngle), center.dy + r * 0.4 * sin(innerAngle));
+      if (i == 0) path.moveTo(pt.dx, pt.dy); else path.lineTo(pt.dx, pt.dy);
+      path.lineTo(pi.dx, pi.dy);
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawHeart(Canvas canvas, Offset center, double r, Color c) {
+    final path = Path()
+      ..moveTo(center.dx, center.dy + r * 0.5)
+      ..cubicTo(center.dx - r * 1.4, center.dy - r * 0.3, center.dx - r * 1.4, center.dy - r * 1.4, center.dx, center.dy - r * 0.6)
+      ..cubicTo(center.dx + r * 1.4, center.dy - r * 1.4, center.dx + r * 1.4, center.dy - r * 0.3, center.dx, center.dy + r * 0.5)
+      ..close();
+    canvas.drawPath(path, Paint()..color = c..style = PaintingStyle.fill);
+  }
+
+  double cos(double radians) => math.cos(radians);
+  double sin(double radians) => math.sin(radians);
+
+  @override bool shouldRepaint(_EmptyScenePainter old) => old.color != color || old.scene != scene;
 }

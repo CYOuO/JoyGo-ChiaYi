@@ -27,6 +27,33 @@ import 'news_transport_screens.dart' show TransportScreen, NewsScreen;
 import 'map_screen.dart' show MapScreen;
 import '../services/rail_service.dart'; // 🌟 引入統一的 Service
 
+// ── Department-based color for news/event items ──────────────────────────
+(Color, IconData) _deptColorIcon(String? location, bool isEvent) {
+  final loc = (location ?? '').toLowerCase();
+  if (loc.contains('文化') || loc.contains('藝術') || loc.contains('博物'))
+    return (const Color(0xFFB06090), Icons.museum_rounded);
+  if (loc.contains('教育') || loc.contains('學') || loc.contains('校'))
+    return (const Color(0xFF5A8FAF), Icons.school_rounded);
+  if (loc.contains('體育') || loc.contains('運動'))
+    return (const Color(0xFF5A9F5A), Icons.sports_rounded);
+  if (loc.contains('環保') || loc.contains('環境') || loc.contains('農業'))
+    return (const Color(0xFF5E9F7A), Icons.eco_rounded);
+  if (loc.contains('衛生') || loc.contains('健康') || loc.contains('醫'))
+    return (const Color(0xFFD45A5A), Icons.local_hospital_rounded);
+  if (loc.contains('建設') || loc.contains('工程') || loc.contains('都市'))
+    return (const Color(0xFFB08B40), Icons.construction_rounded);
+  if (loc.contains('社會') || loc.contains('福利') || loc.contains('民政'))
+    return (const Color(0xFF7A7ABF), Icons.people_rounded);
+  if (loc.contains('財政') || loc.contains('稅務') || loc.contains('經濟'))
+    return (const Color(0xFF7A9F5A), Icons.account_balance_rounded);
+  if (loc.contains('警察') || loc.contains('消防') || loc.contains('安全'))
+    return (const Color(0xFF5A7AAF), Icons.local_police_rounded);
+  if (loc.contains('觀光') || loc.contains('旅遊') || loc.contains('景點'))
+    return (const Color(0xFFBF8040), Icons.tour_rounded);
+  if (isEvent) return (const Color(0xFF00838F), Icons.celebration_rounded);
+  return (const Color(0xFF1565C0), Icons.article_rounded);
+}
+
 // ── HTML entity/tag cleaner (mirrors the one in news_transport_screens) ──
 String _cleanHtml(String? raw) {
   if (raw == null || raw.trim().isEmpty) return '';
@@ -74,6 +101,7 @@ const _kCardShadow    = [
   ),
 ];
 
+/// 浮動白色卡片容器 — 參考「奶酪單詞」風格
 Widget _warmSection({
   required Widget child,
   EdgeInsetsGeometry margin = const EdgeInsets.fromLTRB(16, 0, 16, 0),
@@ -249,34 +277,40 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
+  // 附近判斷半徑（公尺）
+  static const _kRestaurantRadius = 5000.0;  // 5km
+  static const _kSpotRadius       = 8000.0;  // 8km
+  static const _kMinResults       = 4;       // 至少顯示幾筆（不足時不過濾）
+
+  String get _restaurantSectionTitle => _myPos != null ? '附近雞肉飯' : '精選雞肉飯';
+  String get _spotSectionTitle       => _myPos != null ? '附近景點'   : '精選景點';
+
   void _sortRestaurantsByProximity() {
     if (_myPos == null) return;
-    final lat = _myPos!.latitude;
-    final lng = _myPos!.longitude;
+    final lat = _myPos!.latitude, lng = _myPos!.longitude;
     final sorted = [..._restaurants];
     sorted.sort((a, b) {
       if (a.lat == null || a.lng == null) return 1;
       if (b.lat == null || b.lng == null) return -1;
-      final da = Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!);
-      final db = Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!);
-      return da.compareTo(db);
+      return Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!).compareTo(Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!));
     });
-    if (mounted) setState(() => _restaurants = sorted);
+    // 過濾 5km 內，至少保留 _kMinResults 筆
+    final nearby = sorted.where((r) => r.lat != null && r.lng != null && Geolocator.distanceBetween(lat, lng, r.lat!, r.lng!) <= _kRestaurantRadius).toList();
+    if (mounted) setState(() => _restaurants = nearby.length >= _kMinResults ? nearby : sorted);
   }
 
   void _sortNearbyByProximity() {
     if (_myPos == null) return;
-    final lat = _myPos!.latitude;
-    final lng = _myPos!.longitude;
+    final lat = _myPos!.latitude, lng = _myPos!.longitude;
     final sorted = [..._nearbySpots];
     sorted.sort((a, b) {
       if (a.lat == null || a.lng == null) return 1;
       if (b.lat == null || b.lng == null) return -1;
-      final da = Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!);
-      final db = Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!);
-      return da.compareTo(db);
+      return Geolocator.distanceBetween(lat, lng, a.lat!, a.lng!).compareTo(Geolocator.distanceBetween(lat, lng, b.lat!, b.lng!));
     });
-    if (mounted) setState(() => _nearbySpots = sorted);
+    // 過濾 8km 內，至少保留 _kMinResults 筆
+    final nearby = sorted.where((s) => s.lat != null && s.lng != null && Geolocator.distanceBetween(lat, lng, s.lat!, s.lng!) <= _kSpotRadius).toList();
+    if (mounted) setState(() => _nearbySpots = nearby.length >= _kMinResults ? nearby : sorted);
   }
 
   @override
@@ -361,7 +395,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     var list = fresh.map(_restaurantFromDoc).where((r) => r.name.isNotEmpty).toList();
     if (_myPos != null) _sortListByProximity(list);
-    if (mounted) setState(() { _restaurants = list; _restaurantsLoading = false; });
+    if (mounted) { setState(() { _restaurants = list; _restaurantsLoading = false; }); if (_myPos != null) _sortRestaurantsByProximity(); }
   }
 
   void _sortListByProximity(List<_RestaurantItem> list) {
@@ -406,7 +440,11 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _nameKeys = ['name','Name','店家名稱','業者名稱','名稱','店名','公共場所名稱','場所名稱','地點','停車場名稱','單位名稱','中文單位名稱'];
   static const _addrKeys = ['address','Address','地址','加油站地址','營業地址','設置地點','場所地址','路段'];
   static const _imgKeys = ['imageUrl','image','Pic','pic','圖片','thumbnail'];
-  static const _descKeys = ['description','Description','簡介','產品特色','場所描述','特色介紹','備註','內容'];
+  static const _descKeys = [
+    'description','Description','descriptionDetail','DescriptionDetail',
+    'Content','content','remarks','Remarks','Info','info',
+    '簡介','產品特色','場所描述','特色介紹','備註','內容','活動說明',
+  ];
   static const _latKeys = ['緯度','緯度坐標','地點LAT','Latitude','POINT_Y','lat'];
   static const _lngKeys = ['經度','經度坐標','地點LNG','Longitude','POINT_X','lng'];
 
@@ -434,6 +472,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final freshAll = freshLists.expand((x) => x).toList()..shuffle();
     if (freshAll.isNotEmpty && mounted) {
       setState(() { _nearbySpots = freshAll; _nearbyLoading = false; });
+      if (_myPos != null) _sortNearbyByProximity();
     } else if (mounted) {
       setState(() => _nearbyLoading = false);
     }
@@ -805,7 +844,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 width: double.infinity, padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: _kCardShadow),
                 child: Row(children: [
-                  const Text('📭', style: TextStyle(fontSize: 26)),
+                  const Icon(Icons.inbox_rounded, size: 26, color: AppColors.textHint),
                   const SizedBox(width: 12),
                   Expanded(child: Text(_newsError ? '載入失敗，點此重試' : '目前無最新消息', style: const TextStyle(color: AppColors.textHint, fontSize: 13))),
                   if (_newsError) Icon(Icons.refresh_rounded, color: primary, size: 20),
@@ -822,7 +861,8 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _newsItems.length,
               itemBuilder: (_, index) {
                 final item = _newsItems[index];
-                final catColor = item.isEvent ? const Color(0xFF00838F) : const Color(0xFF1565C0);
+                final (catColor, catIconData) = _deptColorIcon(item.location, item.isEvent);
+                final catLabel = item.isEvent ? '活動' : '新聞';
                 final subtitle = _cleanHtml(item.summary ?? item.location ?? '');
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -867,9 +907,12 @@ class _HomeScreenState extends State<HomeScreen> {
             children: List.generate(_newsItems.length, (i) => AnimatedContainer(duration: const Duration(milliseconds: 280), margin: const EdgeInsets.symmetric(horizontal: 3), width: i == _currentBanner ? 18 : 6, height: 6, decoration: BoxDecoration(borderRadius: BorderRadius.circular(3), color: i == _currentBanner ? primary : AppColors.textHint.withValues(alpha: 0.25)))),
           ),
         ],
+
+        const SizedBox(height: 24),
       ],
     );
   }
+
 
   void _showNewsDetail(_GovItem item) {
     final catColor = item.isEvent ? const Color(0xFF00838F) : const Color(0xFF1565C0);
@@ -919,7 +962,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(padding: const EdgeInsets.fromLTRB(20, 24, 20, 12), child: SectionHeader(title: '附近雞肉飯', actionText: '查看地圖', onAction: () => widget.onSwitchTab?.call(2))),
+        Padding(padding: const EdgeInsets.fromLTRB(20, 24, 20, 12), child: SectionHeader(title: _restaurantSectionTitle, actionText: '查看地圖', onAction: () => widget.onSwitchTab?.call(2))),
         SizedBox(
           height: 210,
           child: _restaurantsLoading
@@ -975,7 +1018,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(left: 2, bottom: 12), child: SectionHeader(title: '附近景點', actionText: '地圖', onAction: () => widget.onSwitchTab?.call(2))),
+            Padding(padding: const EdgeInsets.only(left: 2, bottom: 12), child: SectionHeader(title: _spotSectionTitle, actionText: '地圖', onAction: () => widget.onSwitchTab?.call(2))),
             SizedBox(
               height: 34,
               child: ListView.separated(
@@ -1124,12 +1167,41 @@ class _FlipRestaurantCardState extends State<_FlipRestaurantCard> with SingleTic
 
   Widget _buildFront(_RestaurantItem r, Color primary) {
     return GestureDetector(
-      onTap: _flip, child: ClipRRect(borderRadius: BorderRadius.circular(20), child: Stack(fit: StackFit.expand, children: [
-          r.imageUrl.isNotEmpty ? Image.network(r.imageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: AppColors.surfaceMoss, child: const Icon(Icons.restaurant_rounded, size: 48, color: AppColors.textHint))) : Container(color: AppColors.surfaceMoss, child: const Icon(Icons.restaurant_rounded, size: 48, color: AppColors.textHint)),
-          Positioned.fill(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black.withValues(alpha: 0.0), Colors.black.withValues(alpha: 0.68)], stops: const [0.0, 0.45, 1.0])))),
-          Positioned(top: 10, right: 10, child: SpotSaveButton(spotId: r.id, spotName: r.name, imageUrl: r.imageUrl, size: 15)),
-          Positioned(left: 14, right: 14, bottom: 14, child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              Text(r.name, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800, shadows: [Shadow(color: Colors.black54, blurRadius: 4)]), maxLines: 2, overflow: TextOverflow.ellipsis),
+      onTap: _flip,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(fit: StackFit.expand, children: [
+          r.imageUrl.isNotEmpty
+              ? Image.network(r.imageUrl, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: AppColors.surfaceMoss,
+                    child: Icon(Icons.restaurant_rounded, size: 48, color: AppColors.textHint)))
+              : Container(color: AppColors.surfaceMoss,
+                  child: Icon(Icons.restaurant_rounded, size: 48, color: AppColors.textHint)),
+          Positioned.fill(child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Colors.black.withValues(alpha: 0.0),
+                         Colors.black.withValues(alpha: 0.68)],
+                stops: const [0.0, 0.45, 1.0],
+              ),
+            ),
+          )),
+          Positioned(top: 10, right: 10,
+            child: SpotSaveButton(
+              spotId: r.id, spotName: r.name, imageUrl: r.imageUrl,
+              rating: r.rating,
+              description: r.shortDesc,
+              address: r.address,
+              category: r.tags.isNotEmpty ? r.tags[0] : '餐廳',
+              size: 15,
+            )),
+          Positioned(left: 14, right: 14, bottom: 14,
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              Text(r.name,
+                style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4)]),
+                maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 5),
               Row(children: [const Icon(Icons.star_rounded, size: 13, color: AppColors.accentStraw), const SizedBox(width: 3), Text(r.rating.toStringAsFixed(1), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)), if (r.tags.isNotEmpty) ...[const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withValues(alpha: 0.35))), child: Text(r.tags.first, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w600)))]])
             ]))

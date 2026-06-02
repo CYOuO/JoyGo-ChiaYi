@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Spring Boot build artifacts
+tdx-server-temp/target/
+tdx-server-temp/.env

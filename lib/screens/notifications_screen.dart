@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
+import '../theme/fabric_textures.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -8,23 +10,35 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
+  static IconData _typeIconData(String type) {
+    switch (type) {
+      case 'event':       return Icons.celebration_rounded;
+      case 'social':      return Icons.thumb_up_rounded;
+      case 'achievement': return Icons.military_tech_rounded;
+      case 'transport':   return Icons.directions_bus_rounded;
+      case 'nearby':      return Icons.place_rounded;
+      case 'weather':     return Icons.cloud_rounded;
+      default:            return Icons.notifications_rounded;
+    }
+  }
+
   final List<_Notif> _notifs = [
-    _Notif(id:'n1', icon:'🏮', title:'嘉義燈會今日開幕！', body:'嘉義公園燈會今晚18:00正式點燈，快來感受光影之美。', time:'10分鐘前', isRead:false, type:'event'),
-    _Notif(id:'n2', icon:'👍', title:'你的行程獲得 23 個讚', body:'「嘉義週末輕旅行」在社群大受歡迎，越來越多人套用你的行程！', time:'1小時前', isRead:false, type:'social'),
-    _Notif(id:'n3', icon:'🎖️', title:'解鎖新成就！', body:'你已獲得「美食獵人」成就徽章，繼續探索嘉義美食吧！', time:'3小時前', isRead:false, type:'achievement'),
-    _Notif(id:'n4', icon:'🚌', title:'公車即將到站', body:'紅幹線公車預計3分鐘後抵達嘉義火車站，請提前準備上車。', time:'昨天', isRead:true, type:'transport'),
-    _Notif(id:'n5', icon:'📍', title:'附近有新景點', body:'「嘉義市立植物園」已上線，距離你目前位置僅500公尺，快去探索！', time:'昨天', isRead:true, type:'nearby'),
-    _Notif(id:'n6', icon:'🌤️', title:'明日天氣提醒', body:'明日嘉義天氣晴朗，最高溫34°C，是戶外旅遊的好時機！', time:'2天前', isRead:true, type:'weather'),
-    _Notif(id:'n7', icon:'✏️', title:'行程共編邀請', body:'小美邀請你共同編輯「阿里山二日遊」行程，點此查看。', time:'3天前', isRead:true, type:'social'),
+    _Notif(id:'n1', title:'嘉義燈會今日開幕！', body:'嘉義公園燈會今晚18:00正式點燈，快來感受光影之美。', time:'10分鐘前', isRead:false, type:'event'),
+    _Notif(id:'n2', title:'你的行程獲得 23 個讚', body:'「嘉義週末輕旅行」在社群大受歡迎，越來越多人套用你的行程！', time:'1小時前', isRead:false, type:'social'),
+    _Notif(id:'n3', title:'解鎖新成就！', body:'你已獲得「美食獵人」成就徽章，繼續探索嘉義美食吧！', time:'3小時前', isRead:false, type:'achievement'),
+    _Notif(id:'n4', title:'公車即將到站', body:'紅幹線公車預計3分鐘後抵達嘉義火車站，請提前準備上車。', time:'昨天', isRead:true, type:'transport'),
+    _Notif(id:'n5', title:'附近有新景點', body:'「嘉義市立植物園」已上線，距離你目前位置僅500公尺，快去探索！', time:'昨天', isRead:true, type:'nearby'),
+    _Notif(id:'n6', title:'明日天氣提醒', body:'明日嘉義天氣晴朗，最高溫34°C，是戶外旅遊的好時機！', time:'2天前', isRead:true, type:'weather'),
+    _Notif(id:'n7', title:'行程共編邀請', body:'小美邀請你共同編輯「阿里山二日遊」行程，點此查看。', time:'3天前', isRead:true, type:'social'),
   ];
 
   final _typeColor = const {
-    'event': Color(0xFFE8A87C),
-    'social': Color(0xFF8FBF8F),
+    'event':       Color(0xFFE8A87C),
+    'social':      Color(0xFF8FBF8F),
     'achievement': Color(0xFFCFA84C),
-    'transport': Color(0xFF88B8C8),
-    'nearby': Color(0xFFD4A8C7),
-    'weather': Color(0xFF8FBFD8),
+    'transport':   Color(0xFF88B8C8),
+    'nearby':      Color(0xFFD4A8C7),
+    'weather':     Color(0xFF8FBFD8),
   };
 
   @override
@@ -38,13 +52,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Column(
-          children: [
-            const Text('通知中心'),
-            if (unread > 0)
-              Text('$unread 則未讀', style: const TextStyle(fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w400)),
-          ],
-        ),
+        title: Builder(builder: (bCtx) {
+          final p = Theme.of(bCtx).colorScheme.primary;
+          return Row(mainAxisSize: MainAxisSize.min, children: [
+            DoodleHeart(color: p.withValues(alpha: 0.55), size: 10),
+            const SizedBox(width: 6),
+            Column(mainAxisSize: MainAxisSize.min, children: [
+              const Text('通知中心', style: TextStyle(fontWeight: FontWeight.w800)),
+              if (unread > 0)
+                Text('$unread 則未讀', style: const TextStyle(fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w400)),
+            ]),
+            const SizedBox(width: 6),
+            DoodleLightning(color: p.withValues(alpha: 0.55), size: 10),
+          ]);
+        }),
         actions: [
           TextButton(
             onPressed: () => setState(() { for (final n in _notifs) n.isRead = true; }),
@@ -83,14 +104,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Icon
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.15),
-                  shape: BoxShape.circle,
+              // Icon — hand-drawn circle
+              DoodleCircle(
+                size: 44,
+                color: color.withValues(alpha: 0.35),
+                child: Container(
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: Center(child: Icon(_typeIconData(n.type), size: 20, color: color)),
                 ),
-                child: Center(child: Text(n.icon, style: const TextStyle(fontSize: 20))),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -138,24 +159,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Widget _buildEmpty() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text('🔔', style: TextStyle(fontSize: 52)),
-          SizedBox(height: 12),
-          Text('目前沒有通知', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-          SizedBox(height: 6),
-          Text('新活動、成就、行程更新會在這裡顯示', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
-        ],
-      ),
-    );
+    return Builder(builder: (ctx) => IllustratedEmptyState(
+      scene: EmptyScene.notification,
+      title: '目前沒有通知',
+      body: '新活動、成就、行程更新\n都會在這裡出現',
+      color: Theme.of(ctx).colorScheme.primary,
+    ));
   }
 }
 
 class _Notif {
-  final String id, icon, title, body, time, type;
+  final String id, title, body, time, type;
   bool isRead;
-  _Notif({required this.id, required this.icon, required this.title,
+  _Notif({required this.id, required this.title,
           required this.body, required this.time, required this.isRead, required this.type});
 }

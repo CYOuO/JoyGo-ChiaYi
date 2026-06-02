@@ -135,7 +135,7 @@ class _AuthDrawerState extends State<AuthDrawer>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('🏯', style: TextStyle(fontSize: 44)),
+                const Icon(Icons.account_balance_rounded, size: 44, color: Colors.white),
                 const SizedBox(height: 14),
                 const Text(
                   '探索諸羅',
@@ -319,9 +319,9 @@ class _AuthDrawerState extends State<AuthDrawer>
                               fit: BoxFit.cover,
                               width: 60, height: 60,
                               errorBuilder: (_, __, ___) =>
-                                  const Center(child: Text('😊', style: TextStyle(fontSize: 28))),
+                                  const Center(child: Icon(Icons.person_rounded, size: 28, color: Colors.white70)),
                             )
-                          : const Center(child: Text('😊', style: TextStyle(fontSize: 28))),
+                          : const Center(child: Icon(Icons.person_rounded, size: 28, color: Colors.white70)),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -609,11 +609,47 @@ class _EditProfilePageState extends State<_EditProfilePage> {
   final _nameCtrl = TextEditingController();
   final _bioCtrl  = TextEditingController();
   bool    _saving      = false;
-  String  _avatar      = '😊';
+  String  _avatar      = 'person'; // stored icon key (or legacy emoji)
   XFile?  _pickedImage;
   String? _photoUrl;   // currently saved URL from Firestore
 
-  static const _avatars = ['😊','😎','🏔️','🌸','🎨','🚂','🦋','🍜','📷','🌲','⛰️','🎭'];
+  static const _avatarOptions = <(String, IconData, Color)>[
+    ('person',    Icons.person_rounded,          Color(0xFF6B9FD4)),
+    ('face',      Icons.face_rounded,            Color(0xFFE891BD)),
+    ('face2',     Icons.face_2_rounded,          Color(0xFF8BC34A)),
+    ('mountain',  Icons.landscape_rounded,       Color(0xFF7A9FBF)),
+    ('flower',    Icons.local_florist_rounded,   Color(0xFFD4789C)),
+    ('train',     Icons.train_rounded,           Color(0xFF888BC8)),
+    ('eco',       Icons.eco_rounded,             Color(0xFF5A9F7A)),
+    ('ramen',     Icons.ramen_dining_rounded,    Color(0xFFD47060)),
+    ('camera',    Icons.camera_alt_rounded,      Color(0xFF7A8CBF)),
+    ('park',      Icons.park_rounded,            Color(0xFF6AAF6A)),
+    ('terrain',   Icons.terrain_rounded,         Color(0xFF8A7A6A)),
+    ('theater',   Icons.theater_comedy_rounded,  Color(0xFFAF7AB8)),
+  ];
+
+  static IconData _avatarIconData(String key) {
+    for (final opt in _avatarOptions) {
+      if (opt.$1 == key) return opt.$2;
+    }
+    return Icons.person_rounded;
+  }
+
+  static Color _avatarColor(String key) {
+    for (final opt in _avatarOptions) {
+      if (opt.$1 == key) return opt.$3;
+    }
+    return const Color(0xFF6B9FD4);
+  }
+
+  static String _migrateAvatarKey(String stored) {
+    const emojiMap = {
+      '😊': 'person', '😎': 'face', '🏔️': 'mountain', '🌸': 'flower',
+      '🎨': 'theater', '🚂': 'train', '🦋': 'eco', '🍜': 'ramen',
+      '📷': 'camera', '🌲': 'park', '⛰️': 'terrain', '🎭': 'theater',
+    };
+    return emojiMap[stored] ?? stored;
+  }
 
   @override
   void initState() {
@@ -631,7 +667,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       if (doc.exists && mounted) {
         setState(() {
           _bioCtrl.text = doc.data()?['bio'] as String? ?? '';
-          _avatar       = doc.data()?['avatar'] as String? ?? '😊';
+          _avatar       = _migrateAvatarKey(doc.data()?['avatar'] as String? ?? 'person');
           _photoUrl     = doc.data()?['photoUrl'] as String?;
         });
       }
@@ -654,7 +690,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
     if (picked != null && mounted) {
       setState(() {
         _pickedImage = picked;
-        _avatar      = '😊'; // clear emoji selection when photo is chosen
+        _avatar      = 'person'; // reset icon when photo is chosen
       });
     }
   }
@@ -726,9 +762,9 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       avatarContent = Image.network(_photoUrl!, fit: BoxFit.cover,
           width: 88, height: 88,
           errorBuilder: (_, __, ___) =>
-              Center(child: Text(_avatar, style: const TextStyle(fontSize: 44))));
+              Center(child: Icon(_avatarIconData(_avatar), size: 44, color: _avatarColor(_avatar))));
     } else {
-      avatarContent = Center(child: Text(_avatar, style: const TextStyle(fontSize: 44)));
+      avatarContent = Center(child: Icon(_avatarIconData(_avatar), size: 44, color: _avatarColor(_avatar)));
     }
 
     return Scaffold(
@@ -790,16 +826,16 @@ class _EditProfilePageState extends State<_EditProfilePage> {
               const SizedBox(height: 12),
               // Emoji picker (hidden when a real photo is chosen)
               if (_pickedImage == null && _photoUrl == null) ...[
-                const Text('或選擇 Emoji 頭像',
+                const Text('或選擇圖示頭像',
                     style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 10, runSpacing: 10,
                   alignment: WrapAlignment.center,
-                  children: _avatars.map((a) {
-                    final sel = a == _avatar && _pickedImage == null;
+                  children: _avatarOptions.map((opt) {
+                    final sel = opt.$1 == _avatar && _pickedImage == null;
                     return GestureDetector(
-                      onTap: () => setState(() => _avatar = a),
+                      onTap: () => setState(() => _avatar = opt.$1),
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 150),
                         width: 48, height: 48,
@@ -810,8 +846,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                               color: sel ? primary : AppColors.divider,
                               width: sel ? 2 : 1),
                         ),
-                        child: Center(child: Text(a,
-                            style: const TextStyle(fontSize: 24))),
+                        child: Center(child: Icon(opt.$2, size: 24, color: sel ? primary : opt.$3)),
                       ),
                     );
                   }).toList(),
@@ -824,7 +859,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                     _photoUrl    = null;
                   }),
                   icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                  label: const Text('移除照片，改用 Emoji'),
+                  label: const Text('移除照片，改用圖示'),
                   style: TextButton.styleFrom(foregroundColor: AppColors.error),
                 ),
             ]),
@@ -949,7 +984,7 @@ class _FavoritesPageState extends State<_FavoritesPage> {
       ),
       body: filtered.isEmpty
           ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text(_spots.isEmpty ? '💔' : '🔍', style: const TextStyle(fontSize: 48)),
+              Icon(_spots.isEmpty ? Icons.favorite_border_rounded : Icons.search_rounded, size: 48, color: AppColors.textHint),
               const SizedBox(height: 12),
               Text(_spots.isEmpty ? '還沒有收藏的景點' : '找不到符合的景點',
                 style: const TextStyle(color: AppColors.textHint, fontSize: 15)),
@@ -998,7 +1033,7 @@ class _FavoritesPageState extends State<_FavoritesPage> {
                           errorBuilder: (_, __, ___) => Container(
                             width: 90, height: 90,
                             color: AppColors.surfaceMoss,
-                            child: const Center(child: Text('🏔️', style: TextStyle(fontSize: 28))),
+                            child: const Center(child: Icon(Icons.place_rounded, size: 28, color: AppColors.textHint)),
                           ),
                         ),
                       ),
@@ -1138,7 +1173,7 @@ class _TripCard extends StatelessWidget {
           child: Stack(children: [
             Image.network(trip.cover, height: 120, width: double.infinity, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(height: 120, color: AppColors.surfaceMoss,
-                child: const Center(child: Text('🗾', style: TextStyle(fontSize: 40))))),
+                child: const Center(child: Icon(Icons.map_rounded, size: 40, color: AppColors.textHint)))),
             Positioned(top: 10, right: 10,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -1188,14 +1223,14 @@ class _BadgesPage extends StatelessWidget {
   const _BadgesPage();
 
   static const _badges = [
-    _Badge('🏔️', '阿里山探索者', '完成阿里山景區所有必訪景點', true,  '2025-03-15'),
-    _Badge('🍜', '雞肉飯達人',    '打卡 5 間以上雞肉飯名店',    true,  '2025-04-02'),
-    _Badge('📸', '初心攝影師',    '上傳第一張打卡照片',         true,  '2025-02-10'),
-    _Badge('🗺️', '地圖探索者',    '解鎖地圖上 20 個地點',       true,  '2025-01-28'),
-    _Badge('🚂', '鐵道愛好者',    '搭乘阿里山小火車並打卡',      false, ''),
-    _Badge('🌸', '四季旅人',      '在春夏秋冬各完成一次行程',    false, ''),
-    _Badge('👥', '社群達人',      '獲得 50 個讚',               false, ''),
-    _Badge('⭐', '諸羅傳說',      '完成所有成就',               false, ''),
+    _Badge(Icons.landscape_rounded,      '阿里山探索者', '完成阿里山景區所有必訪景點', true,  '2025-03-15'),
+    _Badge(Icons.ramen_dining_rounded,   '雞肉飯達人',    '打卡 5 間以上雞肉飯名店',    true,  '2025-04-02'),
+    _Badge(Icons.camera_alt_rounded,     '初心攝影師',    '上傳第一張打卡照片',         true,  '2025-02-10'),
+    _Badge(Icons.map_rounded,            '地圖探索者',    '解鎖地圖上 20 個地點',       true,  '2025-01-28'),
+    _Badge(Icons.train_rounded,          '鐵道愛好者',    '搭乘阿里山小火車並打卡',      false, ''),
+    _Badge(Icons.local_florist_rounded,  '四季旅人',      '在春夏秋冬各完成一次行程',    false, ''),
+    _Badge(Icons.people_rounded,         '社群達人',      '獲得 50 個讚',               false, ''),
+    _Badge(Icons.star_rounded,           '諸羅傳說',      '完成所有成就',               false, ''),
   ];
 
   @override
@@ -1225,7 +1260,7 @@ class _BadgesPage extends StatelessWidget {
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
-                const Text('🏆', style: TextStyle(fontSize: 28)),
+                const Icon(Icons.emoji_events_rounded, size: 28),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('已解鎖 $earned / $total 個成就',
@@ -1267,7 +1302,7 @@ class _BadgesPage extends StatelessWidget {
                   border: Border.all(color: b.earned ? primary.withValues(alpha: 0.3) : AppColors.divider),
                 ),
                 child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text(b.emoji, style: TextStyle(fontSize: 36, color: b.earned ? null : const Color(0xFF999999))),
+                  Icon(b.icon, size: 36, color: b.earned ? Theme.of(context).colorScheme.primary : const Color(0xFF999999)),
                   if (!b.earned) const SizedBox.shrink()
                   else Container(),
                   const SizedBox(height: 8),
@@ -1303,9 +1338,10 @@ class _BadgesPage extends StatelessWidget {
 }
 
 class _Badge {
-  final String emoji, title, desc, earnedDate;
+  final IconData icon;
+  final String title, desc, earnedDate;
   final bool earned;
-  const _Badge(this.emoji, this.title, this.desc, this.earned, this.earnedDate);
+  const _Badge(this.icon, this.title, this.desc, this.earned, this.earnedDate);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1323,7 +1359,7 @@ class _CheckinPhotosPageState extends State<_CheckinPhotosPage> {
     spot:    ['阿里山國家風景區','北門車站','文化路夜市','嘉義公園','故宮南院','嘉義市立美術館',
               '蘭潭水庫','奮起湖','阿里山鐵道','嘉義火車站','林聰明沙鍋魚頭','御品元冰品'][i % 12],
     date:    '2025-0${(i % 4) + 2}-${(i * 3 + 10).toString().padLeft(2, '0')}',
-    emoji:   ['🌲','🚂','🌙','🌳','🏛️','🎨','🌊','☁️','🚃','🏯','🍜','🍧'][i % 12],
+    iconData: [Icons.park_rounded, Icons.train_rounded, Icons.nightlight_round, Icons.park_rounded, Icons.account_balance_rounded, Icons.palette_rounded, Icons.waves_rounded, Icons.cloud_rounded, Icons.directions_railway_rounded, Icons.account_balance_rounded, Icons.ramen_dining_rounded, Icons.icecream_rounded][i % 12],
   ));
 
   @override
@@ -1372,7 +1408,7 @@ class _CheckinPhotosPageState extends State<_CheckinPhotosPage> {
                     Image.network(p.url, fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                         color: AppColors.surfaceMoss,
-                        child: Center(child: Text(p.emoji, style: const TextStyle(fontSize: 28))),
+                        child: Center(child: Icon(p.iconData, size: 28, color: AppColors.textHint)),
                       )),
                     Positioned(bottom: 0, left: 0, right: 0,
                       child: Container(
@@ -1415,14 +1451,14 @@ class _CheckinPhotosPageState extends State<_CheckinPhotosPage> {
               child: Image.network(p.url, fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
                   height: 200, color: AppColors.surfaceMoss,
-                  child: Center(child: Text(p.emoji, style: const TextStyle(fontSize: 60))))),
+                  child: Center(child: Icon(p.iconData, size: 60, color: AppColors.textHint)))),
             ),
             const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14)),
               child: Row(children: [
-                Text(p.emoji, style: const TextStyle(fontSize: 20)),
+                Icon(p.iconData, size: 20, color: AppColors.textSecondary),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(p.spot, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
@@ -1438,8 +1474,9 @@ class _CheckinPhotosPageState extends State<_CheckinPhotosPage> {
 }
 
 class _PhotoData {
-  final String url, spot, date, emoji;
-  const _PhotoData({required this.url, required this.spot, required this.date, required this.emoji});
+  final String url, spot, date;
+  final IconData iconData;
+  const _PhotoData({required this.url, required this.spot, required this.date, required this.iconData});
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1481,29 +1518,29 @@ class _PrivacyPage extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 20),
-          _privSection('📋 一、資料收集範圍', '我們收集以下類型的個人資料：\n\n'
+          _privSection('一、資料收集範圍', '我們收集以下類型的個人資料：\n\n'
             '• 帳號資料：電子郵件、暱稱、頭像\n'
             '• 位置資料：您允許存取位置時，我們取得您的 GPS 座標以提供附近景點功能\n'
             '• 使用記錄：您的行程記錄、收藏清單、打卡地點、消費記錄\n'
             '• 社群內容：您發布的貼文、留言、照片\n'
             '• 裝置資訊：作業系統版本、App 版本，用於錯誤回報'),
-          _privSection('🎯 二、資料使用目的', '我們使用您的資料以：\n\n'
+          _privSection('二、資料使用目的', '我們使用您的資料以：\n\n'
             '• 提供核心功能：地圖探索、行程規劃、集章成就\n'
             '• 改善使用體驗：個人化推薦、使用習慣分析\n'
             '• 帳號管理：登入驗證、密碼重設\n'
             '• 社群功能：互動、追蹤、分享\n'
             '• 客服支援：問題回報與解決'),
-          _privSection('🤝 三、資料共享', '我們不會將您的個人資料出售給第三方。我們僅在以下情況共享資料：\n\n'
+          _privSection('三、資料共享', '我們不會將您的個人資料出售給第三方。我們僅在以下情況共享資料：\n\n'
             '• Firebase / Google Cloud：用於身份驗證、資料儲存\n'
             '• 交通資訊 API：匿名化請求，不傳送個人識別資料\n'
             '• 政府開放資料：景點、活動等資訊均來自公開來源\n'
             '• 法律要求：依法院命令或主管機關要求'),
-          _privSection('🔒 四、資料安全', '我們採取以下措施保護您的資料：\n\n'
+          _privSection('四、資料安全', '我們採取以下措施保護您的資料：\n\n'
             '• 所有傳輸均使用 HTTPS 加密\n'
             '• Firebase Security Rules 限制資料存取\n'
             '• 密碼以雜湊方式儲存，我們無法得知您的密碼\n'
             '• 定期安全性審查'),
-          _privSection('✅ 五、您的權利', '依據個人資料保護法，您擁有：\n\n'
+          _privSection('五、您的權利', '依據個人資料保護法，您擁有：\n\n'
             '• 查詢權：查閱我們持有的您的個人資料\n'
             '• 更正權：要求更正不正確的資料\n'
             '• 刪除權：要求刪除您的帳號及所有相關資料\n'
@@ -1541,9 +1578,9 @@ class _PrivacyPage extends StatelessWidget {
 // ══════════════════════════════════════════════════════════
 
 class _ProfileUser {
-  final String name, emoji, bio;
+  final String name, bio;
   final int trips;
-  _ProfileUser(this.name, this.emoji, this.bio, this.trips);
+  _ProfileUser(this.name, String _ignored, this.bio, this.trips);
 }
 
 class _ProfileDetailPage extends StatefulWidget {
@@ -1666,8 +1703,8 @@ class _ProfileDetailPageState extends State<_ProfileDetailPage>
               border: Border.all(color: AppColors.divider),
             ),
             child: Center(
-                child: Text(u.emoji,
-                    style: const TextStyle(fontSize: 22))),
+                child: Text(u.name.isNotEmpty ? u.name[0] : '?',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textSecondary))),
           ),
           title: Text(
             u.name,

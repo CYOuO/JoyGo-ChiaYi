@@ -14,12 +14,12 @@ class _ExploreScreenState extends State<ExploreScreen> {
   String _selectedCategory = 'all';
   String _sortBy = 'rating';
 
-  final _categories = [
-    {'key': 'all', 'label': '全部', 'icon': '🗺️'},
-    {'key': 'attraction', 'label': '景點', 'icon': '🏛️'},
-    {'key': 'restaurant', 'label': '美食', 'icon': '🍜'},
-    {'key': 'hotel', 'label': '住宿', 'icon': '🏨'},
-    {'key': 'youbike', 'label': 'YouBike', 'icon': '🚲'},
+  final _categories = <Map<String, dynamic>>[
+    {'key': 'all',        'label': '全部',    'icon': Icons.map_rounded},
+    {'key': 'attraction', 'label': '景點',    'icon': Icons.account_balance_rounded},
+    {'key': 'restaurant', 'label': '美食',    'icon': Icons.ramen_dining_rounded},
+    {'key': 'hotel',      'label': '住宿',    'icon': Icons.hotel_rounded},
+    {'key': 'youbike',    'label': 'YouBike', 'icon': Icons.pedal_bike_rounded},
   ];
 
   List<Spot> get _filteredSpots {
@@ -63,11 +63,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
               child: Row(
                 children: _categories.map((cat) {
                   return CategoryChip(
-                    label: cat['label']!,
-                    icon: cat['icon']!,
+                    label: cat['label'] as String,
+                    icon: cat['icon'] as IconData,
                     isSelected: _selectedCategory == cat['key'],
                     onTap: () =>
-                        setState(() => _selectedCategory = cat['key']!),
+                        setState(() => _selectedCategory = cat['key'] as String),
                   );
                 }).toList(),
               ),
@@ -252,9 +252,12 @@ class _SpotListCardState extends State<_SpotListCard> {
                     height: 160,
                     color: AppColors.surfaceMoss,
                     child: Center(
-                      child: Text(
-                        widget.spot.category == 'restaurant' ? '🍜' : '🏛️',
-                        style: const TextStyle(fontSize: 48),
+                      child: Icon(
+                        widget.spot.category == 'restaurant'
+                            ? Icons.ramen_dining_rounded
+                            : Icons.account_balance_rounded,
+                        size: 48,
+                        color: AppColors.textHint,
                       ),
                     ),
                   ),
@@ -427,10 +430,10 @@ class _SpotListCardState extends State<_SpotListCard> {
 
   String _categoryLabel(String cat) {
     const map = {
-      'attraction': '🏛️ 景點',
-      'restaurant': '🍜 美食',
-      'hotel': '🏨 住宿',
-      'youbike': '🚲 YouBike',
+      'attraction': '景點',
+      'restaurant': '美食',
+      'hotel':      '住宿',
+      'youbike':    'YouBike',
     };
     return map[cat] ?? cat;
   }

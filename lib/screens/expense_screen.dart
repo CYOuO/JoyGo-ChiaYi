@@ -1,11 +1,49 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'; // HapticFeedback
 import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
+import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene, ShimmerBox;
 import '../services/expense_service.dart';
 import '../services/trip_service.dart';
+
+// Map trip icon key (emoji or named) → IconData
+IconData _tripIconFromKey(String key) {
+  switch (key) {
+    case 'map':   case '🗺️': return Icons.map_rounded;
+    case 'flight':case '✈️': return Icons.flight_rounded;
+    case 'train': case '🚂': return Icons.train_rounded;
+    case 'beach': case '🏖️': case '🏝️': return Icons.beach_access_rounded;
+    case 'mountain': case '🏔️': case '⛰️': return Icons.landscape_rounded;
+    case 'flower': case '🌸': return Icons.local_florist_rounded;
+    case 'ramen': case '🍜': return Icons.ramen_dining_rounded;
+    case 'attractions': case '🎡': return Icons.attractions_rounded;
+    case 'castle': case '🏯': case '🏛️': return Icons.account_balance_rounded;
+    case 'camera': case '📸': return Icons.camera_alt_rounded;
+    case 'list':  case '📋': return Icons.list_alt_rounded;
+    default: return Icons.map_rounded;
+  }
+}
+
+// ─── Expense icon map (key → IconData + Color) ─────────────
+const _kExpIconMap = <String, (IconData, Color)>{
+  'ramen':   (Icons.ramen_dining_rounded,       Color(0xFFE57373)),
+  'lunch':   (Icons.lunch_dining_rounded,        Color(0xFFFF8A65)),
+  'cafe':    (Icons.local_cafe_rounded,          Color(0xFF8D6E63)),
+  'dessert': (Icons.icecream_rounded,            Color(0xFFF48FB1)),
+  'tea':     (Icons.emoji_food_beverage_rounded, Color(0xFF66BB6A)),
+  'bar':     (Icons.local_bar_rounded,           Color(0xFFFFB300)),
+  'hotel':   (Icons.hotel_rounded,               Color(0xFF5C6BC0)),
+  'train':   (Icons.train_rounded,               Color(0xFF42A5F5)),
+  'bus':     (Icons.directions_bus_rounded,      Color(0xFF26C6DA)),
+  'ticket':  (Icons.confirmation_number_rounded, Color(0xFFEC407A)),
+  'shop':    (Icons.shopping_bag_rounded,        Color(0xFF7E57C2)),
+  'other':   (Icons.more_horiz_rounded,         Color(0xFF78909C)),
+};
+(IconData, Color) _expIcon(String key) =>
+    _kExpIconMap[key] ?? (Icons.receipt_long_rounded, Color(0xFF9E9E9E));
 
 // ═══════════════════════════════════════════════
 // MODELS
@@ -372,11 +410,26 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         _buildChartTab(),
       ],
     );
-    // When embedded in trip detail, skip Scaffold+AppBar
+    // When embedded in trip detail, skip Scaffold+AppBar but keep FAB
     if (widget.embedded) {
-      return Column(children: [
-        Material(color: AppColors.surface, child: tabBar),
-        Expanded(child: body),
+      return Stack(children: [
+        Column(children: [
+          Material(color: AppColors.surface, child: tabBar),
+          Expanded(child: body),
+        ]),
+        Positioned(
+          right: 16, bottom: 16,
+          child: FloatingActionButton.extended(
+            heroTag: 'expense_embedded_fab',
+            onPressed: () => _showAddExpense(context),
+            backgroundColor: primary,
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.add_rounded),
+            label: const Text('新增消費', style: TextStyle(fontWeight: FontWeight.w700)),
+            elevation: 4,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+        ),
       ]);
     }
     return Scaffold(
@@ -558,17 +611,11 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         // List
         Expanded(
           child: _filteredExpenses.isEmpty
-              ? Center(
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Text('💰', style: TextStyle(fontSize: 48)),
-                    const SizedBox(height: 12),
-                    Text(
-                      _selectedTripId == null ? '尚無任何消費紀錄' : '此行程尚無消費紀錄',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text('點下方「新增消費」開始記帳', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
-                  ]),
+              ? IllustratedEmptyState(
+                  scene: EmptyScene.expense,
+                  title: _selectedTripId == null ? '尚無任何消費紀錄' : '此行程尚無消費紀錄',
+                  body: '點擊右下角 + 新增第一筆消費',
+                  color: Theme.of(context).colorScheme.primary,
                 )
               : Builder(builder: (ctx) {
                   final p = Theme.of(ctx).colorScheme.primary;
@@ -808,8 +855,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             children: [
               Row(
                 children: [
-                  const Text('💸',
-                      style: TextStyle(fontSize: 20)),
+                  const Icon(Icons.account_balance_wallet_rounded, size: 20, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
                   const Text('成員結算',
                       style: TextStyle(
@@ -840,8 +886,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             children: [
               Row(
                 children: [
-                  const Text('🔄',
-                      style: TextStyle(fontSize: 20)),
+                  const Icon(Icons.sync_alt_rounded, size: 20, color: AppColors.textSecondary),
                   const SizedBox(width: 8),
                   const Text('最少轉帳方案',
                       style: TextStyle(
@@ -1098,7 +1143,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Column(
         children: [
-          const Text('🎉', style: TextStyle(fontSize: 40)),
+          const Icon(Icons.celebration_rounded, size: 40, color: AppColors.textSecondary),
           const SizedBox(height: 8),
           Text('大家都結清了！',
               style: TextStyle(
@@ -1166,7 +1211,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                           decoration: BoxDecoration(
                             color: catColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8)),
-                          child: Center(child: Text(e.icon, style: const TextStyle(fontSize: 16)))),
+                          child: Center(child: Icon(_expIcon(e.icon).$1, color: _expIcon(e.icon).$2, size: 18))),
                         const SizedBox(width: 10),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(e.title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -1373,16 +1418,20 @@ class _ExpenseScreenState extends State<ExpenseScreen>
             ],
           ),
           const SizedBox(height: 6),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 8,
-              backgroundColor: AppColors.divider,
-              valueColor:
-                  AlwaysStoppedAnimation<Color>(color),
+          LayoutBuilder(builder: (ctx, box) => Stack(children: [
+            Container(height: 10, decoration: BoxDecoration(
+              color: AppColors.divider, borderRadius: BorderRadius.circular(5))),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 700),
+              curve: Curves.easeOutCubic,
+              height: 10,
+              width: box.maxWidth * ratio,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [color, Color.lerp(color, Colors.white, 0.35)!]),
+                borderRadius: BorderRadius.circular(5),
+                boxShadow: [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 1))]),
             ),
-          ),
+          ])),
         ],
       ),
     );
@@ -1391,53 +1440,56 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Widget _buildDayChart() {
     final dayTotals = <String, int>{};
     for (final e in _expenses) {
-      final k =
-          '${e.date.month}/${e.date.day}';
+      final k = '${e.date.month}/${e.date.day}';
       dayTotals[k] = (dayTotals[k] ?? 0) + e.amount;
     }
-    final keys = dayTotals.keys.toList()..sort();
-    final maxVal =
-        dayTotals.values.fold(0, (a, b) => a > b ? a : b);
+    if (dayTotals.isEmpty) {
+      return const Center(child: Text('尚無消費資料', style: TextStyle(color: AppColors.textHint, fontSize: 12)));
+    }
+    final keys   = dayTotals.keys.toList()..sort();
+    final maxVal = dayTotals.values.fold(0, (a, b) => a > b ? a : b);
+    final primary = Theme.of(context).colorScheme.primary;
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: keys.map((k) {
-        final val = dayTotals[k]!;
-        final ratio = maxVal > 0 ? val / maxVal : 0.0;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Text(
-                  'NT\$$val',
-                  style: const TextStyle(
-                      fontSize: 9,
-                      color: AppColors.textHint),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 4),
+    return SizedBox(
+      height: 120,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: keys.asMap().entries.map((entry) {
+          final k     = entry.value;
+          final val   = dayTotals[k]!;
+          final ratio = maxVal > 0 ? val / maxVal : 0.0;
+          // Color varies by day index — creates a gentle gradient feel
+          final barColor = Color.lerp(primary, Color.lerp(primary, Colors.white, 0.4)!, entry.key / math.max(keys.length - 1, 1))!;
+
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: Column(mainAxisAlignment: MainAxisAlignment.end, children: [
+                if (val > 0) Text(
+                  val >= 1000 ? '${(val / 1000).toStringAsFixed(1)}k' : '$val',
+                  style: TextStyle(fontSize: 8, color: primary, fontWeight: FontWeight.w700),
+                  textAlign: TextAlign.center),
+                const SizedBox(height: 3),
                 AnimatedContainer(
-                  duration: const Duration(milliseconds: 600),
-                  curve: Curves.easeOut,
+                  duration: Duration(milliseconds: 500 + entry.key * 60),
+                  curve: Curves.easeOutCubic,
                   height: 80 * ratio + 4,
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(6)),
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [barColor, Color.lerp(barColor, Colors.white, 0.25)!]),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                    boxShadow: [BoxShadow(color: barColor.withValues(alpha: 0.3), blurRadius: 4, offset: const Offset(0, 2))],
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(k,
-                    style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textHint)),
-              ],
+                const SizedBox(height: 6),
+                Text(k, style: const TextStyle(fontSize: 9, color: AppColors.textHint), textAlign: TextAlign.center),
+              ]),
             ),
-          ),
-        );
-      }).toList(),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -1500,8 +1552,13 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           children: [
             Row(
               children: [
-                Text(e.icon,
-                    style: const TextStyle(fontSize: 28)),
+                Builder(builder: (_) {
+                  final (ic, col) = _expIcon(e.icon);
+                  return Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(color: col.withValues(alpha: 0.12), shape: BoxShape.circle),
+                    child: Center(child: Icon(ic, color: col, size: 26)));
+                }),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1676,10 +1733,17 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 
   void _showAddMember(
       BuildContext context, StateSetter setLocal) {
-    final emojis = [
-      '😊','👩','👦','🧑','👴','👵','🧒','👶'
+    const avatarIcons = <(IconData, Color)>[
+      (Icons.person_rounded,           Color(0xFF6B9FD4)),
+      (Icons.face_3_rounded,           Color(0xFFE891BD)),
+      (Icons.face_2_rounded,           Color(0xFF8BC34A)),
+      (Icons.person_2_rounded,         Color(0xFF9C27B0)),
+      (Icons.elderly_rounded,          Color(0xFF795548)),
+      (Icons.child_care_rounded,       Color(0xFFFF9800)),
+      (Icons.child_friendly_rounded,   Color(0xFF4CAF50)),
+      (Icons.person_3_rounded,         Color(0xFF607D8B)),
     ];
-    String selectedEmoji = '😊';
+    int selectedIdx = 0;
     final nameCtrl = TextEditingController();
 
     showDialog(
@@ -1694,31 +1758,25 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           builder: (ctx, setDialog) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Emoji picker
+              // Icon picker
               Wrap(
                 spacing: 8,
-                children: emojis.map((e) {
+                children: avatarIcons.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final (iconData, iconColor) = entry.value;
+                  final sel = selectedIdx == idx;
+                  final primary = Theme.of(context).colorScheme.primary;
                   return GestureDetector(
-                    onTap: () =>
-                        setDialog(() => selectedEmoji = e),
+                    onTap: () => setDialog(() => selectedIdx = idx),
                     child: Container(
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: selectedEmoji == e
-                            ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-                            : AppColors.surfaceMoss,
+                        color: sel ? primary.withValues(alpha: 0.12) : AppColors.surfaceMoss,
                         shape: BoxShape.circle,
-                        border: selectedEmoji == e
-                            ? Border.all(
-                                color: Theme.of(context).colorScheme.primary,
-                                width: 2)
-                            : null,
+                        border: sel ? Border.all(color: primary, width: 2) : null,
                       ),
-                      child: Center(
-                          child: Text(e,
-                              style: const TextStyle(
-                                  fontSize: 20))),
+                      child: Center(child: Icon(iconData, size: 20, color: sel ? primary : iconColor)),
                     ),
                   );
                 }).toList(),
@@ -1833,17 +1891,15 @@ class _AddExpenseSheetState
   String _selectedCategory = '餐飲';
   String _selectedPayerId = '';
   late Set<String> _selectedSplitIds;
-  String _selectedIcon = '🍜';
+  String _selectedIcon = 'ramen';
   bool _splitEvenly = true;
   String? _selectedTripId;
 
-  final _categories = [
-    '餐飲', '住宿', '交通', '門票', '購物', '其他'
-  ];
+  final _categories = ['餐飲', '住宿', '交通', '門票', '購物', '其他'];
 
-  final _icons = [
-    '🍜', '🏠', '🚗', '🎫', '🎁', '⛽',
-    '🧃', '☕', '🍦', '🎭', '🌊', '📸',
+  static const _icons = [
+    'ramen', 'lunch', 'cafe', 'dessert', 'tea', 'bar',
+    'hotel', 'train', 'bus',  'ticket',  'shop', 'other',
   ];
 
   @override
@@ -1879,7 +1935,7 @@ class _AddExpenseSheetState
           border: Border.all(color: sel ? primary : AppColors.divider, width: sel ? 1.5 : 1),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Text(icon, style: const TextStyle(fontSize: 13)),
+          Icon(_tripIconFromKey(icon), size: 13, color: sel ? primary : AppColors.textSecondary),
           const SizedBox(width: 5),
           Text(name, style: TextStyle(
             fontSize: 12, fontWeight: FontWeight.w600,
@@ -1894,6 +1950,7 @@ class _AddExpenseSheetState
     final amount = int.tryParse(_amountCtrl.text) ?? 0;
     if (amount <= 0 ||
         _titleCtrl.text.trim().isEmpty) return;
+    HapticFeedback.mediumImpact(); // ⑤ 新增消費觸覺
 
     final e = ExpenseItem(
       id: 'e${DateTime.now().millisecondsSinceEpoch}',
@@ -2021,7 +2078,7 @@ class _AddExpenseSheetState
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      _sheetTripChip(null, '未指定', '📋'),
+                      _sheetTripChip(null, '未指定', 'list'),
                       ...widget.trips.map((t) => _sheetTripChip(t.id, t.name, t.icon)),
                     ],
                   ),
@@ -2038,34 +2095,21 @@ class _AddExpenseSheetState
                   scrollDirection: Axis.horizontal,
                   itemCount: _icons.length,
                   itemBuilder: (_, i) {
-                    final ic = _icons[i];
-                    final sel = _selectedIcon == ic;
+                    final key = _icons[i];
+                    final (iconData, iconColor) = _expIcon(key);
+                    final sel = _selectedIcon == key;
                     return GestureDetector(
-                      onTap: () =>
-                          setState(() => _selectedIcon = ic),
+                      onTap: () => setState(() => _selectedIcon = key),
                       child: AnimatedContainer(
-                        duration:
-                            const Duration(milliseconds: 150),
-                        width: 44,
-                        height: 44,
+                        duration: const Duration(milliseconds: 150),
+                        width: 44, height: 44,
                         margin: const EdgeInsets.only(right: 8),
                         decoration: BoxDecoration(
-                          color: sel
-                              ? primaryMist
-                              : AppColors.surfaceMoss,
-                          borderRadius:
-                              BorderRadius.circular(12),
-                          border: sel
-                              ? Border.all(
-                                  color: primary,
-                                  width: 1.5)
-                              : null,
+                          color: sel ? iconColor.withValues(alpha: 0.15) : AppColors.surfaceMoss,
+                          borderRadius: BorderRadius.circular(12),
+                          border: sel ? Border.all(color: iconColor, width: 1.5) : null,
                         ),
-                        child: Center(
-                          child: Text(ic,
-                              style: const TextStyle(
-                                  fontSize: 20)),
-                        ),
+                        child: Center(child: Icon(iconData, color: iconColor, size: 22)),
                       ),
                     );
                   },
@@ -2308,16 +2352,26 @@ class _Label extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  final String icon, title;
+  final String icon;
+  final String title;
 
   const _SectionTitle(
       {required this.icon, required this.title});
+
+  static IconData _iconFromKey(String key) {
+    switch (key) {
+      case '🗂️': return Icons.folder_rounded;
+      case '👤': return Icons.person_rounded;
+      case '📅': return Icons.calendar_today_rounded;
+      default:   return Icons.bar_chart_rounded;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(icon, style: const TextStyle(fontSize: 18)),
+        Icon(_iconFromKey(icon), size: 18, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
         Text(
           title,

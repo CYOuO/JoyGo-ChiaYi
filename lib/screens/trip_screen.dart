@@ -1,9 +1,13 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -13,13 +17,85 @@ import '../providers/app_settings_provider.dart';
 import '../models/dummy_data.dart';
 import '../widgets/common_widgets.dart';
 import '../services/trip_service.dart';
+import '../services/local_fav_service.dart';
 import '../theme/fabric_textures.dart';
 import 'calendar_screen.dart';
 import 'expense_screen.dart';
+import 'community_screen.dart' show CreatePostPage;
+import 'ai_planner_screen.dart';
 import 'map_screen.dart' as from_map;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+// ── Trip icon mapping ────────────────────────────────────────
+// Maps emoji char OR named key → IconData (backward compat with Firestore)
+IconData _tripIconFromKey(String key) {
+  switch (key) {
+    case 'map':   case '🗺️': return Icons.map_rounded;
+    case 'flight':case '✈️': return Icons.flight_rounded;
+    case 'train': case '🚂': return Icons.train_rounded;
+    case 'beach': case '🏖️': case '🏝️': return Icons.beach_access_rounded;
+    case 'mountain': case '🏔️': case '⛰️': case '🌄': return Icons.landscape_rounded;
+    case 'flower': case '🌸': return Icons.local_florist_rounded;
+    case 'ramen': case '🍜': return Icons.ramen_dining_rounded;
+    case 'attractions': case '🎡': return Icons.attractions_rounded;
+    case 'castle': case '🏯': case '🏛️': return Icons.account_balance_rounded;
+    case 'night': case '🌃': case '🌙': return Icons.nightlight_round;
+    case 'theater': case '🎭': return Icons.theater_comedy_rounded;
+    case 'ski':   case '⛷️': return Icons.downhill_skiing_rounded;
+    case 'camp':  case '🏕️': return Icons.cabin_rounded;
+    case 'backpack': case '🎒': return Icons.backpack_rounded;
+    case 'car':   case '🚗': return Icons.directions_car_rounded;
+    case 'ship':  case '🚢': return Icons.directions_boat_rounded;
+    case 'pets':  case '🐾': return Icons.pets_rounded;
+    case 'music': case '🎵': return Icons.music_note_rounded;
+    case 'camera': case '📸': case '📷': return Icons.camera_alt_rounded;
+    case 'icecream': case '🍦': return Icons.icecream_rounded;
+    case 'pool':  case '🏊': return Icons.pool_rounded;
+    case 'palette': case '🎨': return Icons.palette_rounded;
+    case 'sunset': case '🌅': return Icons.wb_twilight_rounded;
+    case 'festival': case '🎪': return Icons.festival_rounded;
+    case 'nature': case '🌿': case '🦋': return Icons.eco_rounded;
+    case 'dive':  case '🤿': return Icons.scuba_diving_rounded;
+    case 'taxi':  case '🛺': return Icons.local_taxi_rounded;
+    default: return Icons.map_rounded;
+  }
+}
+
+// Preset icons for trip icon picker
+const _kTripIconPresets = <(String, IconData)>[
+  ('map',         Icons.map_rounded),
+  ('flight',      Icons.flight_rounded),
+  ('train',       Icons.train_rounded),
+  ('beach',       Icons.beach_access_rounded),
+  ('mountain',    Icons.landscape_rounded),
+  ('flower',      Icons.local_florist_rounded),
+  ('ramen',       Icons.ramen_dining_rounded),
+  ('attractions', Icons.attractions_rounded),
+  ('castle',      Icons.account_balance_rounded),
+  ('night',       Icons.nightlight_round),
+  ('theater',     Icons.theater_comedy_rounded),
+  ('ski',         Icons.downhill_skiing_rounded),
+  ('camp',        Icons.cabin_rounded),
+  ('backpack',    Icons.backpack_rounded),
+  ('car',         Icons.directions_car_rounded),
+  ('ship',        Icons.directions_boat_rounded),
+  ('pets',        Icons.pets_rounded),
+  ('music',       Icons.music_note_rounded),
+  ('camera',      Icons.camera_alt_rounded),
+  ('icecream',    Icons.icecream_rounded),
+  ('pool',        Icons.pool_rounded),
+  ('palette',     Icons.palette_rounded),
+  ('sunset',      Icons.wb_twilight_rounded),
+  ('festival',    Icons.festival_rounded),
+  ('nature',      Icons.eco_rounded),
+  ('dive',        Icons.scuba_diving_rounded),
+  ('taxi',        Icons.local_taxi_rounded),
+  ('family',      Icons.family_restroom_rounded),
+  ('sports',      Icons.sports_rounded),
+  ('photo',       Icons.photo_camera_rounded),
+];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TRIP SCREEN
@@ -34,7 +110,6 @@ class TripScreen extends StatefulWidget {
 
 class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  bool _showAIPanel = false;
 
   // ── Auth — initialized synchronously from currentUser in initState ──────
   User? _authUser;
@@ -76,6 +151,12 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     });
 
     _loadGuestFavorites();
+    // 即時監聽訪客收藏變動（SpotSaveButton 觸發）
+    LocalFavService.notifier.addListener(_onGuestFavChanged);
+  }
+
+  void _onGuestFavChanged() {
+    if (mounted) setState(() => _guestSavedIds = Set<String>.from(LocalFavService.notifier.value));
   }
 
   void _subscribeToTrips() {
@@ -149,6 +230,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     widget.calendarTrigger?.removeListener(_onCalendarTrigger);
     _tabController.dispose();
     _tripsSub?.cancel();
+    LocalFavService.notifier.removeListener(_onGuestFavChanged);
     super.dispose();
   }
 
@@ -209,7 +291,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         actions: [
           IconButton(
             icon: Icon(Icons.auto_awesome_rounded, color: primary),
-            onPressed: () => setState(() => _showAIPanel = !_showAIPanel),
+            onPressed: () => _openAIPlanner(context),
             tooltip: 'AI 行程助手',
           ),
           IconButton(
@@ -230,17 +312,12 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           ],
         ),
       ),
-      body: Stack(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          TabBarView(
-            controller: _tabController,
-            children: [
-              _buildMyTripsTab(),
-              _buildSavedSpotsTab(),
-              CalendarScreen(userTrips: _tripsForCalendar),
-            ],
-          ),
-          if (_showAIPanel) _buildAIPanel(context),
+          _buildMyTripsTab(),
+          _buildSavedSpotsTab(),
+          CalendarScreen(userTrips: _tripsForCalendar),
         ],
       ),
     );
@@ -261,20 +338,24 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
       ));
     }
     if (_tripsLoading) {
-      return const Center(child: CircularProgressIndicator());
+      return ListView(padding: const EdgeInsets.all(16),
+        children: List.generate(3, (_) => const TripCardSkeleton()));
     }
     final trips = _firebaseTrips;
     if (trips.isEmpty) {
-      return Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.map_outlined, size: 56, color: AppColors.textHint.withValues(alpha: 0.5)),
-          const SizedBox(height: 12),
-          const Text('還沒有行程', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-          const SizedBox(height: 6),
-          const Text('點右上角 + 建立第一個行程！', style: TextStyle(color: AppColors.textHint)),
-        ],
-      ));
+      final p = Theme.of(context).colorScheme.primary;
+      return IllustratedEmptyState(
+        scene: EmptyScene.trip,
+        title: '還沒有行程',
+        body: '嘉義在等你！點右上角 + 建立第一個旅程',
+        color: p,
+        action: ElevatedButton.icon(
+          onPressed: () => _showCreateTrip(context),
+          icon: const Icon(Icons.add_rounded, size: 16),
+          label: const Text('建立行程'),
+          style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+        ),
+      );
     }
     final now = DateTime.now();
     final upcoming = trips
@@ -451,7 +532,44 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               ),
             ]),
           ])),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: () async {
+              await TripService.setCompleted(trip.id, completed: !trip.isCompleted);
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text(trip.isCompleted ? '已恢復為規劃中' : '「${trip.title}」已完成 ✓'),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ));
+            },
+            child: Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: trip.isCompleted ? primary.withValues(alpha: 0.12) : AppColors.surfaceMoss,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: trip.isCompleted ? primary : AppColors.divider,
+                  width: 1.5),
+              ),
+              child: Icon(
+                trip.isCompleted ? Icons.check_rounded : Icons.check_rounded,
+                size: 16,
+                color: trip.isCompleted ? primary : AppColors.textHint),
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(
+              builder: (_) => _TripReportPage(trip: trip, primary: primary))),
+            child: Container(
+              width: 30, height: 30,
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8)),
+              child: Icon(Icons.auto_stories_rounded, size: 15, color: primary.withValues(alpha: 0.7)),
+            ),
+          ),
+          const SizedBox(width: 4),
           const Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 18),
         ]),
       ),
@@ -507,14 +625,30 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                         ),
                         const SizedBox(width: 6),
                       ],
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: trip.isCompleted ? p : AppColors.accentStraw,
-                          borderRadius: BorderRadius.circular(20)),
-                        child: Text(trip.isCompleted ? '已完成' : '規劃中',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                            color: trip.isCompleted ? Colors.white : Color.lerp(p, Colors.black, 0.3)!)),
+                      // 點擊可切換完成狀態
+                      GestureDetector(
+                        onTap: () async {
+                          await TripService.setCompleted(trip.id, completed: !trip.isCompleted);
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(trip.isCompleted ? '已恢復為進行中' : '行程已標記完成 ✓'),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ));
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: trip.isCompleted ? p : AppColors.accentStraw,
+                            borderRadius: BorderRadius.circular(20)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(trip.isCompleted ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                              size: 12, color: trip.isCompleted ? Colors.white : Color.lerp(p, Colors.black, 0.3)!),
+                            const SizedBox(width: 4),
+                            Text(trip.isCompleted ? '已完成' : '點此完成',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                                color: trip.isCompleted ? Colors.white : Color.lerp(p, Colors.black, 0.3)!)),
+                          ]),
+                        ),
                       ),
                     ]);
                   }),
@@ -556,11 +690,18 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     )),
                     const SizedBox(width: 8),
                     Expanded(child: trip.isCompleted
-                      ? ElevatedButton.icon(
-                          onPressed: () => _showShareOptions(context, trip),
-                          icon: const Icon(Icons.share_rounded, size: 15),
-                          label: const Text('分享'),
-                          style: ElevatedButton.styleFrom(
+                      ? OutlinedButton.icon(
+                          onPressed: () async {
+                            await TripService.setCompleted(trip.id, completed: false);
+                            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('「${trip.title}」已恢復為進行中'),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ));
+                          },
+                          icon: const Icon(Icons.undo_rounded, size: 15),
+                          label: const Text('恢復進行中'),
+                          style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                         )
@@ -568,7 +709,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                           onPressed: () async {
                             await TripService.setCompleted(trip.id, completed: true);
                             if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('「${trip.title}」已標記為完成 ✅'),
+                              content: Text('「${trip.title}」已標記為完成'),
                               backgroundColor: Theme.of(context).colorScheme.primary,
                               behavior: SnackBarBehavior.floating,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -580,6 +721,37 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                         ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: AppColors.error),
+                      tooltip: '刪除行程',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                          context: context,
+                          builder: (_) => AlertDialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            title: const Text('刪除行程', style: TextStyle(fontWeight: FontWeight.w800)),
+                            content: Text('確定要刪除「${trip.title}」嗎？此操作無法復原。'),
+                            actions: [
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: const Text('刪除', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirm == true && mounted) {
+                          await TripService.deleteTrip(trip.id);
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('行程已刪除'),
+                            behavior: SnackBarBehavior.floating,
+                          ));
+                        }
+                      },
                     ),
                   ]),
                 ],
@@ -594,6 +766,12 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   void _showFirebaseTripDetail(BuildContext context, FirebaseTrip trip) {
     Navigator.push(context, MaterialPageRoute(
       builder: (_) => _FirebaseTripDetailPage(trip: trip)));
+  }
+
+  void _openAIPlanner(BuildContext context) {
+    final spots = _candidates.map((c) => c.spot.name).toList();
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => AIPlannerScreen(candidateSpots: spots)));
   }
 
   Widget _statCard(String label, String val, IconData icon, Color color) {
@@ -684,9 +862,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
             ),
             child: Row(children: [
               Expanded(child: OutlinedButton.icon(
-                onPressed: () => setState(() => _showAIPanel = true),
+                onPressed: () => _openAIPlanner(context),
                 icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: const Text('AI 最佳排程'),
+                label: const Text('AI 排程'),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -710,8 +888,11 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
 
   Widget _candidateItem(_CandidateSpot c, int index) {
     final spot = c.spot;
-    final catIcon = spot.category == 'restaurant' ? '🍜'
-        : spot.category == 'youbike' ? '🚲' : '🏛️';
+    final catIconData = spot.category == 'restaurant'
+        ? Icons.ramen_dining_rounded
+        : spot.category == 'youbike'
+            ? Icons.pedal_bike_rounded
+            : Icons.account_balance_rounded;
 
     return Container(
       key: ValueKey(spot.id),
@@ -734,7 +915,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13))),
             )),
             const SizedBox(width: 8),
-            Text(catIcon, style: const TextStyle(fontSize: 22)),
+            Icon(catIconData, size: 22, color: AppColors.textSecondary),
           ],
         ),
         title: Text(spot.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
@@ -819,8 +1000,11 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   itemBuilder: (itemCtx, i) {
                     final s = DummyData.spots[i];
                     final already = _candidates.any((c) => c.spot.id == s.id);
-                    final icon = s.category == 'restaurant' ? '🍜'
-                        : s.category == 'youbike' ? '🚲' : '🏛️';
+                    final iconData = s.category == 'restaurant'
+                        ? Icons.ramen_dining_rounded
+                        : s.category == 'youbike'
+                            ? Icons.pedal_bike_rounded
+                            : Icons.account_balance_rounded;
                     final p = Theme.of(itemCtx).colorScheme.primary;
                     final mist = Color.lerp(p, Colors.white, 0.88)!;
                     return Container(
@@ -831,7 +1015,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                         border: Border.all(color: already ? p.withValues(alpha: 0.3) : AppColors.divider),
                       ),
                       child: ListTile(
-                        leading: Text(icon, style: const TextStyle(fontSize: 24)),
+                        leading: Icon(iconData, size: 24, color: AppColors.textSecondary),
                         title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
                         subtitle: Row(children: [
                           const Icon(Icons.star_rounded, size: 11, color: AppColors.accentStraw),
@@ -1029,135 +1213,212 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   }
 
   // ── AI Panel ──
-  Widget _buildAIPanel(BuildContext context) {
-    final prefs = ['🏛️ 文化歷史','🍜 美食探索','👨‍👩‍👧 親子友善','⛰️ 自然生態','📸 打卡拍照','🌙 夜間活動'];
-    final selected = {0, 1};
-    return Positioned(
-      bottom: 0, left: 0, right: 0,
-      child: Container(
-        height: MediaQuery.of(context).size.height * 0.66,
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 20)],
-        ),
-        child: Column(children: [
-          Container(margin: const EdgeInsets.only(top: 12, bottom: 14),
-            width: 36, height: 4,
-            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              Builder(builder: (bCtx) => Container(padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Theme.of(bCtx).colorScheme.primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.auto_awesome_rounded, size: 20, color: AppColors.textSecondary))),
-              const SizedBox(width: 12),
-              const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('AI 行程助手', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.textPrimary)),
-                Text('由 Gemini AI 驅動', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
-              ]),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.close_rounded, color: AppColors.textHint),
-                onPressed: () => setState(() => _showAIPanel = false)),
-            ]),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Candidate preview
-                if (_candidates.isNotEmpty) ...[
-                  const Text('候選景點（共 ${0} 個）', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textSecondary)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.divider)),
-                    child: Column(
-                      children: _candidates.asMap().entries.map((e) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 3),
-                        child: Row(children: [
-                          Builder(builder: (bCtx) => Container(width: 20, height: 20,
-                            decoration: BoxDecoration(color: Theme.of(bCtx).colorScheme.primary, shape: BoxShape.circle),
-                            child: Center(child: Text('${e.key+1}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800))))),
-                          const SizedBox(width: 8),
-                          Text(e.value.spot.name, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
-                        ]),
-                      )).toList(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                const Text('旅遊偏好', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
-                const SizedBox(height: 10),
-                Wrap(spacing: 8, runSpacing: 8,
-                  children: prefs.asMap().entries.map((e) {
-                    final isSel = selected.contains(e.key);
-                    return GestureDetector(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isSel ? Theme.of(context).colorScheme.primary : AppColors.surfaceMoss,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: isSel ? Theme.of(context).colorScheme.primary : AppColors.divider)),
-                        child: Text(e.value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
-                          color: isSel ? Colors.white : AppColors.textSecondary)),
-                      ),
-                    );
-                  }).toList()),
-                const SizedBox(height: 16),
-                const Text('旅遊天數', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
-                const SizedBox(height: 6),
-                _AIDaysSlider(),
-                const SizedBox(height: 4),
-                const SizedBox(height: 16),
-                // Free-text requirements ABOVE AI preview
-                const Text('詳細需求（選填）', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
-                const SizedBox(height: 8),
-                const TextField(
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: '例如：希望行程輕鬆不趕，想吃道地小吃，有小孩同行，避免山路...',
-                    hintStyle: TextStyle(fontSize: 12),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // AI result preview
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.88)!,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2))),
+  // ── 偏好 → 景點 category 映射 ────────────────────────────────
+  static const _prefCategories = <int, List<String>>{
+    0: ['attraction'],
+    1: ['restaurant'],
+    2: ['attraction', 'restaurant'],
+    3: ['attraction'],
+    4: ['attraction', 'youbike'],
+    5: ['restaurant'],
+  };
+
+  // ── 根據偏好從 DummyData 過濾推薦景點 ─────────────────────────
+  List<Spot> _generateSuggestions(Set<int> selected) {
+    if (selected.isEmpty) return DummyData.spots.take(6).toList();
+    final categories = selected
+        .expand((i) => _prefCategories[i] ?? <String>[])
+        .toSet();
+    var spots = DummyData.spots
+        .where((s) => categories.contains(s.category))
+        .toList();
+    // 已在候選清單的排到後面
+    spots.sort((a, b) {
+      final aIn = _candidates.any((c) => c.spot.id == a.id) ? 1 : 0;
+      final bIn = _candidates.any((c) => c.spot.id == b.id) ? 1 : 0;
+      if (aIn != bIn) return aIn - bIn;
+      return b.rating.compareTo(a.rating);
+    });
+    return spots.take(8).toList();
+  }
+
+  // ── 已移至 AIPlannerScreen ─────────────────────────────────
+  // ignore: unused_element
+  Widget _buildAIPanel_deprecated(BuildContext context) {
+    const prefLabels = [
+      (Icons.museum_rounded,          '文化歷史'),
+      (Icons.ramen_dining_rounded,    '美食探索'),
+      (Icons.family_restroom_rounded, '親子友善'),
+      (Icons.landscape_rounded,       '自然生態'),
+      (Icons.camera_alt_rounded,      '打卡拍照'),
+      (Icons.nightlight_round,        '夜間活動'),
+    ];
+    final Set<int> initialSel = {0, 1};
+    return StatefulBuilder(builder: (ctx, setPanel) {
+      final selected  = Set<int>.from(initialSel);
+      final primary   = Theme.of(ctx).colorScheme.primary;
+      final mist      = Color.lerp(primary, Colors.white, 0.88)!;
+      final suggested = _generateSuggestions(selected);
+      bool generated  = false;
+
+      return StatefulBuilder(builder: (ctx2, setPanel2) {
+        return Positioned(
+          bottom: 0, left: 0, right: 0,
+          child: Container(
+            height: MediaQuery.of(ctx2).size.height * 0.72,
+            decoration: const BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 20)],
+            ),
+            child: Column(children: [
+              Container(margin: const EdgeInsets.only(top: 12, bottom: 12),
+                width: 36, height: 4,
+                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(children: [
+                  Container(padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.auto_awesome_rounded, size: 20, color: AppColors.textSecondary)),
+                  const SizedBox(width: 12),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Text('AI 行程助手', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.textPrimary)),
+                    Text('根據偏好推薦嘉義景點', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+                  ]),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: AppColors.textHint),
+                    onPressed: () => Navigator.pop(context)),
+                ]),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      const Icon(Icons.smart_toy_outlined, size: 15, color: AppColors.textSecondary),
-                      const SizedBox(width: 6),
-                      Text('AI 建議預覽', style: TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.primary, fontSize: 13)),
-                    ]),
+                    // 候選景點預覽
+                    if (_candidates.isNotEmpty) ...[
+                      Text('目前候選（${_candidates.length} 個）',
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textSecondary)),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(color: AppColors.surfaceMoss,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.divider)),
+                        child: Column(children: _candidates.asMap().entries.map((e) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(children: [
+                            Container(width: 20, height: 20,
+                              decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
+                              child: Center(child: Text('${e.key+1}',
+                                style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)))),
+                            const SizedBox(width: 8),
+                            Text(e.value.spot.name, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
+                          ]),
+                        )).toList()),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // 偏好選擇
+                    const Text('旅遊偏好（可複選）', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
                     const SizedBox(height: 10),
-                    Text(
-                      _candidates.isEmpty
-                          ? '請先加入景點到候選清單，AI 會依照開放時間與距離幫您安排最佳順序。'
-                          : '📍 Day 1\n${_candidates.asMap().entries.map((e) => '${_timeSlot(e.key)} ${e.value.spot.name}').join('\n')}\n\n💡 已根據開放時間與距離最佳化順序，步行距離約 3.2km！',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.7)),
+                    Wrap(spacing: 8, runSpacing: 8,
+                      children: prefLabels.asMap().entries.map((e) {
+                        final isSel = selected.contains(e.key);
+                        return GestureDetector(
+                          onTap: () {
+                            setPanel2(() {
+                              isSel ? selected.remove(e.key) : selected.add(e.key);
+                              generated = false;
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSel ? primary : AppColors.surfaceMoss,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: isSel ? primary : AppColors.divider)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(e.value.$1, size: 13, color: isSel ? Colors.white : AppColors.textSecondary),
+                              const SizedBox(width: 4),
+                              Text(e.value.$2, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                                color: isSel ? Colors.white : AppColors.textSecondary)),
+                            ]),
+                          ),
+                        );
+                      }).toList()),
+                    const SizedBox(height: 20),
+
+                    // 生成按鈕
+                    ElevatedButton.icon(
+                      onPressed: () => setPanel2(() => generated = true),
+                      icon: const Icon(Icons.auto_awesome_rounded, size: 16),
+                      label: const Text('生成景點建議'),
+                      style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+                    ),
+
+                    // 建議景點列表
+                    if (generated) ...[
+                      const SizedBox(height: 20),
+                      Row(children: [
+                        const Icon(Icons.recommend_rounded, size: 16, color: AppColors.textSecondary),
+                        const SizedBox(width: 6),
+                        Text('為你推薦 ${_generateSuggestions(selected).length} 個景點',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: primary)),
+                      ]),
+                      const SizedBox(height: 10),
+                      ..._generateSuggestions(selected).map((spot) {
+                        final alreadyIn = _candidates.any((c) => c.spot.id == spot.id);
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: alreadyIn ? mist : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: alreadyIn ? primary.withValues(alpha: 0.3) : AppColors.divider),
+                          ),
+                          child: Row(children: [
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(spot.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                              const SizedBox(height: 2),
+                              Row(children: [
+                                const Icon(Icons.star_rounded, size: 12, color: AppColors.accentStraw),
+                                Text(' ${spot.rating.toStringAsFixed(1)}',
+                                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                const SizedBox(width: 8),
+                                Text(spot.address, style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              ]),
+                            ])),
+                            const SizedBox(width: 8),
+                            alreadyIn
+                              ? Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(10)),
+                                  child: Text('已加入', style: TextStyle(fontSize: 11, color: primary, fontWeight: FontWeight.w600)))
+                              : GestureDetector(
+                                  onTap: () { _addToCandidate(spot); setPanel2(() {}); },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(10)),
+                                    child: const Text('加入候選', style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)))),
+                          ]),
+                        );
+                      }),
+                    ],
+                    const SizedBox(height: 20),
                   ]),
                 ),
-                const SizedBox(height: 14),
-                ElevatedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                  label: const Text('生成 AI 行程建議'),
-                  style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
-                ),
-              ]),
-            ),
+              ),
+            ]),
           ),
-        ]),
-      ),
-    );
+        );
+      });
+    });
   }
 
   // ── 收藏景點：雜誌瀑布流風格 ────────────────────────────────
@@ -1211,29 +1472,30 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               if (!hasImage)
                 Row(children: [
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(spotName,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 3),
-                    // 底線固定寬度 32px，與卡片寬度無關，視覺更統一
-                    Container(height: 2, width: 32,
-                      decoration: BoxDecoration(color: primary.withValues(alpha: 0.28), borderRadius: BorderRadius.circular(1))),
-                  ])),
+                  Flexible(child: Text(spotName,
+                    textWidthBasis: TextWidthBasis.longestLine,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary,
+                      decoration: TextDecoration.underline,
+                      decorationColor: primary.withValues(alpha: 0.38),
+                      decorationThickness: 2.0,
+                    ),
+                    maxLines: 2, overflow: TextOverflow.ellipsis)),
                   const SizedBox(width: 6),
                   GestureDetector(
                     onTap: () => onUnsave(spotId, spotName),
                     child: Icon(Icons.favorite_rounded, size: 14, color: AppColors.error)),
                 ])
               else
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(spotName,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary),
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 3),
-                  Container(height: 2, width: 32,
-                    decoration: BoxDecoration(color: primary.withValues(alpha: 0.28), borderRadius: BorderRadius.circular(1))),
-                ]),
+                Text(spotName,
+                  textWidthBasis: TextWidthBasis.longestLine,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary,
+                    decoration: TextDecoration.underline,
+                    decorationColor: primary.withValues(alpha: 0.38),
+                    decorationThickness: 2.0,
+                  ),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 5),
               Row(children: [
                 if (rating > 0) ...[
@@ -1259,6 +1521,42 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     ); // GestureDetector
   }
 
+  // ── 從 Firestore 補讀景點描述（省下重複儲存全部 raw 欄位的需求）──
+  static Future<String> _fetchFirestoreDesc(String spotId, String category) async {
+    const cols = [
+      'restaurants','tdx_spots','good_shops','excellent_restaurants',
+      'excellent_drink_shops','pet_friendly_shops','tdx_hotels',
+      'parking_lots','gas_stations','aed_locations','facilities',
+    ];
+    const descKeys = [
+      'description','Description','shortDesc','Content','content',
+      'descriptionDetail','簡介','產品特色','場所描述','特色介紹','備註','內容',
+    ];
+    String? col, docId;
+    for (final c in cols) {
+      if (spotId.startsWith('${c}_')) { col = c; docId = spotId.substring(c.length + 1); break; }
+    }
+    if (col == null) {
+      const catMap = {
+        'TDX景點': 'tdx_spots', '好店': 'good_shops', '餐廳': 'excellent_restaurants',
+        '飲料店': 'excellent_drink_shops', '寵物友善': 'pet_friendly_shops',
+        'chiayiFood': 'restaurants', 'chiayiFood_cat': 'restaurants',
+      };
+      col = catMap[category]; docId = spotId;
+    }
+    if (col == null || docId == null || docId.isEmpty) return '';
+    try {
+      final doc = await FirebaseFirestore.instance.collection(col).doc(docId).get();
+      if (!doc.exists) return '';
+      final d = doc.data()!;
+      for (final k in descKeys) {
+        final v = d[k]?.toString().trim() ?? '';
+        if (v.length > 5) return v;
+      }
+    } catch (_) {}
+    return '';
+  }
+
   // ── 收藏景點詳情 sheet ────────────────────────────────────
   void _showSavedSpotDetail(
     BuildContext ctx,
@@ -1275,9 +1573,11 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     final fbAddress   = d['address']?.toString() ?? '';
     final fbCategory  = d['category']?.toString() ?? '';
 
-    // 嘗試從 DummyData 補充更多資訊（DummyData 景點才有）
+    // 嘗試從 DummyData 補充更多資訊（精確 → 名稱 → 模糊）
     Spot? info;
-    try { info = DummyData.spots.firstWhere((s) => s.id == spotId || s.name == spotName); } catch (_) {}
+    try { info = DummyData.spots.firstWhere((s) => s.id == spotId); } catch (_) {}
+    if (info == null) try { info = DummyData.spots.firstWhere((s) => s.name == spotName); } catch (_) {}
+    if (info == null) try { info = DummyData.spots.firstWhere((s) => s.name.contains(spotName) || spotName.contains(s.name)); } catch (_) {}
 
     showModalBottomSheet(
       context: ctx,
@@ -1363,37 +1663,38 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 ]),
               ],
 
-              // ── 簡介（DummyData 或 Firebase 欄位）────────────────
-              Builder(builder: (_) {
-                final desc = info?.description ?? fbDesc;
-                if (desc.isEmpty) {
-                  // 完全沒有任何描述時的 fallback
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceMoss,
-                        borderRadius: BorderRadius.circular(12)),
-                      child: Row(children: [
-                        const Icon(Icons.place_rounded, size: 18, color: AppColors.textHint),
-                        const SizedBox(width: 10),
-                        Expanded(child: Text(
-                          '此景點尚無詳細介紹。\n點「在地圖上查看」可查看位置。',
-                          style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.6))),
+              // ── 簡介（DummyData → Firebase → Firestore 原始文件）──
+              FutureBuilder<String>(
+                future: (info?.description ?? fbDesc).isNotEmpty
+                    ? Future.value(info?.description ?? fbDesc)
+                    : _fetchFirestoreDesc(spotId, fbCategory),
+                builder: (_, snap) {
+                  final desc = snap.data ?? fbDesc;
+                  if (snap.connectionState != ConnectionState.done && desc.isEmpty) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2))));
+                  }
+                  if (desc.isEmpty) {
+                    final hasAnyInfo = (info?.address ?? fbAddress).isNotEmpty ||
+                                       (info?.category ?? fbCategory).isNotEmpty;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Divider(height: 16),
                       ]),
-                    ),
-                  );
-                }
-                return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  const Divider(height: 24),
-                  const Text('關於此景點',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
-                  const SizedBox(height: 6),
-                  Text(desc,
-                    style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.75)),
-                ]);
-              }),
+                    );
+                  }
+                  return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Divider(height: 24),
+                    const Text('關於此景點',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                    const SizedBox(height: 6),
+                    Text(desc,
+                      style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.75)),
+                  ]);
+                }),
               const SizedBox(height: 20),
               // 操作按鈕
               Row(children: [
@@ -1592,7 +1893,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               width: 40, height: 40,
               decoration: BoxDecoration(
                 color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-              child: Center(child: Text(t.icon, style: const TextStyle(fontSize: 20)))),
+              child: Center(child: Icon(_tripIconFromKey(t.icon), size: 20, color: primary))),
             title: Text(t.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             subtitle: Text(t.dateDisplay, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
             trailing: Icon(Icons.chevron_right_rounded, color: primary),
@@ -1665,11 +1966,11 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           const Text('分享行程', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
           const SizedBox(height: 20),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _shareOptIcon(Icons.ios_share_rounded, '系統\n分享', primary, () {
+            _shareOpt(Icons.ios_share_rounded, '系統分享', primary, () {
               Navigator.pop(context);
               Share.share(shareText);
             }),
-            _shareOptIcon(Icons.link_rounded, '複製\n連結', const Color(0xFF8FBF8F), () {
+            _shareOpt(Icons.link_rounded, '複製連結', const Color(0xFF8FBF8F), () {
               Navigator.pop(context);
               Clipboard.setData(ClipboardData(text: shareText));
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1678,26 +1979,65 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ));
             }),
-            _shareOptIcon(Icons.group_rounded, '發布到\n社群', AppColors.accentTerra, () {
+            _shareOpt(Icons.group_rounded, '發布社群', AppColors.accentTerra, () {
               Navigator.pop(context);
-              // Navigate to create post
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => CreatePostPage(
+                  primary: Theme.of(context).colorScheme.primary,
+                  defaultType: 'trip')));
             }),
-            _shareOptIcon(Icons.edit_rounded, '邀請\n共編', AppColors.accentSand, () {}),
+            _shareOpt(Icons.edit_rounded, '邀請共編', AppColors.accentSand, () {
+              Navigator.pop(context);
+              Share.share(
+                '邀請你一起共編「${trip.title}」行程！\n${trip.dateDisplay}\n\n透過「探索諸羅」App 一起規劃嘉義旅行！',
+                subject: '行程共編邀請',
+              );
+            }),
           ]),
+          const Divider(height: 24),
+          // 旅行日報 — 獨立一行，更醒目
+          GestureDetector(
+            onTap: () { Navigator.pop(context); _showTripReport(context, trip); },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.accentSky.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.accentSky.withValues(alpha: 0.35))),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.auto_stories_rounded, size: 18, color: AppColors.accentSky),
+                const SizedBox(width: 8),
+                Text('生成旅行日報', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.accentSky.withValues(alpha: 0.9))),
+                const SizedBox(width: 6),
+                Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: AppColors.accentSky.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)),
+                  child: const Text('可截圖分享', style: TextStyle(fontSize: 9, color: AppColors.accentSky))),
+              ]),
+            ),
+          ),
           const SizedBox(height: 12),
         ]),
       ),
     );
   }
 
-  Widget _shareOpt(String icon, String label, Color color) => GestureDetector(
+  // ── ① 旅行日報卡片 ──────────────────────────────────────────
+  void _showTripReport(BuildContext context, FirebaseTrip trip) {
+    final primary = Theme.of(context).colorScheme.primary;
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => _TripReportPage(trip: trip, primary: primary)));
+  }
+
+  Widget _shareOpt(IconData icon, String label, Color color, [VoidCallback? onTap]) => GestureDetector(
+    onTap: onTap,
     child: Column(children: [
-      Container(width: 58, height: 58,
+      Container(width: 54, height: 54,
         decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(16)),
-        child: Center(child: Text(icon, style: const TextStyle(fontSize: 26)))),
-      const SizedBox(height: 7),
+        child: Center(child: Icon(icon, size: 24, color: color))),
+      const SizedBox(height: 6),
       Text(label, textAlign: TextAlign.center,
-        style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.4)),
+        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, height: 1.4)),
     ]),
   );
 
@@ -1955,13 +2295,6 @@ class _TripDetailPageState extends State<_TripDetailPage>
 
   void _showIconPicker(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
-    // 預設圖標列表（保留供快速選擇）
-    const presetIcons = [
-      '🗺️','✈️','🚂','🏖️','🏔️','🌸','🍜','🎡','🏯','🌃',
-      '🏝️','🎭','⛷️','🤿','🎪','🌄','🏕️','🎒','🚗','🚢',
-      '🐾','🎵','📸','🍦','🏊','🎨','🌅','🛺','🦋','🌿',
-    ];
-    final customCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1978,62 +2311,27 @@ class _TripDetailPageState extends State<_TripDetailPage>
               Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
                 decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
               Text('選擇行程圖標', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primary)),
-              const SizedBox(height: 4),
-              Text('選擇預設圖標，或輸入任意文字 / 符號自訂',
-                style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
               const SizedBox(height: 14),
-              // 自訂輸入
-              Row(children: [
-                Expanded(child: TextField(
-                  controller: customCtrl,
-                  maxLength: 4,
-                  decoration: InputDecoration(
-                    hintText: '輸入任意圖標，例如：⛩️ 或「海」',
-                    counterText: '',
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: primary)),
-                  ),
-                )),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    final val = customCtrl.text.trim();
-                    if (val.isEmpty) return;
-                    await TripService.setIcon(widget.trip.id, val);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)),
-                  child: const Text('套用'),
-                ),
-              ]),
-              const SizedBox(height: 14),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Text('快速選擇', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textHint)),
-              const SizedBox(height: 8),
               GridView.count(
                 crossAxisCount: 6, shrinkWrap: true,
                 childAspectRatio: 1,
                 physics: const NeverScrollableScrollPhysics(),
-                children: presetIcons.map((emoji) => GestureDetector(
+                children: _kTripIconPresets.map(((String key, IconData icon) preset) => GestureDetector(
                   onTap: () async {
-                    await TripService.setIcon(widget.trip.id, emoji);
+                    await TripService.setIcon(widget.trip.id, preset.$1);
                     if (ctx.mounted) Navigator.pop(ctx);
                   },
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     margin: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: widget.trip.icon == emoji
+                      color: widget.trip.icon == preset.$1
                           ? primary.withValues(alpha: 0.12) : Colors.transparent,
                       borderRadius: BorderRadius.circular(10),
-                      border: widget.trip.icon == emoji
+                      border: widget.trip.icon == preset.$1
                           ? Border.all(color: primary) : Border.all(color: Colors.transparent),
                     ),
-                    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
+                    child: Center(child: Icon(preset.$2, size: 24, color: widget.trip.icon == preset.$1 ? primary : AppColors.textSecondary)),
                   ),
                 )).toList(),
               ),
@@ -2105,7 +2403,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
                     await TripService.convertCandidatesToSpots(widget.trip.id);
                     if (context.mounted) Navigator.pop(context);
                     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Text('候選景點已加入行程 ✅'),
+                      content: const Text('候選景點已加入行程'),
                       backgroundColor: primary, behavior: SnackBarBehavior.floating,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
                   },
@@ -2475,20 +2773,19 @@ class _TripDetailPageState extends State<_TripDetailPage>
               itemCount: dayOrdered.length,
               onReorder: (o, n) {
                 if (n > o) n--;
+                // Collect global slots BEFORE touching dayOrdered
+                final slots = (dayOrdered
+                    .map((s) => _orderedSpots.indexOf(s))
+                    .toList()..sort());
                 setState(() {
                   final moved = dayOrdered.removeAt(o);
                   dayOrdered.insert(n, moved);
-                  // 把重排後的 dayOrdered 寫回 _orderedSpots
+                  // Write reordered items back to their global slots (no shift issues)
                   for (var i = 0; i < dayOrdered.length; i++) {
-                    final globalIdx = _orderedSpots.indexOf(dayOrdered[i]);
-                    if (globalIdx != -1) {
-                      _orderedSpots.removeAt(globalIdx);
-                      _orderedSpots.insert(i, dayOrdered[i]);
-                    }
+                    _orderedSpots[slots[i]] = dayOrdered[i];
                   }
                 });
                 HapticFeedback.lightImpact();
-                // 儲存排序到 Firebase（debounce-free，直接存）
                 TripService.updateSpotOrder(_trip.id, _orderedSpots);
               },
               itemBuilder: (_, i) {
@@ -2696,18 +2993,13 @@ class _TripDetailPageState extends State<_TripDetailPage>
     return null;
   }
 
-  static const _kFallbackLats = [23.480, 23.483, 23.477, 23.486, 23.474];
-  static const _kFallbackLngs = [120.449, 120.453, 120.444, 120.458, 120.441];
-
   List<LatLng> _spotsToLatLngs(List<String> names) {
-    int fbIdx = 0;
     return names.map((name) {
       final s = _lookupSpot(name);
       if (s != null) return LatLng(s.lat, s.lng);
-      final pt = LatLng(_kFallbackLats[fbIdx % _kFallbackLats.length],
-                        _kFallbackLngs[fbIdx % _kFallbackLngs.length]);
-      fbIdx++;
-      return pt;
+      // Hash spot name → unique fallback so Day 1 & Day 2 markers don't overlap
+      final h = name.codeUnits.fold(0, (int p, int e) => p * 31 + e).abs();
+      return LatLng(23.470 + (h % 50) * 0.0007, 120.440 + ((h ~/ 50) % 50) * 0.0007);
     }).toList();
   }
 
@@ -2772,6 +3064,8 @@ class _TripDetailPageState extends State<_TripDetailPage>
             child: SizedBox(
               height: 210,
               child: FlutterMap(
+                // 每次 dayFilter 變更就整個重建，確保地圖中心跟著移
+                key: ValueKey('map_${_mapDayFilter ?? "all"}_${filteredNames.join(",")}'),
                 options: MapOptions(
                   initialCenter: mapCenter,
                   initialZoom: spotLatLngs.length > 1 ? 13.5 : 13.0,
@@ -2980,7 +3274,30 @@ class _TripDetailPageState extends State<_TripDetailPage>
             child: Text('候選景點', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
           ),
           const Spacer(),
-          DoodleHeart(color: primary.withValues(alpha: 0.35), size: 9),
+          // AI 排程入口
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: TripService.tripCandidatesStream(trip.id),
+            builder: (_, snap) {
+              final items = snap.data ?? [];
+              return GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => AIPlannerScreen(
+                    candidateSpots: items.map((m) => m['spotName']?.toString() ?? '').where((s) => s.isNotEmpty).toList()))),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: primary.withValues(alpha: 0.25))),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.auto_awesome_rounded, size: 12, color: primary),
+                    const SizedBox(width: 4),
+                    Text('精靈排程', style: TextStyle(fontSize: 11, color: primary, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              );
+            },
+          ),
         ]),
       ),
       StitchedBox(
@@ -3191,7 +3508,13 @@ extension _TripDetailEdit on _TripDetailPageState {
                 s['note'] = noteCtrl.text;
                 Navigator.pop(ctx);
               },
-              style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 48)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 52),
+                backgroundColor: Theme.of(ctx).colorScheme.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
               child: const Text('儲存'),
             ),
           ]),
@@ -3280,7 +3603,7 @@ class _CreateTripPageState extends State<_CreateTripPage> {
   final _titleCtrl = TextEditingController();
   DateTime? _startDate;
   DateTime? _endDate;
-  String _selectedIcon = '🗺️';
+  String _selectedIcon = 'map';
   bool _saving = false;
 
   @override
@@ -3391,29 +3714,27 @@ class _CreateTripPageState extends State<_CreateTripPage> {
           Row(children: [
             GestureDetector(
               onTap: () {
-                final icons = ['🗺️','✈️','🚂','🏖️','🏔️','🌸','🍜','🎡','🏯','🌃',
-                               '🏝️','🎭','⛷️','🤿','🎪','🌄','🏕️','🎒','🚗','🚢'];
                 showModalBottomSheet(
                   context: context, backgroundColor: Colors.transparent,
-                  builder: (_) => Container(
+                  builder: (_) => StatefulBuilder(builder: (ctx, setSB) => Container(
                     padding: const EdgeInsets.all(20),
                     decoration: const BoxDecoration(color: AppColors.surface,
                       borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Text('選擇圖標', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primary)),
                       const SizedBox(height: 12),
-                      Wrap(spacing: 8, runSpacing: 8, children: icons.map((e) => GestureDetector(
-                        onTap: () { setState(() => _selectedIcon = e); Navigator.pop(context); },
+                      Wrap(spacing: 8, runSpacing: 8, children: _kTripIconPresets.take(20).map((preset) => GestureDetector(
+                        onTap: () { setState(() => _selectedIcon = preset.$1); Navigator.pop(context); },
                         child: Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: _selectedIcon == e ? primary.withValues(alpha: 0.12) : const Color(0xFFF5F5F5),
+                            color: _selectedIcon == preset.$1 ? primary.withValues(alpha: 0.12) : const Color(0xFFF5F5F5),
                             borderRadius: BorderRadius.circular(12),
-                            border: _selectedIcon == e ? Border.all(color: primary) : null),
-                          child: Text(e, style: const TextStyle(fontSize: 26))),
+                            border: _selectedIcon == preset.$1 ? Border.all(color: primary) : null),
+                          child: Icon(preset.$2, size: 26, color: _selectedIcon == preset.$1 ? primary : AppColors.textSecondary)),
                       )).toList()),
                     ]),
-                  ),
+                  )),
                 );
               },
               child: Container(
@@ -3422,7 +3743,7 @@ class _CreateTripPageState extends State<_CreateTripPage> {
                   color: primary.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: primary.withValues(alpha: 0.2))),
-                child: Center(child: Text(_selectedIcon, style: const TextStyle(fontSize: 28))),
+                child: Center(child: Icon(_tripIconFromKey(_selectedIcon), size: 28, color: primary)),
               ),
             ),
             const SizedBox(width: 14),
@@ -3546,4 +3867,291 @@ class _DatePickerTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// ① 旅行日報 — 一鍵生成可分享的旅行總結卡
+// ════════════════════════════════════════════════════════════════
+class _TripReportPage extends StatefulWidget {
+  final FirebaseTrip trip;
+  final Color primary;
+  const _TripReportPage({required this.trip, required this.primary});
+  @override State<_TripReportPage> createState() => _TripReportPageState();
+}
+
+class _TripReportPageState extends State<_TripReportPage> {
+  final _repaintKey = GlobalKey();
+  bool _sharing = false;
+
+  Future<void> _share() async {
+    setState(() => _sharing = true);
+    try {
+      final boundary = _repaintKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/trip_report.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+      await Share.shareXFiles([XFile(file.path)], text: '我的嘉義旅行日報 — ${widget.trip.title}');
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('生成失敗：$e'), behavior: SnackBarBehavior.floating));
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.primary;
+    final trip = widget.trip;
+    final dark = Color.lerp(p, Colors.black, 0.25)!;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.surface,
+        title: const Text('旅行日報', style: TextStyle(fontWeight: FontWeight.w800)),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: ElevatedButton.icon(
+              onPressed: _sharing ? null : _share,
+              icon: _sharing
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.ios_share_rounded, size: 16),
+              label: Text(_sharing ? '生成中…' : '分享'),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+        child: Column(children: [
+          // ── 可截圖的卡片區域（SketchyBorder 在外，不入鏡）──
+          SketchyBorderBox(
+            borderColor: p.withValues(alpha: 0.30),
+            strokeWidth: 1.4,
+            padding: EdgeInsets.zero,
+            seed: trip.title.hashCode,
+            child: RepaintBoundary(
+            key: _repaintKey,
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(color: p.withValues(alpha: 0.16), blurRadius: 20, offset: const Offset(0, 8)),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  // ── 波浪 Header ──
+                  ClipPath(
+                    clipper: _ReportWaveClipper(),
+                    child: Container(
+                      height: 168,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft, end: Alignment.bottomRight,
+                          colors: [p, dark, Color.lerp(p, const Color(0xFF80DEEA), 0.3)!])),
+                      child: Stack(children: [
+                        // 裝飾圓
+                        Positioned(right: -18, top: -18,
+                          child: Container(width: 110, height: 110,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.09)))),
+                        Positioned(left: -10, bottom: 20,
+                          child: Container(width: 70, height: 70,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.07)))),
+                        // 手繪點綴
+                        Positioned(top: 18, right: 60,
+                          child: DoodleHeart(color: Colors.white.withValues(alpha: 0.20), size: 12)),
+                        Positioned(top: 50, right: 28,
+                          child: DoodleLightning(color: Colors.white.withValues(alpha: 0.15), size: 9)),
+                        // 封面圖（淡顯）
+                        if (trip.coverUrl != null)
+                          Positioned.fill(child: Opacity(opacity: 0.20,
+                            child: Image.network(trip.coverUrl!, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const SizedBox.shrink()))),
+                        // 文字內容
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.end, children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.22),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white.withValues(alpha: 0.30))),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(_tripIconFromKey(trip.icon), size: 12, color: Colors.white.withValues(alpha: 0.95)),
+                                const SizedBox(width: 5),
+                                Text('旅 行 日 報', style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.95),
+                                  fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 2)),
+                              ]),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(trip.title, style: const TextStyle(
+                              color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, height: 1.2),
+                              maxLines: 2, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 5),
+                            Text(trip.dateDisplay, style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.78), fontSize: 12)),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ),
+                  // ── 統計貼紙列 ──
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Row(children: [
+                      _statSticker(Icons.calendar_today_rounded, '${trip.days}', '天', const Color(0xFFCB9E5A)),
+                      const SizedBox(width: 10),
+                      _statSticker(Icons.place_rounded, '${trip.spots.length}', '景點', const Color(0xFF8AAEC4)),
+                      const SizedBox(width: 10),
+                      _statSticker(
+                        trip.isCompleted ? Icons.check_circle_rounded : Icons.pending_rounded,
+                        trip.isCompleted ? '✓' : '…',
+                        trip.isCompleted ? '完成' : '規劃中', const Color(0xFF7AAA8A)),
+                    ]),
+                  ),
+                  // ── 景點清單（筆記本風格）──
+                  if (trip.spots.isNotEmpty) Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Row(children: [
+                        DoodleLightning(color: p.withValues(alpha: 0.55), size: 9),
+                        const SizedBox(width: 6),
+                        Text('行程景點', style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w800, color: p, letterSpacing: 1.2)),
+                      ]),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: p.withValues(alpha: 0.12)),
+                        ),
+                        child: Column(children: [
+                          ...trip.spots.asMap().entries.map((e) {
+                            const macaronColors = [
+                              Color(0xFFD08878), Color(0xFFCB9E5A),
+                              Color(0xFF8AAEC4), Color(0xFF8878B0),
+                              Color(0xFF7AAA8A), Color(0xFFB86878),
+                            ];
+                            final mc = macaronColors[e.key % macaronColors.length];
+                            return Padding(
+                            padding: const EdgeInsets.only(bottom: 9),
+                            child: Row(children: [
+                              Container(
+                                width: 20, height: 20,
+                                decoration: BoxDecoration(
+                                  color: mc.withValues(alpha: 0.12),
+                                  border: Border.all(color: mc.withValues(alpha: 0.50)),
+                                  borderRadius: BorderRadius.circular(6)),
+                                child: Center(child: Text('${e.key + 1}',
+                                  style: TextStyle(color: mc, fontSize: 9, fontWeight: FontWeight.w900)))),
+                              const SizedBox(width: 10),
+                              Expanded(child: Text(e.value,
+                                style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w600))),
+                              if (e.key < trip.spots.length - 1)
+                                Container(width: 1, height: 10, color: AppColors.divider),
+                            ]),
+                          );
+                          }),
+                        ]),
+                      ),
+                    ]),
+                  ),
+                  // ── Washi-tape 裝飾色條 ──
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Row(children: [
+                        Expanded(child: Container(height: 4, color: const Color(0xFFD08878).withValues(alpha: 0.70))),
+                        Expanded(child: Container(height: 4, color: const Color(0xFFCB9E5A).withValues(alpha: 0.70))),
+                        Expanded(child: Container(height: 4, color: const Color(0xFF8AAEC4).withValues(alpha: 0.70))),
+                        Expanded(child: Container(height: 4, color: const Color(0xFF8878B0).withValues(alpha: 0.70))),
+                        Expanded(child: Container(height: 4, color: const Color(0xFF7AAA8A).withValues(alpha: 0.70))),
+                        Expanded(child: Container(height: 4, color: const Color(0xFFB86878).withValues(alpha: 0.70))),
+                      ]),
+                    ),
+                  ),
+                  // ── 底部落款 ──
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                    child: Row(children: [
+                      Expanded(child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(colors: [
+                            p.withValues(alpha: 0.07), p.withValues(alpha: 0.03)]),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: p.withValues(alpha: 0.14))),
+                        child: Row(children: [
+                          DoodleHeart(color: p.withValues(alpha: 0.6), size: 9),
+                          const SizedBox(width: 8),
+                          Text('探索諸羅 · 嘉義旅遊', style: TextStyle(
+                            fontSize: 11, color: p, fontWeight: FontWeight.w700)),
+                          const Spacer(),
+                          Text(trip.dateDisplay.split('～').first.trim(),
+                            style: TextStyle(fontSize: 9, color: p.withValues(alpha: 0.55))),
+                        ]),
+                      )),
+                    ]),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _statSticker(IconData icon, String value, String label, Color color) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.18))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 15, color: color),
+        const SizedBox(height: 4),
+        Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: color, height: 1.0)),
+        Text(label, style: TextStyle(fontSize: 9, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w600)),
+      ]),
+    ),
+  );
+}
+
+// ── 旅行日報波浪裁切器 ─────────────────────────────────────────
+class _ReportWaveClipper extends CustomClipper<ui.Path> {
+  @override
+  ui.Path getClip(Size s) {
+    final base = s.height - 28.0;
+    final path = ui.Path()..lineTo(0, base + 4);
+    path.cubicTo(s.width * 0.28, base - 20, s.width * 0.62, base + 24, s.width, base);
+    path.lineTo(s.width, 0);
+    path.lineTo(0, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(_ReportWaveClipper old) => false;
 }

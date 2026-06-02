@@ -180,6 +180,7 @@ class MapScreen extends StatefulWidget {
   static const catKeyGoodShop   = 'goodShop';
   static const catKeyPetShop    = 'petShop';
   static const catKeyDrinkShop  = 'drinkShop';
+  static const catKeyYouBike    = 'YouBike';
 
   // ── internal mapping: catKey → _Cat ─────────────────────────
   static const _catKeyMap = <String, _Cat>{
@@ -188,6 +189,7 @@ class MapScreen extends StatefulWidget {
     'goodShop':   _Cat.goodShop,
     'petShop':    _Cat.petShop,
     'drinkShop':  _Cat.drinkShop,
+    'YouBike':    _Cat.youbike,
   };
 
   const MapScreen({super.key});
@@ -247,21 +249,21 @@ class _MapScreenState extends State<MapScreen> {
     '一般旅館', '民宿', '一般觀光旅館', '國際觀光旅館'
   ];
 
-  static const _kTdxCatList = <({String label, String emoji})>[
-    (label: '休閒農業類', emoji: '🌾'),
-    (label: '古蹟類',    emoji: '🏯'),
-    (label: '廟宇類',    emoji: '⛩️'),
-    (label: '文化類',    emoji: '🎭'),
-    (label: '林場類',    emoji: '🌲'),
-    (label: '森林遊樂區類', emoji: '🌲'),
-    (label: '生態類',    emoji: '🦋'),
-    (label: '自然風景類', emoji: '🌄'),
-    (label: '藝術類',    emoji: '🎨'),
-    (label: '觀光工廠類', emoji: '🏭'),
-    (label: '遊憩類',    emoji: '🎡'),
-    (label: '都會公園類', emoji: '🌳'),
-    (label: '體育健身類', emoji: '🏃'),
-    (label: '其他',      emoji: '📍'),
+  static const _kTdxCatList = <({String label, IconData icon, Color color})>[
+    (label: '休閒農業類', icon: Icons.agriculture_rounded,         color: Color(0xFF6B9B52)),
+    (label: '古蹟類',    icon: Icons.account_balance_rounded,      color: Color(0xFF8B6B3D)),
+    (label: '廟宇類',    icon: Icons.temple_buddhist_rounded,      color: Color(0xFFB8860B)),
+    (label: '文化類',    icon: Icons.theater_comedy_rounded,       color: Color(0xFF7B68EE)),
+    (label: '林場類',    icon: Icons.forest_rounded,               color: Color(0xFF2E7D32)),
+    (label: '森林遊樂區類', icon: Icons.park_rounded,              color: Color(0xFF388E3C)),
+    (label: '生態類',    icon: Icons.eco_rounded,                  color: Color(0xFF43A047)),
+    (label: '自然風景類', icon: Icons.landscape_rounded,           color: Color(0xFF00897B)),
+    (label: '藝術類',    icon: Icons.palette_rounded,              color: Color(0xFFE91E63)),
+    (label: '觀光工廠類', icon: Icons.factory_rounded,             color: Color(0xFF795548)),
+    (label: '遊憩類',    icon: Icons.local_activity_rounded,       color: Color(0xFFFF9800)),
+    (label: '都會公園類', icon: Icons.nature_people_rounded,       color: Color(0xFF4CAF50)),
+    (label: '體育健身類', icon: Icons.fitness_center_rounded,      color: Color(0xFF2196F3)),
+    (label: '其他',      icon: Icons.explore_rounded,             color: Color(0xFF9E9E9E)),
   ];
 
   static const _chiayiCenter = LatLng(23.480, 120.449);
@@ -427,7 +429,7 @@ class _MapScreenState extends State<MapScreen> {
       } on TimeoutException {
         debugPrint('[MapScreen] ${cfg.label} ⏰ 超時');
       } catch (e) {
-        debugPrint('[MapScreen] ${cfg.label} ❌ $e');
+        debugPrint('[MapScreen] ${cfg.label} [錯誤] $e');
       }
     }));
     // Ensure loading dismissed even if all categories returned empty
@@ -451,7 +453,7 @@ class _MapScreenState extends State<MapScreen> {
         debugPrint('[MapScreen] 公車站 → ${stops.length}站（去重後 ${deduped.length}站）');
       }
     } catch (e) {
-      debugPrint('[MapScreen] 公車站 ❌ $e');
+      debugPrint('[MapScreen] 公車站 [錯誤] $e');
     }
   }
 
@@ -495,7 +497,7 @@ class _MapScreenState extends State<MapScreen> {
         debugPrint('[MapScreen] $col → ${snap.docs.length}筆 '
             'GeoPoint:$parsed 備援:$fallback 無座標:$noLoc');
       } catch (e) {
-        debugPrint('[MapScreen] $col → ❌ $e');
+        debugPrint('[MapScreen] $col → [錯誤] $e');
       }
     }
     return out;
@@ -571,7 +573,7 @@ class _MapScreenState extends State<MapScreen> {
         }
         debugPrint('[MapScreen] $col → ${snap.docs.length}條路線 $stopCount站');
       } catch (e) {
-        debugPrint('[MapScreen] $col → ❌ $e');
+        debugPrint('[MapScreen] $col → [錯誤] $e');
       }
     }
     return out;
@@ -918,6 +920,28 @@ class _MapScreenState extends State<MapScreen> {
       _parkingTypeFilter.isNotEmpty ||
       _hotelClassFilter.isNotEmpty;
 
+  /// 某圖層是否有啟用篩選
+  bool _hasFilterForCat(_Cat cat) {
+    switch (cat) {
+      case _Cat.toilet:       return _toiletTypeFilter.isNotEmpty || _diaperOnly || _accessibleOnly;
+      case _Cat.parking:      return _parkingTypeFilter.isNotEmpty || _freeParking || _evParking || _disabledParking;
+      case _Cat.breastfeeding:return _breastfeedingCatFilter.isNotEmpty;
+      case _Cat.petShop:      return _petCatFilter.isNotEmpty;
+      case _Cat.restaurant:   return _restaurantLevelFilter.isNotEmpty;
+      case _Cat.drinkShop:    return _drinkCatFilter.isNotEmpty;
+      case _Cat.goodShop:     return _goodShopGroupFilter.isNotEmpty;
+      case _Cat.hotel:        return _hotelClassFilter.isNotEmpty;
+      case _Cat.tdxSpot:      return _tdxCatFilter.isNotEmpty;
+      default:                return false;
+    }
+  }
+
+  /// 計算 marker 的顏色：有篩選啟用 → 加深 25%（更醒目）
+  Color _markerColor(_Cat cat, Color baseColor) {
+    if (_hasFilterForCat(cat)) return Color.lerp(baseColor, Colors.black, 0.22)!;
+    return baseColor;
+  }
+
   // ── 定位 ─────────────────────────────────────────────────
 
   Future<void> _goToMe() async {
@@ -1180,7 +1204,7 @@ class _MapScreenState extends State<MapScreen> {
               alignment: Alignment.topCenter,
               child: GestureDetector(
                 onTap: () => _onMarkerTap(p),
-                child: _MarkerPin(color: cfg.color, icon: icon, isSelected: sel),
+                child: _MarkerPin(color: _markerColor(p.cat, cfg.color), icon: icon, isSelected: sel),
               ),
             );
           }).toList(),
@@ -1393,31 +1417,25 @@ class _MapScreenState extends State<MapScreen> {
                             spacing: 8,
                             runSpacing: 6,
                             children: _kTdxCatList.map((item) {
-                              final on =
-                                  _tdxCatFilter.contains(item.label);
+                              final on = _tdxCatFilter.contains(item.label);
                               return FilterChip(
-                                avatar: Text(item.emoji,
-                                    style:
-                                        const TextStyle(fontSize: 13)),
+                                avatar: Icon(item.icon,
+                                    size: 14,
+                                    color: on ? item.color : item.color.withValues(alpha: 0.65)),
                                 label: Text(item.label,
-                                    style:
-                                        const TextStyle(fontSize: 12)),
+                                    style: TextStyle(fontSize: 12,
+                                        color: on ? item.color : AppColors.textSecondary,
+                                        fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
                                 selected: on,
-                                selectedColor: const Color(0xFF00897B)
-                                    .withValues(alpha: 0.15),
-                                checkmarkColor: const Color(0xFF00897B),
+                                selectedColor: item.color.withValues(alpha: 0.12),
+                                checkmarkColor: item.color,
                                 backgroundColor: Colors.white,
-                                side: BorderSide(
-                                    color: on
-                                        ? const Color(0xFF00897B)
-                                        : Colors.grey.shade300),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4),
+                                side: BorderSide(color: on ? item.color : Colors.grey.shade300),
+                                padding: const EdgeInsets.symmetric(horizontal: 4),
                                 onSelected: (v) {
                                   setState(() => v
                                       ? _tdxCatFilter.add(item.label)
-                                      : _tdxCatFilter
-                                          .remove(item.label));
+                                      : _tdxCatFilter.remove(item.label));
                                   setDlg(() {});
                                 },
                               );
@@ -1908,10 +1926,31 @@ class _PlaceSheet extends StatelessWidget {
 
   _CatCfg get _cfg => _kCats.firstWhere((c) => c.cat == place.cat);
 
+  List<String> _placeImages() {
+    final raw = place.raw;
+    // 1. 'images' array (restaurant / good_shop Firestore format)
+    final imgs = raw['images'];
+    if (imgs is List) {
+      final list = imgs.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+      if (list.isNotEmpty) return list;
+    }
+    // 2. 'pictureUrl' (TDX format — can be List or single String)
+    final v = raw['pictureUrl'];
+    if (v is List) {
+      final list = v.whereType<String>().where((s) => s.trim().isNotEmpty).toList();
+      if (list.isNotEmpty) return list;
+    }
+    if (v is String && v.trim().isNotEmpty) return [v.trim()];
+    // 3. Single image fallback
+    final single = (raw['imageUrl'] ?? raw['Thumbnail'] ?? '').toString().trim();
+    return single.isNotEmpty ? [single] : [];
+  }
+
   @override
   Widget build(BuildContext context) {
+    final imgs = _placeImages();
     return DraggableScrollableSheet(
-      initialChildSize: 0.44,
+      initialChildSize: imgs.isNotEmpty ? 0.72 : 0.44,
       minChildSize: 0.26,
       maxChildSize: 0.90,
       builder: (_, scroll) => Container(
@@ -1965,6 +2004,16 @@ class _PlaceSheet extends StatelessWidget {
                   child: Center(child: SpotSaveButton(
                     spotId: place.id,
                     spotName: place.name,
+                    imageUrl: (() {
+                      final imgs = place.raw['images'];
+                      if (imgs is List && imgs.isNotEmpty) return imgs.first.toString();
+                      return (place.raw['imageUrl'] ?? place.raw['Thumbnail'] ?? '').toString();
+                    })(),
+                    rating: ((place.raw['rating'] ?? place.raw['Rating'] ?? 0.0) as num).toDouble(),
+                    description: (place.raw['description'] ?? place.raw['Description'] ??
+                                  place.raw['shortDesc'] ?? place.raw['Content'] ?? '').toString(),
+                    address: place.address,
+                    category: place.cat.name,
                     size: 18,
                   )),
                 ),
@@ -1993,10 +2042,16 @@ class _PlaceSheet extends StatelessWidget {
           Expanded(
             child: ListView(
               controller: scroll,
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+              padding: EdgeInsets.zero,
               children: [
-                ..._buildFields(),
-                SpotRatingSection(placeId: place.id),
+                if (imgs.isNotEmpty) _ImageCarousel(urls: imgs),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    ..._buildFields(),
+                    SpotRatingSection(placeId: place.id),
+                  ]),
+                ),
               ],
             ),
           ),
@@ -2273,6 +2328,19 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                             child: Center(child: SpotSaveButton(
                               spotId: widget.place.id,
                               spotName: widget.place.name,
+                              imageUrl: (() {
+                                final imgs = widget.place.raw['images'];
+                                if (imgs is List && imgs.isNotEmpty) return imgs.first.toString();
+                                final v = widget.place.raw['pictureUrl'];
+                                if (v is List && v.isNotEmpty) return v.first.toString();
+                                if (v is String && v.isNotEmpty) return v;
+                                return (widget.place.raw['imageUrl'] ?? widget.place.raw['Thumbnail'] ?? '').toString();
+                              })(),
+                              rating: ((widget.place.raw['rating'] ?? widget.place.raw['Rating'] ?? 0.0) as num).toDouble(),
+                              description: (widget.place.raw['description'] ?? widget.place.raw['Description'] ??
+                                            widget.place.raw['shortDesc'] ?? widget.place.raw['Content'] ?? '').toString(),
+                              address: widget.place.address,
+                              category: widget.place.cat.name,
                               size: 18,
                             )),
                           ),

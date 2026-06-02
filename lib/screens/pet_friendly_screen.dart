@@ -135,13 +135,13 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
   List<PetSpot> _spots = [];
   bool _loading = true;
 
-  static const _catConfig = {
-    '全部':  {'emoji': '🐾', 'color': Color(0xFF5B8A5F)},
-    '飲食類': {'emoji': '🍽️', 'color': Color(0xFFC4856A)},
-    '住宿業': {'emoji': '🏨', 'color': Color(0xFF88B8C8)},
-    '生活類': {'emoji': '🛍️', 'color': Color(0xFF8FBF8F)},
-    '觀光類': {'emoji': '🎡', 'color': Color(0xFFB8A8E8)},
-    '交通類': {'emoji': '🚕', 'color': Color(0xFFD4A847)},
+  static const _catConfig = <String, Map<String, dynamic>>{
+    '全部':  {'icon': Icons.pets_rounded,           'color': Color(0xFF5B8A5F)},
+    '飲食類': {'icon': Icons.restaurant_rounded,     'color': Color(0xFFC4856A)},
+    '住宿業': {'icon': Icons.hotel_rounded,           'color': Color(0xFF88B8C8)},
+    '生活類': {'icon': Icons.shopping_bag_rounded,   'color': Color(0xFF8FBF8F)},
+    '觀光類': {'icon': Icons.attractions_rounded,    'color': Color(0xFFB8A8E8)},
+    '交通類': {'icon': Icons.local_taxi_rounded,     'color': Color(0xFFD4A847)},
   };
 
   List<PetSpot> get _filtered {
@@ -156,8 +156,8 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
 
   Color _catColor(String cat) =>
       (_catConfig[cat]?['color'] as Color?) ?? Theme.of(context).colorScheme.primary;
-  String _catEmoji(String cat) =>
-      (_catConfig[cat]?['emoji'] as String?) ?? '🐾';
+  IconData _catIcon(String cat) =>
+      (_catConfig[cat]?['icon'] as IconData?) ?? Icons.pets_rounded;
 
   @override
   void initState() {
@@ -189,14 +189,14 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         title: Row(children: [
-          const Text('🐾', style: TextStyle(fontSize: 20)),
+          const Icon(Icons.pets_rounded, size: 20, color: AppColors.textHint),
           const SizedBox(width: 8),
           const Text('寵物友善店家'),
         ]),
       ),
       body: _loading
           ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Text('🐾', style: TextStyle(fontSize: 48)),
+              const Icon(Icons.pets_rounded, size: 48, color: AppColors.textHint),
               const SizedBox(height: 16),
               CircularProgressIndicator(color: Theme.of(context).colorScheme.primary),
               SizedBox(height: 12),
@@ -243,7 +243,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
                         border: Border.all(color: sel ? color : AppColors.divider),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_catEmoji(cat), style: const TextStyle(fontSize: 13)),
+                        Icon(_catIcon(cat), size: 13, color: _catColor(cat)),
                         const SizedBox(width: 4),
                         Text(cat, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
                           color: sel ? Colors.white : AppColors.textSecondary)),
@@ -320,7 +320,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
                           blurRadius: isSelected ? 12 : 6)],
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Text(_catEmoji(s.cat), style: const TextStyle(fontSize: 14)),
+                        Icon(_catIcon(s.cat), size: 14, color: _catColor(s.cat)),
                         if (isSelected) ...[
                           const SizedBox(width: 4),
                           Flexible(child: Text(s.name,
@@ -372,7 +372,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
             child: Row(children: [
               Container(width: 46, height: 46,
                 decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
-                child: Center(child: Text(_catEmoji(s.cat), style: const TextStyle(fontSize: 22)))),
+                child: Center(child: Icon(_catIcon(s.cat), size: 22, color: _catColor(s.cat)))),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: AppColors.textPrimary),
@@ -393,8 +393,8 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _infoRow('🐕', '入內規定', s.rules),
-              if (s.services.isNotEmpty) _infoRow('✨', '寵物服務', s.services),
+              _infoRow(Icons.pets_rounded, '入內規定', s.rules),
+              if (s.services.isNotEmpty) _infoRow(Icons.star_rounded, '寵物服務', s.services),
             ]),
           ),
           Padding(
@@ -434,7 +434,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
     final spots = _filtered;
     if (spots.isEmpty) {
       return const Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text('🐾', style: TextStyle(fontSize: 52)),
+        Icon(Icons.pets_rounded, size: 52, color: AppColors.textHint),
         SizedBox(height: 12),
         Text('找不到符合的店家', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
       ]));
@@ -461,7 +461,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
         child: Row(children: [
           Container(width: 48, height: 48,
             decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)),
-            child: Center(child: Text(_catEmoji(s.cat), style: const TextStyle(fontSize: 22)))),
+            child: Center(child: Icon(_catIcon(s.cat), size: 22, color: _catColor(s.cat)))),
           const SizedBox(width: 12),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(s.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary),
@@ -505,7 +505,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
               Row(children: [
                 Container(width: 56, height: 56,
                   decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(14)),
-                  child: Center(child: Text(_catEmoji(s.cat), style: const TextStyle(fontSize: 26)))),
+                  child: Center(child: Icon(_catIcon(s.cat), size: 26, color: _catColor(s.cat)))),
                 const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   _catChip(s.cat, color),
@@ -520,7 +520,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
               const SizedBox(height: 16),
               const Divider(),
               const SizedBox(height: 12),
-              _sectionLabel('🐕 入內規定'),
+              _sectionLabel('入內規定'),
               const SizedBox(height: 8),
               ...s.rules.split('・').where((r) => r.isNotEmpty).map((r) =>
                 Padding(padding: const EdgeInsets.only(bottom: 6),
@@ -533,7 +533,7 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
               ),
               if (s.services.isNotEmpty) ...[
                 const SizedBox(height: 14),
-                _sectionLabel('✨ 寵物服務'),
+                _sectionLabel('寵物服務'),
                 const SizedBox(height: 8),
                 Wrap(spacing: 8, runSpacing: 6,
                   children: s.services.split('・').where((v) => v.isNotEmpty).map((v) =>
@@ -578,10 +578,10 @@ class _PetFriendlyScreenState extends State<PetFriendlyScreen>
     child: Text(cat, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
   );
 
-  Widget _infoRow(String emoji, String label, String val) => Padding(
+  Widget _infoRow(IconData icon, String label, String val) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(emoji, style: const TextStyle(fontSize: 13)),
+      Icon(icon, size: 13, color: AppColors.textSecondary),
       const SizedBox(width: 6),
       Text('$label：', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
       Expanded(child: Text(val.replaceAll('・', ' · '),

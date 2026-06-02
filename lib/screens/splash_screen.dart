@@ -180,17 +180,15 @@ class _TrainWidget extends StatelessWidget {
           offset: Offset(steamDx + 4, steamDy),
           child: Opacity(
             opacity: isDark ? 0.2 : 0.6,
-            child: Text('☁',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isDark
-                      ? Colors.grey.shade300
-                      : Colors.white,
-                )),
+            child: Icon(Icons.cloud_rounded,
+                size: 14,
+                color: isDark
+                    ? Colors.grey.shade300
+                    : Colors.white),
           ),
         ),
         // Train body
-        const Text('🚞', style: TextStyle(fontSize: 36)),
+        const Icon(Icons.train_rounded, size: 36, color: Colors.white),
       ],
     );
   }
@@ -250,12 +248,12 @@ class _ScenePainter extends CustomPainter {
   static Color _innerSkyTop(double t) => _lerp([
         (0.00, const Color(0xFF101828)),   // midnight navy
         (0.22, const Color(0xFF141C30)),
-        (0.27, const Color(0xFF6B3A38)),   // dusty rose-red (was vivid #9C2818)
-        (0.33, const Color(0xFF8A5A44)),   // muted terra-cotta (was #D05020)
-        (0.42, const Color(0xFF6080A0)),   // steel blue (was vivid #5AAAD4)
-        (0.55, const Color(0xFF4E6E8C)),   // slate blue (was vivid #3490C0)
+        (0.27, const Color(0xFF6B3A38)),   // dusty rose-red
+        (0.33, const Color(0xFF8A5A44)),   // muted terra-cotta
+        (0.42, const Color(0xFF6080A0)),   // steel blue
+        (0.55, const Color(0xFF4E6E8C)),   // slate blue
         (0.68, const Color(0xFF50708A)),   // muted blue
-        (0.74, const Color(0xFF7A5040)),   // muted amber-sienna (was vivid #B84018)
+        (0.74, const Color(0xFF7A5040)),   // muted amber-sienna
         (0.82, const Color(0xFF1C1428)),
         (1.00, const Color(0xFF101828)),
       ], t);
@@ -263,12 +261,12 @@ class _ScenePainter extends CustomPainter {
   static Color _innerSkyBottom(double t) => _lerp([
         (0.00, const Color(0xFF141E2C)),
         (0.22, const Color(0xFF161E30)),
-        (0.27, const Color(0xFF8A5050)),   // dusty rose (was vivid #D04830)
-        (0.33, const Color(0xFFAA7860)),   // muted warm (was vivid #E87040)
-        (0.42, const Color(0xFF7898B0)),   // muted sky (was vivid #78C8E8)
-        (0.55, const Color(0xFF6888A8)),   // slate sky (was vivid #60C0E8)
+        (0.27, const Color(0xFF8A5050)),   // dusty rose
+        (0.33, const Color(0xFFAA7860)),   // muted warm
+        (0.42, const Color(0xFF7898B0)),   // muted sky
+        (0.55, const Color(0xFF6888A8)),   // slate sky
         (0.68, const Color(0xFF6888A8)),
-        (0.74, const Color(0xFF8A6450)),   // muted amber (was vivid #D06030)
+        (0.74, const Color(0xFF8A6450)),   // muted amber
         (0.82, const Color(0xFF201820)),
         (1.00, const Color(0xFF141E2C)),
       ], t);
@@ -383,7 +381,7 @@ class _ScenePainter extends CustomPainter {
     // --- Far range (5 cute rounded peaks) ---
     // Muted sage green (day) / dark ink (night)
     final farColor = skyT > 0.28 && skyT < 0.78
-        ? const Color(0xFF4A6854)   // muted sage (was vivid #3A6644)
+        ? const Color(0xFF4A6854)   // muted sage
         : const Color(0xFF182418);
     _drawMountainRow(
       canvas,
@@ -400,7 +398,7 @@ class _ScenePainter extends CustomPainter {
     // --- Near range (3 taller peaks) ---
     // Deeper muted green (day) / near-black ink (night)
     final nearColor = skyT > 0.28 && skyT < 0.78
-        ? const Color(0xFF354A3A)   // deep muted forest (was vivid #2A4E34)
+        ? const Color(0xFF354A3A)   // deep muted forest
         : const Color(0xFF101810);
     _drawMountainRow(
       canvas,
@@ -470,7 +468,7 @@ class _ScenePainter extends CustomPainter {
 
     // Muted earthy ground
     final grassColor = skyT > 0.28 && skyT < 0.78
-        ? const Color(0xFF3C5C40)   // muted olive-green (was vivid #3E7040)
+        ? const Color(0xFF3C5C40)   // muted olive-green
         : const Color(0xFF141E16);
 
     canvas.drawRect(
@@ -523,8 +521,8 @@ class _ScenePainter extends CustomPainter {
     final isDay = skyT > 0.30 && skyT < 0.75;
     // Muted: antique gold during day, slate at night
     final ringColor = isDay
-        ? const Color(0xFFB09060)   // antique gold (was vivid #D4A84C)
-        : const Color(0xFF606880);  // muted slate (was vivid #7080B8)
+        ? const Color(0xFFB09060)   // antique gold
+        : const Color(0xFF606880);  // muted slate
 
     final glow = Paint()
       ..color = ringColor.withValues(alpha: 0.12)

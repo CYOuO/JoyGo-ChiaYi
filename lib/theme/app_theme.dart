@@ -36,10 +36,10 @@ class AppColors {
   // ── Shadow（超淡）
   static const Color cardShadow = Color(0x125B8A5F);
 
-  // ── Stamp
-  static const Color stampGold   = Color(0xFFCFA84C);
-  static const Color stampSilver = Color(0xFFA0AFA0);
-  static const Color stampBronze = Color(0xFFA8784A);
+  // ── Stamp（馬卡龍印章色）
+  static const Color stampGold   = Color(0xFFCB9E5A);  // 焦糖奶油
+  static const Color stampSilver = Color(0xFF8AAEC4);  // 霧藍薰衣草
+  static const Color stampBronze = Color(0xFFD08878);  // 玫瑰珊瑚
 
   // ── 可愛粉嫩點綴色
   static const Color cutePeach    = Color(0xFFFFD3C2);

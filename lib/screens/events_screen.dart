@@ -23,10 +23,6 @@ class _EventsScreenState extends State<EventsScreen> {
       '?oid=33c3225e-f786-4eaf-8b9c-774cc39c72e0'
       '&rid=a809167f-bba6-475d-9dfe-33b4ea7749f6';
 
-  static const _kColors = [
-    Color(0xFFE8A87C), Color(0xFFD4A8C7), Color(0xFFE8C87C),
-    Color(0xFF8FBFA8), Color(0xFFA8B8E8), Color(0xFFB8A8E8), Color(0xFF88C8D8),
-  ];
 
   @override
   void initState() {
@@ -60,14 +56,14 @@ class _EventsScreenState extends State<EventsScreen> {
         list = [];
       }
 
-      int colorIdx = 0;
       final parsed = <_Event>[];
       for (final item in list.whereType<Map>()) {
         final raw = Map<String, dynamic>.from(item);
-        final title = _pick(raw, ['活動名稱', '標題', '名稱', 'title', 'Title']) ?? '無標題';
+        final title = _pick(raw, ['活動名稱', '標題', '名稱', 'title', 'Title']) ?? '';
+        if (title.isEmpty || title == '無標題') continue; // skip untitled events
         final startStr = _pick(raw, ['活動開始日期', '開始日期', '發布日期', 'date', 'Date']) ?? '';
         final endStr   = _pick(raw, ['活動結束日期', '結束日期']) ?? startStr;
-        final loc      = _pick(raw, ['活動地點', '地點', 'location', 'venue']) ?? '嘉義市';
+        final loc      = _pick(raw, ['PostUnit', '發布單位', '主辦單位', '活動地點', '地點', 'location', 'venue']) ?? '嘉義市';
         final desc     = _pick(raw, ['活動說明', '內容', '摘要', '描述', 'summary', 'content']) ?? '';
         final url      = _pick(raw, ['連結', 'url', 'URL', 'link', '詳細連結']);
 
@@ -75,19 +71,19 @@ class _EventsScreenState extends State<EventsScreen> {
         if (startDate == null) continue;
         final endDate = _parseDate(endStr) ?? startDate;
 
+        final (evIcon, evColor) = _eventIconColor(loc);
         parsed.add(_Event(
           id:       '${parsed.length}',
           title:    title,
           date:     startDate,
           endDate:  endDate,
-          emoji:    '🏮',
+          icon:     evIcon,
           category: '政府活動',
           location: loc,
           desc:     desc.isNotEmpty ? desc : '詳細內容請至嘉義市政府官網查看。',
-          color:    _kColors[colorIdx % _kColors.length],
+          color:    evColor,
           url:      url,
         ));
-        colorIdx++;
       }
       parsed.sort((a, b) => a.date.compareTo(b.date));
 
@@ -198,7 +194,7 @@ class _EventsScreenState extends State<EventsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('😕', style: TextStyle(fontSize: 52)),
+          const Icon(Icons.cloud_off_rounded, size: 52, color: AppColors.textHint),
           const SizedBox(height: 12),
           const Text('無法載入活動資料',
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
@@ -378,7 +374,7 @@ class _EventsScreenState extends State<EventsScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('🗓️', style: TextStyle(fontSize: 52)),
+            const Icon(Icons.event_rounded, size: 52, color: AppColors.textHint),
             const SizedBox(height: 12),
             const Text('本月尚無活動',
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
@@ -414,7 +410,7 @@ class _EventsScreenState extends State<EventsScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('🌿', style: TextStyle(fontSize: 52)),
+          const Icon(Icons.event_busy_rounded, size: 52, color: AppColors.textHint),
           const SizedBox(height: 12),
           Text(
             '${day.month}/${day.day} 沒有活動',
@@ -443,41 +439,34 @@ class _EventsScreenState extends State<EventsScreen> {
         decoration: BoxDecoration(
           color: AppColors.surfaceWarm,
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.divider),
+          border: Border.all(color: e.color.withValues(alpha: 0.3)),
         ),
-        child: Row(
+        child: IntrinsicHeight(child: Row(
           children: [
-            // Color stripe
+            // Color stripe with icon
             Container(
-              width: 6, height: 100,
+              width: 44,
               decoration: BoxDecoration(
                 color: e.color,
                 borderRadius: const BorderRadius.horizontal(left: Radius.circular(18)),
               ),
-            ),
-            const SizedBox(width: 14),
-            // Date block
-            SizedBox(
-              width: 48,
+              padding: const EdgeInsets.symmetric(vertical: 16),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  Icon(e.icon, size: 22, color: Colors.white),
+                  const SizedBox(height: 6),
                   Text(
                     '${e.date.day}',
-                    style: TextStyle(
-                      fontSize: 24, fontWeight: FontWeight.w900, color: e.color),
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white),
                   ),
                   Text(
                     _monthLabel(e.date.month),
-                    style: const TextStyle(
-                      fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: 0.85), fontWeight: FontWeight.w600),
                   ),
                   if (isMultiDay) ...[
-                    const Text('～', style: TextStyle(color: AppColors.textHint, fontSize: 10)),
-                    Text(
-                      '${e.endDate.day}日',
-                      style: const TextStyle(fontSize: 10, color: AppColors.textHint),
-                    ),
+                    Text('～', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 9)),
+                    Text('${e.endDate.day}', style: const TextStyle(fontSize: 9, color: Colors.white)),
                   ],
                 ],
               ),
@@ -486,7 +475,7 @@ class _EventsScreenState extends State<EventsScreen> {
             // Info
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
+                padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -494,7 +483,6 @@ class _EventsScreenState extends State<EventsScreen> {
                       children: [
                         _catChip(e.category, e.color),
                         const Spacer(),
-                        Text(e.emoji, style: const TextStyle(fontSize: 18)),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -530,7 +518,7 @@ class _EventsScreenState extends State<EventsScreen> {
               child: Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 18),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -588,7 +576,7 @@ class _EventsScreenState extends State<EventsScreen> {
                       color: e.color.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Center(child: Text(e.emoji, style: const TextStyle(fontSize: 26))),
+                    child: Center(child: Icon(e.icon, size: 26, color: e.color)),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -683,15 +671,44 @@ class _EventsScreenState extends State<EventsScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Returns (icon, color) based on department keyword in location/unit field
+(IconData, Color) _eventIconColor(String location) {
+  final loc = location.toLowerCase();
+  if (loc.contains('文化') || loc.contains('藝術') || loc.contains('博物')) {
+    return (Icons.museum_rounded, const Color(0xFFB06090));
+  } else if (loc.contains('教育') || loc.contains('學') || loc.contains('校')) {
+    return (Icons.school_rounded, const Color(0xFF5A8FAF));
+  } else if (loc.contains('體育') || loc.contains('運動') || loc.contains('競技')) {
+    return (Icons.sports_rounded, const Color(0xFF5A9F5A));
+  } else if (loc.contains('環保') || loc.contains('環境') || loc.contains('農業')) {
+    return (Icons.eco_rounded, const Color(0xFF5E9F7A));
+  } else if (loc.contains('衛生') || loc.contains('健康') || loc.contains('醫')) {
+    return (Icons.local_hospital_rounded, const Color(0xFFD45A5A));
+  } else if (loc.contains('建設') || loc.contains('工程') || loc.contains('都市')) {
+    return (Icons.construction_rounded, const Color(0xFFB08B40));
+  } else if (loc.contains('社會') || loc.contains('福利') || loc.contains('民政')) {
+    return (Icons.people_rounded, const Color(0xFF7A7ABF));
+  } else if (loc.contains('財政') || loc.contains('稅務') || loc.contains('經濟')) {
+    return (Icons.account_balance_rounded, const Color(0xFF7A9F5A));
+  } else if (loc.contains('警察') || loc.contains('消防') || loc.contains('安全')) {
+    return (Icons.local_police_rounded, const Color(0xFF5A7AAF));
+  } else if (loc.contains('觀光') || loc.contains('旅遊') || loc.contains('景點')) {
+    return (Icons.tour_rounded, const Color(0xFFBF8040));
+  } else {
+    return (Icons.event_rounded, const Color(0xFF8A9CC5));
+  }
+}
+
 class _Event {
-  final String id, title, emoji, category, location, desc;
+  final String id, title, category, location, desc;
+  final IconData icon;
   final DateTime date, endDate;
   final Color color;
   final String? url;
 
   const _Event({
     required this.id, required this.title, required this.date,
-    required this.endDate, required this.emoji, required this.category,
+    required this.endDate, required this.icon, required this.category,
     required this.location, required this.desc, required this.color,
     this.url,
   });

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/trip_service.dart';
 import '../services/local_fav_service.dart';
@@ -75,6 +76,7 @@ class _SpotSaveButtonState extends State<SpotSaveButton> {
 
   Future<void> _toggle(BuildContext ctx) async {
     if (_busy) return;
+    HapticFeedback.lightImpact(); // ⑤ 觸覺回饋
     setState(() => _busy = true);
     final user = FirebaseAuth.instance.currentUser;
     bool nowSaved;
@@ -90,7 +92,15 @@ class _SpotSaveButtonState extends State<SpotSaveButton> {
           category:    widget.category,
         );
       } else {
-        nowSaved = await LocalFavService.toggle(widget.spotId);
+        nowSaved = await LocalFavService.toggleWithMeta(
+          widget.spotId,
+          spotName:    widget.spotName,
+          imageUrl:    widget.imageUrl,
+          rating:      widget.rating,
+          description: widget.description,
+          address:     widget.address,
+          category:    widget.category,
+        );
       }
       if (mounted) {
         setState(() => _saved = nowSaved);

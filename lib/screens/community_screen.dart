@@ -8,7 +8,29 @@ import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle;
 import '../models/dummy_data.dart';
 import '../services/community_service.dart';
+import '../services/trip_service.dart';
 import '../widgets/common_widgets.dart' show WashiTapeDivider;
+
+// Map trip icon key (emoji or named) → IconData
+IconData _tripIconFromKey(String key) {
+  switch (key) {
+    case 'map':   case '🗺️': return Icons.map_rounded;
+    case 'flight':case '✈️': return Icons.flight_rounded;
+    case 'train': case '🚂': return Icons.train_rounded;
+    case 'beach': case '🏖️': case '🏝️': return Icons.beach_access_rounded;
+    case 'mountain': case '🏔️': case '⛰️': case '🌄': return Icons.landscape_rounded;
+    case 'flower': case '🌸': return Icons.local_florist_rounded;
+    case 'ramen': case '🍜': return Icons.ramen_dining_rounded;
+    case 'attractions': case '🎡': return Icons.attractions_rounded;
+    case 'castle': case '🏯': case '🏛️': return Icons.account_balance_rounded;
+    case 'night': case '🌃': case '🌙': return Icons.nightlight_round;
+    case 'theater': case '🎭': return Icons.theater_comedy_rounded;
+    case 'camera': case '📸': case '📷': return Icons.camera_alt_rounded;
+    case 'pets':  case '🐾': return Icons.pets_rounded;
+    case 'nature': case '🌿': return Icons.eco_rounded;
+    default: return Icons.map_rounded;
+  }
+}
 
 // 全域時間格式化工具
 String _timeAgo(DateTime dt) {
@@ -18,6 +40,120 @@ String _timeAgo(DateTime dt) {
   if (diff.inDays < 1) return '${diff.inHours} 小時前';
   if (diff.inDays < 7) return '${diff.inDays} 天前';
   return '${dt.month}/${dt.day}';
+}
+
+// ── 套用行程：top-level function，任何頁面都可呼叫 ───────────────
+void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('請先登入才能套用行程'), behavior: SnackBarBehavior.floating));
+    return;
+  }
+  if (spotNames.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('此貼文沒有景點資訊'), behavior: SnackBarBehavior.floating));
+    return;
+  }
+  final primary = Theme.of(context).colorScheme.primary;
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => Container(
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.65),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Center(child: Container(width: 36, height: 4,
+          margin: const EdgeInsets.fromLTRB(0, 12, 0, 12),
+          decoration: BoxDecoration(color: AppColors.divider,
+              borderRadius: BorderRadius.circular(2)))),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(children: [
+            Icon(Icons.add_location_alt_rounded, color: primary, size: 20),
+            const SizedBox(width: 8),
+            Text('套用到哪個行程？',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
+          ]),
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            '將加入 ${spotNames.length} 個景點：${spotNames.take(3).join("、")}${spotNames.length > 3 ? "…" : ""}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+        ),
+        const Divider(height: 20),
+        Flexible(
+          child: StreamBuilder<List<FirebaseTrip>>(
+            stream: TripService.tripsStream(),
+            builder: (ctx, snap) {
+              final trips = snap.data ?? [];
+              if (trips.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.map_outlined, size: 40, color: AppColors.textHint),
+                    const SizedBox(height: 12),
+                    const Text('還沒有行程，請先在行程管理中建立行程',
+                      style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                  ]),
+                );
+              }
+              return ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                itemCount: trips.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (_, i) {
+                  final trip = trips[i];
+                  return ListTile(
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    tileColor: primary.withValues(alpha: 0.05),
+                    leading: Icon(_tripIconFromKey(trip.icon), size: 22, color: primary),
+                    title: Text(trip.title,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(trip.dateDisplay,
+                        style: const TextStyle(fontSize: 11)),
+                    trailing: Icon(Icons.chevron_right_rounded, color: primary),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      try {
+                        await TripService.applySpots(trip.id, spotNames);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                                '已將 ${spotNames.length} 個景點加入「${trip.title}」'),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: primary,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ));
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text('套用失敗：$e'),
+                            behavior: SnackBarBehavior.floating,
+                          ));
+                        }
+                      }
+                    },
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ]),
+    ),
+  );
 }
 
 class CommunityScreen extends StatefulWidget {
@@ -336,13 +472,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     // Author row
                     Row(children: [
-                      CircleAvatar(radius: 16,
-                        backgroundImage: post.authorPhoto.isNotEmpty
-                            ? NetworkImage(post.authorPhoto) : null,
-                        backgroundColor: primary.withValues(alpha: 0.1),
-                        child: post.authorPhoto.isEmpty
-                            ? Icon(Icons.person_rounded, size: 16, color: primary)
-                            : null,
+                      GestureDetector(
+                        onTap: () => _showAuthorProfile(context, post, primary),
+                        child: CircleAvatar(radius: 16,
+                          backgroundImage: post.authorPhoto.isNotEmpty
+                              ? NetworkImage(post.authorPhoto) : null,
+                          backgroundColor: primary.withValues(alpha: 0.1),
+                          child: post.authorPhoto.isEmpty
+                              ? Icon(Icons.person_rounded, size: 16, color: primary)
+                              : null,
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(child: GestureDetector(
@@ -368,6 +507,30 @@ class _CommunityScreenState extends State<CommunityScreen> {
                             style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
                         ]),
                       ),
+                      // Delete (own post only)
+                      if (FirebaseAuth.instance.currentUser?.uid == post.authorId)
+                        GestureDetector(
+                          onTap: () async {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                title: const Text('刪除貼文', style: TextStyle(fontWeight: FontWeight.w800)),
+                                content: const Text('確定要刪除這篇貼文嗎？此操作無法復原。'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                                  TextButton(onPressed: () => Navigator.pop(context, true),
+                                    child: const Text('刪除', style: TextStyle(color: AppColors.error))),
+                                ],
+                              ),
+                            );
+                            if (ok == true) await CommunityService.deletePost(post.id);
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.only(left: 6),
+                            child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textHint),
+                          ),
+                        ),
                     ]),
                     const SizedBox(height: 10),
                     Text(post.title,
@@ -681,7 +844,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 color: primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('💬 討論', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
+              child: Text('討論', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
             ),
           ]),
           const SizedBox(height: 10),
@@ -741,7 +904,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(8)),
-                  child: Text('💬 討論', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
+                  child: Text('討論', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
                 ),
               ]),
               const SizedBox(height: 14),
@@ -757,8 +920,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 Text('留言區', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: primary)),
               ]),
               const SizedBox(height: 12),
-              _discussionReply('旅行達人', '🌟', '謝謝分享！這個問題我也很好奇，期待更多人的回覆。', '1小時前', 5, primary),
-              _discussionReply('嘉義在地人', '🏡', '我是本地人，可以幫你解答，嘉義最值得去的就是文化路和北門車站周邊！', '3小時前', 12, primary),
+              _discussionReply('旅行達人', '達', '謝謝分享！這個問題我也很好奇，期待更多人的回覆。', '1小時前', 5, primary),
+              _discussionReply('嘉義在地人', '嘉', '我是本地人，可以幫你解答，嘉義最值得去的就是文化路和北門車站周邊！', '3小時前', 12, primary),
             ],
           ),
         ),
@@ -775,7 +938,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(width: 32, height: 32,
             decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), shape: BoxShape.circle),
-            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 15)))),
+            child: Center(child: Text(emoji, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)))),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
@@ -883,11 +1046,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
     );
   }
 
-  void _showAuthorProfile(BuildContext context, CommunityPost post, Color primary) {
+  // ── Firebase 貼文作者資訊 sheet ────────────────────────────
+  void _showFollowProfile(BuildContext context, String authorId, String authorName, String authorPhoto, Color primary) {
     showModalBottomSheet(
       context: context, backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(builder: (ctx, setLocal) {
-        final followed = _followedUsers.containsKey(post.authorId);
+        final followed = _followedUsers.containsKey(authorId);
         return Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
@@ -897,32 +1061,42 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
             CircleAvatar(radius: 38,
-              backgroundImage: post.authorPhoto.isNotEmpty ? NetworkImage(post.authorPhoto) : null,
+              backgroundImage: authorPhoto.isNotEmpty ? NetworkImage(authorPhoto) : null,
               backgroundColor: primary.withValues(alpha: 0.1),
-              child: post.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 36, color: primary) : null),
+              child: authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 36, color: primary) : null),
             const SizedBox(height: 12),
-            Text(post.authorName,
+            Text(authorName,
               style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: AppColors.textPrimary)),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            // Stats row (post/follower/following counts from Firestore)
+            FutureBuilder<Map<String, int>>(
+              future: _loadAuthorStats(authorId),
+              builder: (ctx, snap) {
+                final stats = snap.data ?? {'posts': 0, 'followers': 0, 'following': 0};
+                return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  _statCol('${stats['posts']}', '貼文', primary),
+                  Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                  _statCol('${stats['followers']}', '追蹤者', primary),
+                  Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                  _statCol('${stats['following']}', '追蹤中', primary),
+                ]);
+              },
+            ),
+            const SizedBox(height: 16),
             SizedBox(width: double.infinity, child: ElevatedButton.icon(
               onPressed: () async {
-                final now = await CommunityService.toggleFollow(post.authorId, post.authorName);
+                final now = await CommunityService.toggleFollow(authorId, authorName);
                 setState(() {
-                  if (now) {
-                    _followedUsers[post.authorId] = post.authorName;
-                  } else {
-                    _followedUsers.remove(post.authorId);
-                  }
+                  if (now) _followedUsers[authorId] = authorName;
+                  else _followedUsers.remove(authorId);
                 });
                 setLocal(() {});
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(now ? '已追蹤 ${post.authorName}' : '已取消追蹤'),
-                    behavior: SnackBarBehavior.floating,
-                    backgroundColor: now ? primary : AppColors.textSecondary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ));
-                }
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(now ? '已追蹤 $authorName' : '已取消追蹤'),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: now ? primary : AppColors.textSecondary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ));
               },
               icon: Icon(followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
               label: Text(followed ? '取消追蹤' : '追蹤'),
@@ -936,6 +1110,32 @@ class _CommunityScreenState extends State<CommunityScreen> {
       }),
     );
   }
+
+  void _showAuthorProfile(BuildContext context, CommunityPost post, Color primary) =>
+      _showFollowProfile(context, post.authorId, post.authorName, post.authorPhoto, primary);
+
+  Future<Map<String, int>> _loadAuthorStats(String uid) async {
+    try {
+      final postsSnap = await FirebaseFirestore.instance
+          .collection('community_posts').where('authorId', isEqualTo: uid).get();
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final d = userDoc.data() ?? {};
+      return {
+        'posts':     postsSnap.docs.length,
+        'followers': (d['followersCount'] as int?) ?? 0,
+        'following': (d['followingCount'] as int?) ?? 0,
+      };
+    } catch (_) { return {'posts': 0, 'followers': 0, 'following': 0}; }
+  }
+
+  Widget _statCol(String val, String label, Color color) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(val, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: color)),
+      const SizedBox(height: 2),
+      Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+    ],
+  );
 
   Widget _profileStat(String label, String value) => Column(children: [
     Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
@@ -1066,7 +1266,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                           decoration: BoxDecoration(
                             color: AppColors.accentTerra.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6)),
-                          child: Text('💰 NT\$${trip.budget}/人',
+                          child: Text('NT\$${trip.budget}/人',
                             style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: AppColors.accentTerra)),
                         ),
                       ]),
@@ -1577,9 +1777,9 @@ class _PostDetailPageState extends State<PostDetailPage> {
   final FocusNode _commentFocus = FocusNode();
   String? _replyTarget; // name of comment being replied to
   final List<_Comment> _comments = [
-    _Comment(name:'阿山哥', emoji:'🧑', text:'超棒的行程！我去年也去了一樣的路線，北門車站的日落真的美極了。', time:'2小時前', likes:14),
-    _Comment(name:'旅行小咪', emoji:'👩', text:'這個阿里山的section想多了解，請問幾點去最好呢？早上日出嗎？', time:'5小時前', likes:8),
-    _Comment(name:'嘉義人', emoji:'😊', text:'本地人推薦！文化路夜市要早去才有位置，週末超多人！', time:'昨天', likes:23),
+    _Comment(name:'阿山哥', text:'超棒的行程！我去年也去了一樣的路線，北門車站的日落真的美極了。', time:'2小時前', likes:14),
+    _Comment(name:'旅行小咪', text:'這個阿里山的section想多了解，請問幾點去最好呢？早上日出嗎？', time:'5小時前', likes:8),
+    _Comment(name:'嘉義人', text:'本地人推薦！文化路夜市要早去才有位置，週末超多人！', time:'昨天', likes:23),
   ];
 
   @override
@@ -1738,7 +1938,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               color: AppColors.textSecondary)),
                         const Spacer(),
                         ElevatedButton.icon(
-                          onPressed: () {},
+                          onPressed: () {
+                            // 取得 TripPlan 的景點名稱列表，套用到行程
+                            final spotNames = widget.trip.spotIds.map((id) {
+                              final spot = DummyData.spots.firstWhere(
+                                (s) => s.id == id, orElse: () => DummyData.spots.first);
+                              return spot.name;
+                            }).toList();
+                            _showApplyTripSheet(context, spotNames);
+                          },
                           icon: const Icon(Icons.add_rounded, size: 15),
                           label: const Text('套用行程'),
                           style: ElevatedButton.styleFrom(
@@ -1901,8 +2109,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     backgroundColor: mist,
                     backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
                     child: user?.photoURL == null
-                        ? Text(user?.displayName?.isNotEmpty == true ? user!.displayName![0] : '😊',
-                            style: const TextStyle(fontSize: 14))
+                        ? Text(user?.displayName?.isNotEmpty == true ? user!.displayName![0] : '?',
+                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700))
                         : null,
                   );
                 }),
@@ -1934,7 +2142,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                     final name = user?.displayName ?? '我';
                     setState(() {
                       _comments.insert(0, _Comment(
-                        name: name, emoji: '😊',
+                        name: name,
                         text: text, time: '剛剛', likes: 0,
                       ));
                       _commentCtrl.clear();
@@ -1975,7 +2183,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
   Widget _placeholderCover() => Container(
     height: 260,
     color: AppColors.surfaceMoss,
-    child: const Center(child: Text('🗺️', style: TextStyle(fontSize: 60))),
+    child: const Center(child: Icon(Icons.map_rounded, size: 60, color: AppColors.textHint)),
   );
 
   Widget _metaChip(IconData icon, String text, Color bg, Color fg) {
@@ -1997,7 +2205,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
         padding: const EdgeInsets.only(bottom: 14),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(width: 34, height: 34, decoration: BoxDecoration(color: AppColors.surfaceMoss, shape: BoxShape.circle),
-            child: Center(child: Text(c.emoji, style: const TextStyle(fontSize: 16)))),
+            child: Center(child: Text(c.name.isNotEmpty ? c.name[0] : '?',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textSecondary)))),
           const SizedBox(width: 10),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2064,10 +2273,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
 }
 
 class _Comment {
-  final String name, emoji, text, time;
+  final String name, text, time;
   int likes;
   bool liked;
-  _Comment({required this.name, required this.emoji, required this.text,
+  _Comment({required this.name, required this.text,
             required this.time, required this.likes, this.liked = false});
 }
 
@@ -2195,6 +2404,30 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
             icon: const Icon(Icons.share_outlined, color: AppColors.textPrimary, size: 22),
             onPressed: () => Share.share('探索諸羅 · ${post.title}\n\n${post.content}'),
           ),
+          // 刪除（作者才看到）
+          if (FirebaseAuth.instance.currentUser?.uid == post.authorId)
+            IconButton(
+              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 22),
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: const Text('刪除貼文', style: TextStyle(fontWeight: FontWeight.w800)),
+                    content: const Text('確定要刪除這篇貼文嗎？此操作無法復原。'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                      TextButton(onPressed: () => Navigator.pop(context, true),
+                        child: const Text('刪除', style: TextStyle(color: AppColors.error))),
+                    ],
+                  ),
+                );
+                if (ok == true && mounted) {
+                  await CommunityService.deletePost(post.id);
+                  Navigator.pop(context);
+                }
+              },
+            ),
         ],
       ),
       extendBodyBehindAppBar: true,
@@ -2226,12 +2459,19 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              // Author
+              // Author (avatar tappable → profile sheet)
               Row(children: [
-                CircleAvatar(radius: 16,
-                  backgroundImage: post.authorPhoto.isNotEmpty ? NetworkImage(post.authorPhoto) : null,
-                  backgroundColor: mist,
-                  child: post.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null),
+                GestureDetector(
+                  onTap: () => showModalBottomSheet(
+                    context: context, backgroundColor: Colors.transparent,
+                    builder: (_) => _UserProfileSheet(
+                      authorId: post.authorId, authorName: post.authorName,
+                      authorPhoto: post.authorPhoto, primary: primary)),
+                  child: CircleAvatar(radius: 16,
+                    backgroundImage: post.authorPhoto.isNotEmpty ? NetworkImage(post.authorPhoto) : null,
+                    backgroundColor: mist,
+                    child: post.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null),
+                ),
                 const SizedBox(width: 8),
                 Text(post.authorName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                 const SizedBox(width: 6),
@@ -2447,10 +2687,17 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
           return Padding(
             padding: const EdgeInsets.only(bottom: 14),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              CircleAvatar(radius: 16,
-                backgroundImage: c.authorPhoto.isNotEmpty ? NetworkImage(c.authorPhoto) : null,
-                backgroundColor: primary.withValues(alpha: 0.08),
-                child: c.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null),
+              GestureDetector(
+                onTap: () => showModalBottomSheet(
+                  context: context, backgroundColor: Colors.transparent,
+                  builder: (_) => _UserProfileSheet(
+                    authorId: c.authorId, authorName: c.authorName,
+                    authorPhoto: c.authorPhoto, primary: primary)),
+                child: CircleAvatar(radius: 16,
+                  backgroundImage: c.authorPhoto.isNotEmpty ? NetworkImage(c.authorPhoto) : null,
+                  backgroundColor: primary.withValues(alpha: 0.08),
+                  child: c.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null),
+              ),
               const SizedBox(width: 10),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
@@ -2501,7 +2748,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                     ]),
                   ),
                   const SizedBox(width: 14),
-                  // ── 回覆 (now triggers reply!) ─────────────
+                  // ── 回覆 ─────────────────────────────────
                   GestureDetector(
                     onTap: () => _startFbReply(c.authorName),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -2509,6 +2756,31 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                       const SizedBox(width: 2),
                       Text('回覆', style: TextStyle(fontSize: 11, color: primary, fontWeight: FontWeight.w600)),
                     ]),
+                  ),
+                  const Spacer(),
+                  // ── 舉報 ─────────────────────────────────
+                  GestureDetector(
+                    onTap: () async {
+                      final reason = await showDialog<String>(
+                        context: context,
+                        builder: (_) => _ReportDialog(),
+                      );
+                      if (reason != null && context.mounted) {
+                        await FirebaseFirestore.instance
+                            .collection('reports').add({
+                          'type': 'comment',
+                          'postId': postId,
+                          'commentId': c.id,
+                          'commentAuthor': c.authorName,
+                          'reportedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
+                          'reason': reason,
+                          'createdAt': FieldValue.serverTimestamp(),
+                        });
+                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已送出舉報，感謝你的回報'), behavior: SnackBarBehavior.floating));
+                      }
+                    },
+                    child: const Icon(Icons.flag_outlined, size: 13, color: AppColors.textHint),
                   ),
                 ]),
               ])),
@@ -2528,6 +2800,118 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
     return '${dt.month}/${dt.day}';
   }
 
+// ── 套用行程（top-level，可從任何貼文頁呼叫）──────────────────
+void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('請先登入才能套用行程'), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    if (spotNames.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('此貼文沒有景點資訊'), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    final primary = Theme.of(context).colorScheme.primary;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.65),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Center(child: Container(width: 36, height: 4,
+            margin: const EdgeInsets.fromLTRB(0, 12, 0, 12),
+            decoration: BoxDecoration(color: AppColors.divider,
+                borderRadius: BorderRadius.circular(2)))),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Row(children: [
+              Icon(Icons.add_location_alt_rounded, color: primary, size: 20),
+              const SizedBox(width: 8),
+              Text('套用到哪個行程？',
+                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
+            ]),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text('將加入 ${spotNames.length} 個景點：${spotNames.take(3).join("、")}${spotNames.length > 3 ? "…" : ""}',
+                style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+          ),
+          const Divider(height: 20),
+          Flexible(
+            child: StreamBuilder<List<FirebaseTrip>>(
+              stream: TripService.tripsStream(),
+              builder: (_, snap) {
+                final trips = snap.data ?? [];
+                if (trips.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.map_outlined, size: 40, color: AppColors.textHint),
+                      const SizedBox(height: 12),
+                      const Text('還沒有行程，請先建立行程',
+                        style: TextStyle(color: AppColors.textHint)),
+                    ]),
+                  );
+                }
+                return ListView.separated(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                  itemCount: trips.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (_, i) {
+                    final trip = trips[i];
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      tileColor: primary.withValues(alpha: 0.05),
+                      leading: Icon(_tripIconFromKey(trip.icon), size: 22, color: primary),
+                      title: Text(trip.title,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: Text(trip.dateDisplay,
+                          style: const TextStyle(fontSize: 11)),
+                      trailing: Icon(Icons.chevron_right_rounded, color: primary),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        try {
+                          await TripService.applySpots(trip.id, spotNames);
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('已將 ${spotNames.length} 個景點加入「${trip.title}」'),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: primary,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('套用失敗：$e'),
+                              behavior: SnackBarBehavior.floating,
+                            ));
+                          }
+                        }
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
   void _showFullImage(BuildContext context, String url) {
     Navigator.push(context, PageRouteBuilder(
       opaque: false,
@@ -2545,6 +2929,154 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
         ),
       ),
     ));
+  }
+}
+
+// ── 使用者資訊 sheet（可從任何頁面呼叫，自己管 follow 狀態）──────
+class _UserProfileSheet extends StatefulWidget {
+  final String authorId, authorName, authorPhoto;
+  final Color primary;
+  const _UserProfileSheet({
+    required this.authorId, required this.authorName,
+    required this.authorPhoto, required this.primary});
+  @override
+  State<_UserProfileSheet> createState() => _UserProfileSheetState();
+}
+class _UserProfileSheetState extends State<_UserProfileSheet> {
+  bool _followed = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _loading = false); return; }
+    final doc = await FirebaseFirestore.instance
+        .collection('users').doc(uid)
+        .collection('following').doc(widget.authorId).get();
+    if (mounted) setState(() { _followed = doc.exists; _loading = false; });
+  }
+
+  Future<Map<String, int>> _fetchStats() async {
+    try {
+      final postsSnap = await FirebaseFirestore.instance
+          .collection('community_posts').where('authorId', isEqualTo: widget.authorId).get();
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(widget.authorId).get();
+      final d = userDoc.data() ?? {};
+      return {
+        'posts':     postsSnap.docs.length,
+        'followers': (d['followersCount'] as int?) ?? 0,
+        'following': (d['followingCount'] as int?) ?? 0,
+      };
+    } catch (_) { return {'posts': 0, 'followers': 0, 'following': 0}; }
+  }
+
+  Widget _statItem(String val, String label, Color color) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(val, style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: color)),
+      const SizedBox(height: 2),
+      Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+    ],
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.primary;
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 20),
+          decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
+        CircleAvatar(radius: 40,
+          backgroundImage: widget.authorPhoto.isNotEmpty ? NetworkImage(widget.authorPhoto) : null,
+          backgroundColor: p.withValues(alpha: 0.1),
+          child: widget.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 38, color: p) : null),
+        const SizedBox(height: 12),
+        Text(widget.authorName,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: AppColors.textPrimary)),
+        const SizedBox(height: 12),
+        FutureBuilder<Map<String, int>>(
+          future: _fetchStats(),
+          builder: (ctx, snap) {
+            final stats = snap.data ?? {'posts': 0, 'followers': 0, 'following': 0};
+            return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              _statItem('${stats['posts']}', '貼文', p),
+              Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+              _statItem('${stats['followers']}', '追蹤者', p),
+              Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+              _statItem('${stats['following']}', '追蹤中', p),
+            ]);
+          },
+        ),
+        const SizedBox(height: 16),
+        if (_loading)
+          const CircularProgressIndicator()
+        else
+          SizedBox(width: double.infinity, child: ElevatedButton.icon(
+            onPressed: () async {
+              final now = await CommunityService.toggleFollow(widget.authorId, widget.authorName);
+              if (mounted) setState(() => _followed = now);
+              if (mounted && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(now ? '已追蹤 ${widget.authorName}' : '已取消追蹤'),
+                  behavior: SnackBarBehavior.floating,
+                  backgroundColor: now ? p : AppColors.textSecondary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+              }
+            },
+            icon: Icon(_followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
+            label: Text(_followed ? '取消追蹤' : '追蹤'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _followed ? AppColors.textHint : p,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+          )),
+      ]),
+    );
+  }
+}
+
+// ── 舉報對話框 ────────────────────────────────────────────────
+class _ReportDialog extends StatelessWidget {
+  const _ReportDialog();
+
+  static const _reasons = ['垃圾訊息', '騷擾或霸凌', '不實資訊', '色情或露骨內容', '仇恨言論', '其他'];
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [
+        Icon(Icons.flag_rounded, size: 18, color: AppColors.error),
+        const SizedBox(width: 8),
+        const Text('舉報留言', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('請選擇舉報原因：', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+          const SizedBox(height: 10),
+          ..._reasons.map((r) => ListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: Text(r, style: const TextStyle(fontSize: 14)),
+            onTap: () => Navigator.pop(context, r),
+          )),
+        ],
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      ],
+    );
   }
 }
 
@@ -2669,7 +3201,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('🎉 貼文發布成功！'), behavior: SnackBarBehavior.floating));
+          const SnackBar(content: Text('貼文發布成功！'), behavior: SnackBarBehavior.floating));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -2700,11 +3232,37 @@ class _CreatePostPageState extends State<CreatePostPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // ── 封面圖片 ──────────────────────────────────────────
+          GestureDetector(
+            onTap: _pickImages,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: _images.isNotEmpty
+                  ? Stack(children: [
+                      Image.file(_images[0], height: 180, width: double.infinity, fit: BoxFit.cover),
+                      Positioned(top: 8, right: 8, child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(8)),
+                        child: Text('更換封面 (${_images.length}張)', style: const TextStyle(color: Colors.white, fontSize: 11)),
+                      )),
+                    ])
+                  : Container(
+                      height: 140,
+                      color: AppColors.surfaceMoss,
+                      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.add_photo_alternate_rounded, size: 38, color: primary.withValues(alpha: 0.6)),
+                        const SizedBox(height: 8),
+                        Text('點擊加入封面圖片（選填）', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                      ]),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 12),
           // 貼文類型
           Row(children: [
-            _typeChip('🧳 行程分享', 'trip', primary),
+            _typeChip('行程分享', 'trip', primary, Icons.luggage_rounded),
             const SizedBox(width: 10),
-            _typeChip('💬 討論區', 'discussion', primary),
+            _typeChip('討論區', 'discussion', primary, Icons.forum_rounded),
           ]),
           const SizedBox(height: 12),
           // 選擇行程（僅行程分享類型）
@@ -2789,7 +3347,8 @@ class _CreatePostPageState extends State<CreatePostPage> {
           // 景點 tag
           if (_spots.isNotEmpty) ...[
             Wrap(spacing: 8, children: _spots.map((s) => Chip(
-              label: Text('📍 $s'),
+              label: Text(s),
+              avatar: const Icon(Icons.place_rounded, size: 14),
               onDeleted: () => setState(() => _spots.remove(s)),
               backgroundColor: primary.withValues(alpha: 0.08),
               labelStyle: TextStyle(color: primary, fontWeight: FontWeight.w600),
@@ -2811,47 +3370,47 @@ class _CreatePostPageState extends State<CreatePostPage> {
             Icon(Icons.place_outlined, color: primary),
           ]),
           const Divider(),
-          // 圖片
-          if (_images.isNotEmpty) ...[
+          // 顯示額外照片（第2張起）
+          if (_images.length > 1) ...[
             SizedBox(
-              height: 100,
+              height: 80,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
-                itemCount: _images.length,
+                itemCount: _images.length - 1,
                 separatorBuilder: (_, __) => const SizedBox(width: 8),
                 itemBuilder: (_, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.file(_images[i], width: 100, height: 100, fit: BoxFit.cover)),
+                  child: Image.file(_images[i + 1], width: 80, height: 80, fit: BoxFit.cover)),
               ),
             ),
             const SizedBox(height: 8),
           ],
-          OutlinedButton.icon(
-            onPressed: _pickImages,
-            icon: const Icon(Icons.add_photo_alternate_rounded),
-            label: Text(_images.isEmpty ? '加入照片' : '更換照片（${_images.length}/5）'),
-            style: OutlinedButton.styleFrom(foregroundColor: primary, side: BorderSide(color: primary)),
-          ),
         ],
       ),
     );
   }
 
-  Widget _typeChip(String label, String value, Color primary) {
+  Widget _typeChip(String label, String value, Color primary, [IconData? icon]) {
     final sel = _type == value;
     return GestureDetector(
       onTap: () => setState(() => _type = value),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: sel ? primary : Colors.transparent,
           border: Border.all(color: sel ? primary : AppColors.divider),
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(label, style: TextStyle(
-          fontSize: 13, fontWeight: FontWeight.w600,
-          color: sel ? Colors.white : AppColors.textSecondary)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: sel ? Colors.white : AppColors.textSecondary),
+            const SizedBox(width: 5),
+          ],
+          Text(label, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w600,
+            color: sel ? Colors.white : AppColors.textSecondary)),
+        ]),
       ),
     );
   }

@@ -35,7 +35,7 @@ class FirebaseTrip {
     required this.days,
     required this.isCompleted,
     this.coverUrl,
-    this.icon = '🗺️',
+    this.icon = 'map',
     required this.createdAt,
     this.spotTimes  = const {},
     this.spotBudgets= const {},
@@ -60,7 +60,7 @@ class FirebaseTrip {
       days:        (d['days']       as num?)?.toInt() ?? 1,
       isCompleted: d['isCompleted'] as bool? ?? false,
       coverUrl:    d['coverUrl']    as String?,
-      icon:        d['icon']        as String? ?? '🗺️',
+      icon:        d['icon']        as String? ?? 'map',
       createdAt:   (d['createdAt']  as Timestamp?)?.toDate() ?? DateTime.now(),
       spotTimes:   _toMap<String>(d['spotTimes'],   (v) => v.toString()),
       spotBudgets: _toMap<int>   (d['spotBudgets'], (v) => (v as num).toInt()),
@@ -114,7 +114,7 @@ class TripService {
     DateTime? endDate,
     List<String> spots = const [],
     String? coverUrl,
-    String icon = '🗺️',
+    String icon = 'map',
   }) async {
     final uid = _uid;
     if (uid == null) throw Exception('未登入');
@@ -139,6 +139,14 @@ class TripService {
   static Future<void> addSpotToTrip(String tripId, String spotName) async {
     await _db.collection('trips').doc(tripId).update({
       'spots': FieldValue.arrayUnion([spotName]),
+    });
+  }
+
+  /// 批次套用景點清單到行程（來自社群貼文的「套用行程」功能）
+  static Future<void> applySpots(String tripId, List<String> spotNames) async {
+    if (spotNames.isEmpty) return;
+    await _db.collection('trips').doc(tripId).update({
+      'spots': FieldValue.arrayUnion(spotNames),
     });
   }
 
@@ -218,15 +226,23 @@ class TripService {
   }
 
   // ── Saved spots ───────────────────────────────────────────
-  /// Returns full saved-spot data (spotId, spotName, imageUrl, rating, savedAt)
+  /// Returns full saved-spot data (spotId, spotName, imageUrl, rating, savedAt, description, address, category)
   static Stream<List<Map<String, dynamic>>> savedSpotsDataStream() {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
+    // 不加 orderBy，client-side sort，避免需要 composite index
     return _db
         .collection('users').doc(uid).collection('saved_spots')
-        .orderBy('savedAt', descending: true)
         .snapshots()
-        .map((s) => s.docs.map((d) => {...d.data(), '__id': d.id}).toList());
+        .map((s) {
+          final list = s.docs.map((d) => {...d.data(), '__id': d.id}).toList();
+          list.sort((a, b) {
+            final ta = (a['savedAt'] as dynamic)?.toDate()?.millisecondsSinceEpoch ?? 0;
+            final tb = (b['savedAt'] as dynamic)?.toDate()?.millisecondsSinceEpoch ?? 0;
+            return tb.compareTo(ta);
+          });
+          return list;
+        });
   }
 
   static Stream<Set<String>> savedSpotIdsStream() {

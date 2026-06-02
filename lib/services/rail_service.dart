@@ -7,68 +7,62 @@ import 'package:flutter/foundation.dart';
 class RailService {
   static const String baseUrl = 'http://10.0.2.2:8080/api/transport';
 
+  // 統一處理 server 回傳 Map 或 List 兩種格式
+  static Map<String, dynamic> _toMap(dynamic decoded) =>
+      decoded is Map
+          ? Map<String, dynamic>.from(decoded as Map)
+          : {'data': decoded is List ? decoded : [], 'updateTime': ''};
+
   static Future<Map<String, dynamic>> queryTra({required String origin, required String dest, required String trainDate}) async {
     final res = await http.get(Uri.parse('$baseUrl/tra/od?origin=$origin&dest=$dest&date=$trainDate')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) {
-      final json = jsonDecode(utf8.decode(res.bodyBytes));
-      if (json['error'] != null) throw Exception('API限流');
-      return json;
-    }
+    if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
     throw Exception('無法取得台鐵資料');
   }
 
   static Future<Map<String, dynamic>> getTraLiveBoard(String stationId) async {
-    final res = await http.get(Uri.parse('$baseUrl/tra/liveboard/$stationId')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) return jsonDecode(utf8.decode(res.bodyBytes));
-    throw Exception('無法取得台鐵即時看板資料');
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/tra/liveboard/$stationId')).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
+    } catch (_) {}
+    return {'data': <dynamic>[], 'updateTime': ''};
   }
 
   static Future<Map<String, dynamic>> getTraTrainStops(String trainNo, String date) async {
     final res = await http.get(Uri.parse('$baseUrl/tra/train/$trainNo?date=$date')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) {
-      final json = jsonDecode(utf8.decode(res.bodyBytes));
-      if (json['error'] != null) throw Exception('API限流');
-      return json;
-    }
+    if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
     throw Exception('無法取得停靠站');
   }
 
   static Future<Map<String, dynamic>> queryThsr({required String origin, required String dest, required String trainDate}) async {
     final res = await http.get(Uri.parse('$baseUrl/thsr/od?origin=$origin&dest=$dest&date=$trainDate')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) {
-      final json = jsonDecode(utf8.decode(res.bodyBytes));
-      if (json['error'] != null) throw Exception('API限流');
-      return json;
-    }
+    if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
     throw Exception('無法取得高鐵資料');
   }
 
   static Future<Map<String, dynamic>> getThsrTrainStops(String trainNo, String date) async {
     final res = await http.get(Uri.parse('$baseUrl/thsr/train/$trainNo?date=$date')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) {
-      final json = jsonDecode(utf8.decode(res.bodyBytes));
-      if (json['error'] != null) throw Exception('API限流');
-      return json;
-    }
+    if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
     throw Exception('無法取得停靠站');
   }
 
   static Future<Map<String, dynamic>> getYoubikeData() async {
-    final res = await http.get(Uri.parse('$baseUrl/youbike')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) return jsonDecode(utf8.decode(res.bodyBytes));
-    throw Exception('無法取得 YouBike 資料');
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/youbike')).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
+    } catch (_) {}
+    return {'data': <dynamic>[], 'updateTime': ''};
   }
 
   static Future<Map<String, dynamic>> getBusDynamic(String city, String routeName) async {
-    final res = await http.get(Uri.parse('$baseUrl/bus/$city/$routeName')).timeout(const Duration(seconds: 8));
-    if (res.statusCode == 200) return jsonDecode(utf8.decode(res.bodyBytes));
-    throw Exception('無法取得公車資料');
+    try {
+      final res = await http.get(Uri.parse('$baseUrl/bus/$city/$routeName')).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) return _toMap(jsonDecode(utf8.decode(res.bodyBytes)));
+    } catch (_) {}
+    return {'data': <dynamic>[], 'updateTime': ''};
   }
 
-  // 🌟 獲取天氣資訊
   static Future<List<Map<String, dynamic>>> getWeather(String cityType) async {
     try {
-      // 這裡會自動使用前面定義好的 baseUrl，解決 IP 不一致的問題
       final res = await http.get(Uri.parse('$baseUrl/weather/$cityType')).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final decoded = jsonDecode(utf8.decode(res.bodyBytes));
@@ -76,7 +70,7 @@ class RailService {
         return dataList.map((e) => Map<String, dynamic>.from(e)).toList();
       }
     } catch (e) {
-      print('天氣資料獲取失敗: $e');
+      if (kDebugMode) print('天氣資料獲取失敗: $e');
     }
     return [];
   }

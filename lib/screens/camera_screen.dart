@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
@@ -45,14 +46,30 @@ class _CameraScreenState extends State<CameraScreen>
   final List<String> _capturedPhotos = []; // real photo paths
   final GlobalKey _repaintKey = GlobalKey();
 
+  // ── ⑩ AR 掃描感 ─────────────────────────────────────────────
+  bool _showScanOverlay = false;
+  bool _showDetected    = false;
+  String _detectedLocation = '嘉義景點';
+
+  static const _kLocations = ['阿里山國家風景區','北門車站','嘉義市立美術館','文化路夜市','故宮南院','檜意森活村','嘉義公園','蘭潭水庫'];
+
+  Future<void> _runScanEffect() async {
+    final rng = DateTime.now().millisecond % _kLocations.length;
+    setState(() { _showScanOverlay = true; _showDetected = false; _detectedLocation = _kLocations[rng]; });
+    await Future.delayed(const Duration(milliseconds: 1400));
+    if (mounted) setState(() => _showDetected = true);
+    await Future.delayed(const Duration(milliseconds: 1800));
+    if (mounted) setState(() { _showScanOverlay = false; _showDetected = false; });
+  }
+
   // ── Frames ─────────────────────────────────────────────────
   final List<_Frame> _frames = [
-    _Frame('諸羅風華',  '🏯', const Color(0xFF5B8A5F),       AppColors.accentStraw),
-    _Frame('阿里山晨霧','🌲', const Color(0xFF2D6A4F),       const Color(0xFF95D5B2)),
-    _Frame('火雞肉飯',  '🍜', const Color(0xFFE76F51),       const Color(0xFFE9C46A)),
-    _Frame('嘉義夜市',  '🌙', const Color(0xFF1A1A2E),       const Color(0xFFE9C46A)),
-    _Frame('極簡白',    '⬜', Colors.white,                   const Color(0xFFDDDDDD)),
-    _Frame('復古底片',  '📷', const Color(0xFF5C3D2E),       const Color(0xFFE8C99A)),
+    _Frame('諸羅風華',  '🏯', const Color(0xFF5B8A5F), AppColors.accentStraw),
+    _Frame('阿里山晨霧','🌲', const Color(0xFF2D6A4F), const Color(0xFF95D5B2)),
+    _Frame('火雞肉飯',  '🍜', const Color(0xFFE76F51), const Color(0xFFE9C46A)),
+    _Frame('嘉義夜市',  '🌙', const Color(0xFF1A1A2E), const Color(0xFFE9C46A)),
+    _Frame('極簡白',    '⬜', Colors.white,             const Color(0xFFDDDDDD)),
+    _Frame('復古底片',  '📷', const Color(0xFF5C3D2E), const Color(0xFFE8C99A)),
   ];
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -142,6 +159,8 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final xfile = await _controller!.takePicture();
       setState(() => _capturedPhotos.insert(0, xfile.path));
+      HapticFeedback.mediumImpact(); // ⑤ 拍照觸覺
+      _runScanEffect(); // ⑩ AR 掃描感
       if (mounted) _showPhotoResult(context, xfile.path);
     } catch (_) {
     } finally {
@@ -201,7 +220,6 @@ class _CameraScreenState extends State<CameraScreen>
               primaryColor: frame.primaryColor,
               accentColor: frame.accentColor,
               name: frame.name,
-              emoji: frame.emoji,
               frameIndex: _selectedFrame,
             ),
           ),
@@ -209,6 +227,9 @@ class _CameraScreenState extends State<CameraScreen>
 
         // Error overlay
         if (_initError != null) Positioned.fill(child: _buildErrorOverlay()),
+
+        // ⑩ AR 掃描感 overlay
+        if (_showScanOverlay) _buildScanOverlay(),
 
         // ── Top controls ──────────────────────────────────────
         Positioned(
@@ -474,6 +495,54 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // ⑩ AR 掃描感 overlay
+  Widget _buildScanOverlay() {
+    return Positioned.fill(
+      child: AnimatedOpacity(
+        opacity: _showScanOverlay ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 300),
+        child: Stack(children: [
+          // Scan line animation
+          if (!_showDetected)
+            _ScanLineAnimation(color: const Color(0xFF00E5A0)),
+          // Corner brackets
+          Positioned.fill(child: CustomPaint(painter: _ScanBracketPainter(color: const Color(0xFF00E5A0)))),
+          // Detected badge
+          if (_showDetected)
+            Positioned(
+              bottom: 120, left: 0, right: 0,
+              child: Center(
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.8, end: 1.0),
+                  duration: const Duration(milliseconds: 300),
+                  builder: (_, t, child) => Transform.scale(scale: t, child: child),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: const Color(0xFF00E5A0), width: 1.5),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.location_on_rounded, size: 14, color: Color(0xFF00E5A0)),
+                      const SizedBox(width: 8),
+                      Text(_detectedLocation, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)),
+                      const SizedBox(width: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: const Color(0xFF00E5A0).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                        child: const Text('已識別', style: TextStyle(fontSize: 9, color: Color(0xFF00E5A0), fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
   Widget _buildPlaceholder() {
     return Container(
       color: const Color(0xFF111111),
@@ -648,8 +717,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 primaryColor: frame.primaryColor,
                                 accentColor: frame.accentColor,
                                 name: frame.name,
-                                emoji: frame.emoji,
-                                frameIndex: _selectedFrame,
+                                                  frameIndex: _selectedFrame,
                               ),
                             ),
                           ),
@@ -698,9 +766,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               child: Center(
-                                child: Text(frame.emoji,
-                                    style:
-                                        const TextStyle(fontSize: 60)),
+                                child: Text(frame.emoji, style: const TextStyle(fontSize: 60)),
                               ),
                             ),
                           ),
@@ -714,8 +780,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 primaryColor: frame.primaryColor,
                                 accentColor: frame.accentColor,
                                 name: frame.name,
-                                emoji: frame.emoji,
-                                frameIndex: _selectedFrame,
+                                                  frameIndex: _selectedFrame,
                               ),
                             ),
                           ),
@@ -739,9 +804,7 @@ class _CameraScreenState extends State<CameraScreen>
                                   bottom: Radius.circular(16)),
                             ),
                             child: Row(children: [
-                              Text(frame.emoji,
-                                  style:
-                                      const TextStyle(fontSize: 18)),
+                              Text(frame.emoji, style: const TextStyle(fontSize: 18)),
                               const SizedBox(width: 8),
                               Column(
                                 crossAxisAlignment:
@@ -844,7 +907,7 @@ class _CameraScreenState extends State<CameraScreen>
           name: '探索諸羅_${DateTime.now().millisecondsSinceEpoch}');
       if (mounted) {
         Navigator.pop(ctx);
-        _showSnack('✅ 已儲存到相簿！');
+        _showSnack('已儲存到相簿！');
       }
     } catch (e) {
       _showSnack('儲存失敗，請確認相簿權限');
@@ -884,6 +947,65 @@ class _CameraScreenState extends State<CameraScreen>
   }
 }
 
+// ── ⑩ AR 掃描感 Helpers ──────────────────────────────────────
+class _ScanLineAnimation extends StatefulWidget {
+  final Color color;
+  const _ScanLineAnimation({required this.color});
+  @override State<_ScanLineAnimation> createState() => _ScanLineAnimationState();
+}
+
+class _ScanLineAnimationState extends State<_ScanLineAnimation> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+  @override void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat(reverse: true);
+    _anim = Tween<double>(begin: 0.05, end: 0.95).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+  @override void dispose() { _ctrl.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (_, box) => AnimatedBuilder(
+      animation: _anim,
+      builder: (_, __) => Stack(children: [
+        Positioned(
+          top: box.maxHeight * _anim.value - 1,
+          left: 0, right: 0,
+          child: Container(
+            height: 2,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [Colors.transparent, widget.color.withValues(alpha: 0.8), Colors.transparent]),
+            ),
+          ),
+        ),
+      ]),
+    ));
+  }
+}
+
+class _ScanBracketPainter extends CustomPainter {
+  final Color color;
+  const _ScanBracketPainter({required this.color});
+  @override void paint(Canvas canvas, Size s) {
+    final p = Paint()..color = color..strokeWidth = 3..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+    const len = 24.0, inset = 40.0;
+    // Corners
+    for (final pts in [
+      // TL
+      [Offset(inset, inset + len), Offset(inset, inset), Offset(inset + len, inset)],
+      // TR
+      [Offset(s.width - inset - len, inset), Offset(s.width - inset, inset), Offset(s.width - inset, inset + len)],
+      // BL
+      [Offset(inset, s.height - inset - len), Offset(inset, s.height - inset), Offset(inset + len, s.height - inset)],
+      // BR
+      [Offset(s.width - inset - len, s.height - inset), Offset(s.width - inset, s.height - inset), Offset(s.width - inset, s.height - inset - len)],
+    ]) {
+      final path = Path()..moveTo(pts[0].dx, pts[0].dy)..lineTo(pts[1].dx, pts[1].dy)..lineTo(pts[2].dx, pts[2].dy);
+      canvas.drawPath(path, p);
+    }
+  }
+  @override bool shouldRepaint(_ScanBracketPainter old) => old.color != color;
+}
+
 // ── Models ─────────────────────────────────────────────────
 class _Frame {
   final String name, emoji;
@@ -894,14 +1016,13 @@ class _Frame {
 // ── Frame overlay painter (full-screen) ────────────────────
 class _FramePainter extends CustomPainter {
   final Color primaryColor, accentColor;
-  final String name, emoji;
+  final String name;
   final int frameIndex;
 
   const _FramePainter({
     required this.primaryColor,
     required this.accentColor,
     required this.name,
-    required this.emoji,
     required this.frameIndex,
   });
 

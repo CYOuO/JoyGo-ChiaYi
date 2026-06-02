@@ -8,10 +8,16 @@ import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
 import '../widgets/common_widgets.dart' show TapFeedback, SectionHeader;
 import '../services/community_service.dart';
+import 'saved_posts_page.dart';
+import 'travel_companions_page.dart';
+import 'package:share_plus/share_plus.dart';
 import 'stamp_screen.dart';
 import 'login_page.dart';
 import 'settings_screen.dart';
 import 'community_screen.dart' show FirebasePostDetailPage;
+import 'trip_screen.dart' show TripScreen;
+import 'info_pages.dart';
+import '../services/local_fav_service.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -213,11 +219,15 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false}) 
 Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}) {
   // 四種顏色各異：綠、暖橘、藍、粉紅
   final tiles = [
-    (Icons.photo_camera_outlined,  '打卡照片', const Color(0xFFE6F0E6), () {}),
-    (Icons.emoji_events_outlined,  '成就徽章', const Color(0xFFF5EFE6),
+    (Icons.photo_camera_outlined, '打卡照片', const Color(0xFFE6F0E6),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
-    (Icons.map_outlined,           '我的足跡', const Color(0xFFE8EFF8), () {}),
-    (Icons.bookmark_border_rounded,'收藏景點', const Color(0xFFF8EAF0), () {}),
+    (Icons.emoji_events_outlined, '成就徽章', const Color(0xFFF5EFE6),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
+    (Icons.map_outlined, '我的足跡', const Color(0xFFE8EFF8),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
+    (Icons.bookmark_border_rounded, '收藏景點', const Color(0xFFF8EAF0),
+      () => Navigator.push(context, MaterialPageRoute(
+        builder: (_) => const _SavedSpotsShortcut()))),
   ];
 
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -284,7 +294,10 @@ Widget _referralBanner(Color primary) {
                 color: AppColors.textPrimary.withValues(alpha: 0.65))),
           const SizedBox(height: 12),
           ElevatedButton(
-            onPressed: () {},
+            onPressed: () => Share.share(
+              '我正在使用「探索諸羅」探索嘉義！\n一起來玩嘉義吧！\n\n下載 App：探索諸羅',
+              subject: '探索諸羅 App 邀請',
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: primary,
               foregroundColor: Colors.white,
@@ -298,7 +311,7 @@ Widget _referralBanner(Color primary) {
         ],
       )),
       const SizedBox(width: 8),
-      const Text('🤝', style: TextStyle(fontSize: 52)),
+      const Text('🤝', style: TextStyle(fontSize: 46)),
     ]),
   );
 }
@@ -324,16 +337,13 @@ Widget _faqLinks(BuildContext context) {
 }
 
 Widget _textLink(BuildContext context, String label) => GestureDetector(
-  onTap: () => showDialog(
-    context: context,
-    builder: (_) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
-      content: Text('$label 頁面即將推出，敬請期待。',
-          style: const TextStyle(color: AppColors.textSecondary)),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('確定'))],
-    ),
-  ),
+  onTap: () {
+    Widget page;
+    if (label == '隱私政策') page = const PrivacyPolicyPage();
+    else if (label == '常見問題') page = const FAQPage();
+    else page = const AboutPage();
+    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+  },
   child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
 );
 
@@ -420,12 +430,8 @@ class _GuestProfileView extends StatelessWidget {
                         blurRadius: 12, offset: const Offset(0, 4))],
                   ),
                   child: Column(children: [
-                    _menuItem(context, icon: Icons.favorite_border_rounded,
+                    _menuItem(context, icon: Icons.bookmark_outline_rounded,
                       iconColor: const Color(0xFFE91E63), title: '我的收藏',
-                      onTap: () => _requireLogin(context)),
-                    _menuDivider(),
-                    _menuItem(context, icon: Icons.history_rounded,
-                      iconColor: const Color(0xFF9C27B0), title: '瀏覽紀錄',
                       onTap: () => _requireLogin(context)),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.local_offer_outlined,
@@ -480,6 +486,44 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   void initState() {
     super.initState();
     _loadCounts();
+  }
+
+  Future<void> _showEditNameDialog(BuildContext context, Color primary, String currentName) async {
+    final ctrl = TextEditingController(text: currentName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('修改名稱', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(hintText: '輸入新的暱稱'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('儲存'),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty && newName != currentName) {
+      try {
+        await FirebaseAuth.instance.currentUser?.updateDisplayName(newName);
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          await FirebaseFirestore.instance.collection('users').doc(uid).update({'nickname': newName});
+        }
+        if (mounted) setState(() {});
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('名稱已更新'), behavior: SnackBarBehavior.floating));
+      } catch (e) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新失敗：$e'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _pickAndUploadPhoto(BuildContext context) async {
@@ -603,9 +647,16 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                     ]),
                   ),
                   const SizedBox(height: 10),
-                  Text(name,
-                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary)),
+                  GestureDetector(
+                    onTap: () => _showEditNameDialog(context, primary, name),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(name,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary)),
+                      const SizedBox(width: 6),
+                      Icon(Icons.edit_rounded, size: 15, color: primary.withValues(alpha: 0.6)),
+                    ]),
+                  ),
                   const SizedBox(height: 20),
                   // Stats row
                   Row(children: [
@@ -657,14 +708,14 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SavedPostsPage()))),
                     _menuDivider(),
-                    _menuItem(context, icon: Icons.history_rounded,
-                      iconColor: const Color(0xFF9C27B0), title: '瀏覽紀錄', onTap: () {}),
-                    _menuDivider(),
                     _menuItem(context, icon: Icons.local_offer_outlined,
-                      iconColor: const Color(0xFFFF9800), title: '優惠券', onTap: () {}),
+                      iconColor: const Color(0xFFFF9800), title: '優惠券',
+                      onTap: () => _showComingSoon(context, '優惠券')),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.people_outline_rounded,
-                      iconColor: const Color(0xFF2196F3), title: '旅伴管理', onTap: () {}),
+                      iconColor: const Color(0xFF2196F3), title: '旅伴管理',
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const TravelCompanionsPage()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.emoji_events_outlined,
                       iconColor: const Color(0xFFF57F17), title: '集章成就',
@@ -746,7 +797,7 @@ class SavedPostsPage extends StatelessWidget {
       ),
       body: uid == null
         ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Text('🔒', style: TextStyle(fontSize: 48)),
+            const Icon(Icons.lock_rounded, size: 48, color: AppColors.textHint),
             const SizedBox(height: 12),
             const Text('請先登入', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
           ]))
@@ -762,7 +813,7 @@ class SavedPostsPage extends StatelessWidget {
               final savedIds = userSnap.data!.docs.map((d) => d.id).toList();
               if (savedIds.isEmpty) {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  const Text('🔖', style: TextStyle(fontSize: 48)),
+                  const Icon(Icons.bookmark_border_rounded, size: 48, color: AppColors.textHint),
                   const SizedBox(height: 12),
                   const Text('還沒有收藏的貼文', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
                   const SizedBox(height: 6),
@@ -779,56 +830,94 @@ class SavedPostsPage extends StatelessWidget {
                     return Center(child: CircularProgressIndicator(color: primary));
                   }
                   final posts = postSnap.data!.docs.map(CommunityPost.fromDoc).toList();
+                  // Sort to match saved order
+                  posts.sort((a, b) {
+                    final ia = savedIds.indexOf(a.id);
+                    final ib = savedIds.indexOf(b.id);
+                    return ia.compareTo(ib);
+                  });
                   return ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                     itemCount: posts.length,
                     itemBuilder: (_, i) {
                       final p = posts[i];
-                      return GestureDetector(
-                        onTap: () => Navigator.push(context,
-                            MaterialPageRoute(builder: (_) => FirebasePostDetailPage(post: p))),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: GestureDetector(
+                          onTap: () => Navigator.push(context,
+                              MaterialPageRoute(builder: (_) => FirebasePostDetailPage(post: p))),
+                          child: StitchedBox(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-                                blurRadius: 10, offset: const Offset(0, 3))],
+                            stitchColor: primary.withValues(alpha: 0.20),
+                            radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+                            padding: EdgeInsets.zero,
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              // Cover image
+                              if (p.imageURLs.isNotEmpty)
+                                ClipRRect(
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                  child: Image.network(p.imageURLs.first,
+                                    height: 130, width: double.infinity, fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+                                ),
+                              Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Row(children: [
+                                    CircleAvatar(radius: 14,
+                                      backgroundImage: p.authorPhoto.isNotEmpty
+                                          ? NetworkImage(p.authorPhoto) : null,
+                                      backgroundColor: primary.withValues(alpha: 0.1),
+                                      child: p.authorPhoto.isEmpty
+                                          ? Icon(Icons.person_rounded, size: 14, color: primary) : null),
+                                    const SizedBox(width: 8),
+                                    Expanded(child: Text(p.authorName,
+                                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: primary.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(8)),
+                                      child: Text(p.type == 'trip' ? '🧳 行程' : '💬 討論',
+                                        style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w600))),
+                                  ]),
+                                  const SizedBox(height: 8),
+                                  Text(p.title,
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                                  if (p.content.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(p.content,
+                                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.4),
+                                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  ],
+                                  const SizedBox(height: 10),
+                                  Row(children: [
+                                    const Icon(Icons.favorite_rounded, size: 13, color: AppColors.error),
+                                    const SizedBox(width: 3),
+                                    Text('${p.likeCount}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                                    const SizedBox(width: 10),
+                                    const Icon(Icons.chat_bubble_outline_rounded, size: 13, color: AppColors.textHint),
+                                    const SizedBox(width: 3),
+                                    Text('${p.commentCount}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                                    const Spacer(),
+                                    // 取消收藏
+                                    GestureDetector(
+                                      onTap: () async {
+                                        await CommunityService.toggleSave(p.id);
+                                        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                          content: Text('已取消收藏「${p.title}」'),
+                                          behavior: SnackBarBehavior.floating,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                        ));
+                                      },
+                                      child: Icon(Icons.bookmark_remove_outlined,
+                                          size: 18, color: primary.withValues(alpha: 0.7)),
+                                    ),
+                                  ]),
+                                ]),
+                              ),
+                            ]),
                           ),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(children: [
-                              CircleAvatar(radius: 14,
-                                backgroundImage: p.authorPhoto.isNotEmpty
-                                    ? NetworkImage(p.authorPhoto) : null,
-                                backgroundColor: primary.withValues(alpha: 0.1)),
-                              const SizedBox(width: 8),
-                              Text(p.authorName,
-                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                              const Spacer(),
-                              Text(p.type == 'trip' ? '🧳 行程' : '💬 討論',
-                                style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w600)),
-                            ]),
-                            const SizedBox(height: 8),
-                            Text(p.title,
-                                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-                            if (p.content.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(p.content,
-                                  style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                                  maxLines: 2, overflow: TextOverflow.ellipsis),
-                            ],
-                            const SizedBox(height: 8),
-                            Row(children: [
-                              const Icon(Icons.favorite_rounded, size: 14, color: AppColors.error),
-                              const SizedBox(width: 3),
-                              Text('${p.likeCount}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                              const SizedBox(width: 10),
-                              const Icon(Icons.chat_bubble_outline_rounded, size: 14, color: AppColors.textHint),
-                              const SizedBox(width: 3),
-                              Text('${p.commentCount}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                            ]),
-                          ]),
                         ),
                       );
                     },
@@ -839,4 +928,144 @@ class SavedPostsPage extends StatelessWidget {
           ),
     );
   }
+}
+
+// ── Helper: "即將推出" SnackBar ──────────────────────────────
+void _showComingSoon(BuildContext context, String feature) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Row(children: [
+      const Icon(Icons.rocket_launch_rounded, size: 16),
+      const SizedBox(width: 10),
+      Text('$feature 功能即將推出，敬請期待！'),
+    ]),
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  ));
+}
+
+// ── 收藏景點捷徑：登入用戶→TripScreen，訪客→本地收藏頁 ─────────
+class _SavedSpotsShortcut extends StatelessWidget {
+  const _SavedSpotsShortcut();
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return uid != null ? const TripScreen() : const _GuestSavedSpotsPage();
+  }
+}
+
+// ── 訪客收藏景點頁面 ────────────────────────────────────────────
+class _GuestSavedSpotsPage extends StatefulWidget {
+  const _GuestSavedSpotsPage();
+  @override State<_GuestSavedSpotsPage> createState() => _GuestSavedSpotsPageState();
+}
+
+class _GuestSavedSpotsPageState extends State<_GuestSavedSpotsPage> {
+  List<Map<String, dynamic>> _spots = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+    LocalFavService.notifier.addListener(_onChanged);
+  }
+
+  @override
+  void dispose() {
+    LocalFavService.notifier.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() => _load();
+
+  Future<void> _load() async {
+    final data = await LocalFavService.getSavedSpotsData();
+    if (mounted) setState(() { _spots = data; _loading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('我的收藏景點', style: TextStyle(fontWeight: FontWeight.w800)),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_rounded, size: 20), onPressed: () => Navigator.pop(context)),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _spots.isEmpty
+              ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.favorite_border_rounded, size: 52, color: AppColors.textHint.withValues(alpha: 0.4)),
+                  const SizedBox(height: 14),
+                  const Text('還沒有收藏景點', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  const SizedBox(height: 6),
+                  const Text('點擊景點上的愛心即可收藏', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+                  const SizedBox(height: 20),
+                  OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('去探索景點')),
+                ]))
+              : ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _spots.length,
+                  separatorBuilder: (_, __) => const SizedBox(height: 10),
+                  itemBuilder: (_, i) {
+                    final s = _spots[i];
+                    final name     = s['spotName'] as String? ?? '';
+                    final imageUrl = s['imageUrl'] as String? ?? '';
+                    final rating   = (s['rating'] as num?)?.toDouble() ?? 0.0;
+                    final category = s['category'] as String? ?? '';
+                    final spotId   = s['spotId'] as String? ?? '';
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 10, offset: const Offset(0, 2))],
+                      ),
+                      child: Row(children: [
+                        // 封面圖
+                        ClipRRect(
+                          borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                          child: imageUrl.isNotEmpty
+                              ? Image.network(imageUrl, width: 80, height: 90, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder(primary))
+                              : _placeholder(primary),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            if (category.isNotEmpty) Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(6)),
+                              child: Text(category, style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary), maxLines: 2, overflow: TextOverflow.ellipsis),
+                            if (rating > 0) ...[
+                              const SizedBox(height: 4),
+                              Row(children: [
+                                Icon(Icons.star_rounded, size: 13, color: AppColors.accentStraw),
+                                const SizedBox(width: 3),
+                                Text(rating.toStringAsFixed(1), style: const TextStyle(fontSize: 11, color: AppColors.textHint, fontWeight: FontWeight.w600)),
+                              ]),
+                            ],
+                          ]),
+                        )),
+                        // 取消收藏
+                        IconButton(
+                          icon: const Icon(Icons.favorite_rounded, color: AppColors.error, size: 20),
+                          onPressed: () async {
+                            await LocalFavService.toggleWithMeta(spotId, spotName: name);
+                          },
+                        ),
+                      ]),
+                    );
+                  },
+                ),
+    );
+  }
+
+  Widget _placeholder(Color primary) => Container(
+    width: 80, height: 90,
+    color: primary.withValues(alpha: 0.08),
+    child: Icon(Icons.place_rounded, size: 30, color: primary.withValues(alpha: 0.4)),
+  );
 }

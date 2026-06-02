@@ -201,7 +201,7 @@ class _SearchScreenState extends State<SearchScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Text('🔍', style: TextStyle(fontSize: 52)),
+            const Icon(Icons.search_rounded, size: 52, color: AppColors.textHint),
             const SizedBox(height: 12),
             Text('找不到「$_query」的結果',
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
@@ -231,8 +231,9 @@ class _SearchScreenState extends State<SearchScreen> {
                 errorBuilder: (_, __, ___) => Container(
                   width: 56, height: 56,
                   color: AppColors.surfaceMoss,
-                  child: Center(child: Text(s.category == 'restaurant' ? '🍜' : '🏛️',
-                    style: const TextStyle(fontSize: 24))),
+                  child: Center(child: Icon(
+                    s.category == 'restaurant' ? Icons.ramen_dining_rounded : Icons.account_balance_rounded,
+                    size: 24, color: AppColors.textHint)),
                 ),
               ),
             ),

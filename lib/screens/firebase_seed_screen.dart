@@ -25,7 +25,7 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
   Future<void> _seedCommunityPosts() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() => _status = '❌ 請先登入才能上傳資料');
+      setState(() => _status = '[錯誤] 請先登入才能上傳資料');
       return;
     }
     setState(() { _seeding = true; _status = '上傳中…'; });
@@ -109,12 +109,12 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
       for (final post in [...tripPosts, ...discussionPosts]) {
         await db.collection('community_posts').add(post);
         count++;
-        _addLog('✅ 已上傳：${post['title']}');
+        _addLog('[完成] 已上傳：${post['title']}');
       }
-      setState(() => _status = '🎉 完成！共上傳 $count 則貼文');
+      setState(() => _status = '[成功] 完成！共上傳 $count 則貼文');
     } catch (e) {
-      setState(() => _status = '❌ 失敗: $e');
-      _addLog('❌ 錯誤: $e');
+      setState(() => _status = '[錯誤] 失敗: $e');
+      _addLog('[錯誤] 錯誤: $e');
     } finally {
       setState(() => _seeding = false);
     }
@@ -123,7 +123,7 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
   Future<void> _seedTestComments() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() => _status = '❌ 請先登入');
+      setState(() => _status = '[錯誤] 請先登入');
       return;
     }
     setState(() { _seeding = true; _status = '查詢貼文中…'; });
@@ -131,7 +131,7 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
       final db = FirebaseFirestore.instance;
       final snap = await db.collection('community_posts').limit(3).get();
       if (snap.docs.isEmpty) {
-        setState(() => _status = '❌ 請先上傳貼文再上傳留言');
+        setState(() => _status = '[錯誤] 請先上傳貼文再上傳留言');
         return;
       }
       final uid = user.uid;
@@ -151,11 +151,11 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
           count++;
         }
         await db.collection('community_posts').doc(doc.id).update({'commentCount': FieldValue.increment(2)});
-        _addLog('✅ 留言已上傳至：${doc['title']}');
+        _addLog('[完成] 留言已上傳至：${doc['title']}');
       }
-      setState(() => _status = '🎉 完成！共上傳 $count 則留言');
+      setState(() => _status = '[成功] 完成！共上傳 $count 則留言');
     } catch (e) {
-      setState(() => _status = '❌ 失敗: $e');
+      setState(() => _status = '[錯誤] 失敗: $e');
     } finally {
       setState(() => _seeding = false);
     }
@@ -184,10 +184,10 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
       for (final doc in snap.docs) {
         await doc.reference.delete();
       }
-      setState(() => _status = '✅ 已清除 ${snap.docs.length} 則貼文');
+      setState(() => _status = '[完成] 已清除 ${snap.docs.length} 則貼文');
       _log.clear();
     } catch (e) {
-      setState(() => _status = '❌ 失敗: $e');
+      setState(() => _status = '[錯誤] 失敗: $e');
     } finally {
       setState(() => _seeding = false);
     }
@@ -200,7 +200,7 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🌱 Firebase 測試資料', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('Firebase 測試資料', style: TextStyle(fontWeight: FontWeight.w800)),
         backgroundColor: AppColors.surface,
       ),
       body: ListView(
@@ -297,13 +297,13 @@ class _FirebaseSeedScreenState extends State<FirebaseSeedScreen> {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: _status.startsWith('❌') ? Colors.red.shade50 : Colors.green.shade50,
+                color: _status.startsWith('[錯誤]') ? Colors.red.shade50 : Colors.green.shade50,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(_status,
                 style: TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: _status.startsWith('❌') ? Colors.red.shade700 : Colors.green.shade700,
+                  color: _status.startsWith('[錯誤]') ? Colors.red.shade700 : Colors.green.shade700,
                 )),
             ),
           ],

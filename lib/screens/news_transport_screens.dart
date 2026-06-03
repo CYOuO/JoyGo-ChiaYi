@@ -941,7 +941,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         Expanded(
           child: PageFlipWidget(
             key: ValueKey('${_traO}_${_traD}_${trains.length}'),
-            backgroundColor: const Color(0xFFFDF9F0),   // 奶油色紙張
+            backgroundColor: const Color(0xFFF7F7F9),   // 近白淡灰紙張
             lastPage: Container(
               color: const Color(0xFFFDF9F0),
               child: Stack(children: [
@@ -956,7 +956,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
             children: List.generate(totalPages, (pageIdx) {
               final pageTrains = trains.skip(pageIdx * _kTraPerPage).take(_kTraPerPage).toList();
               return Container(
-                color: const Color(0xFFFDF9F0),   // 奶油色紙張
+                color: const Color(0xFFF7F7F9),   // 近白淡灰紙張
                 child: Stack(children: [
                   // ── 記事本橫線 + 邊距線 ──
                   const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
@@ -1566,11 +1566,6 @@ class _RailCardState extends State<_RailCard> {
     if (t.contains('莒光'))  return const Color(0xFFB07A30); // 暖木棕
     return const Color(0xFF5E8C6E); // 區間 / 其他 — 固定苔蘚綠
   }
-  Color get _bg => context.appMist;
-
-  // 標籤背景 = 車種強調色的淡色版，同車種永遠一致
-  Color get _tapeColor => _acc.withValues(alpha: 0.14);
-
   @override void initState() { super.initState(); _stops = widget.stops.isNotEmpty ? widget.stops : null; }
 
   Future<void> _loadStops() async {
@@ -1582,155 +1577,176 @@ class _RailCardState extends State<_RailCard> {
     } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 
+  // 計算行駛時間字串
+  String get _duration {
+    final depParts = _formatTime(widget.dep).split(':');
+    final arrParts = _formatTime(widget.arr).split(':');
+    if (depParts.length == 2 && arrParts.length == 2) {
+      final depMin = (int.tryParse(depParts[0]) ?? 0) * 60 + (int.tryParse(depParts[1]) ?? 0);
+      final arrMin = (int.tryParse(arrParts[0]) ?? 0) * 60 + (int.tryParse(arrParts[1]) ?? 0);
+      final diff = arrMin - depMin;
+      if (diff > 0) {
+        final h = diff ~/ 60, m = diff % 60;
+        return h > 0 ? '約 $h 時 $m 分' : '約 $m 分';
+      }
+    }
+    return '';
+  }
+
   @override Widget build(BuildContext context) {
     final c = _acc;
-    final cardBg = Color.lerp(_bg, Colors.white, 0.5)!;
 
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // ── 左側打孔環（筆記本效果）
-      SizedBox(width: 18, child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: List.generate(3, (i) => Padding(
-          padding: EdgeInsets.only(top: i == 0 ? 16.0 : 14.0),
-          child: Container(
-            width: 13, height: 13,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.background,
-              border: Border.all(color: AppColors.divider, width: 1.5),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: c.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(children: [
+        // ══ 車票主體 ══════════════════════════════════════════
+        InkWell(
+          onTap: () { setState(() => _expanded = !_expanded); if (_expanded && _stops == null) _loadStops(); },
+          child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // ── 左側彩色票根 ────────────────────────────────
+            Container(
+              width: 62,
+              color: c.withValues(alpha: 0.12),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+                  child: Icon(
+                    widget.isThsr ? Icons.directions_railway_filled_rounded : Icons.train_rounded,
+                    color: Colors.white, size: 20,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(widget.type,
+                    style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w800)),
+                Text(widget.no,
+                    style: TextStyle(color: c.withValues(alpha: 0.7), fontSize: 9, fontWeight: FontWeight.w600)),
+              ]),
             ),
-          ),
-        )),
-      )),
-      const SizedBox(width: 6),
-      // ── 主卡片
-      Expanded(child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: c.withValues(alpha: 0.15), width: 1),
-          boxShadow: [BoxShadow(color: c.withValues(alpha: 0.08), blurRadius: 10, offset: const Offset(0, 2))],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Column(children: [
-            // ── 膠帶標籤（左上角斜貼）
-            Stack(children: [
-              // 卡片主體 header
-              InkWell(
-                onTap: () { setState(() => _expanded = !_expanded); if (_expanded && _stops == null) _loadStops(); },
-                child: Padding(padding: const EdgeInsets.fromLTRB(14, 14, 12, 14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // 頂部：列車標籤 + 星星
-                  Row(children: [
-                    // 膠帶標籤（班次）
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: _tapeColor,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text('${widget.type} ${widget.no}', style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w800)),
-                    ),
-                    const Spacer(),
-                    // 星星收藏按鈕
-                    GestureDetector(
-                      onTap: () => setState(() => _starred = !_starred),
-                      child: Icon(
-                        _starred ? Icons.star_rounded : Icons.star_outline_rounded,
-                        size: 22,
-                        color: _starred ? const Color(0xFFFFCC44) : AppColors.textHint,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint, size: 18),
+            // ── 鋸齒分隔線 ──────────────────────────────────
+            CustomPaint(
+              size: const Size(10, double.infinity),
+              painter: _PerforatedEdgePainter(color: c.withValues(alpha: 0.18)),
+            ),
+            // ── 主要資訊區 ──────────────────────────────────
+            Expanded(child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                // 出發 ─── 圖示 ─── 抵達
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  // 出發
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_formatTime(widget.dep),
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 26,
+                            color: c, letterSpacing: -0.5, height: 1.0)),
+                    Text(widget.origin,
+                        style: const TextStyle(fontSize: 11,
+                            color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                   ]),
-                  const SizedBox(height: 12),
-                  // 出發 ── 圖示 ── 抵達
-                  Row(children: [
-                    // 出發時間（強調色大字）
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(_formatTime(widget.dep), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 28, color: c, letterSpacing: -0.5)),
-                      Text(widget.origin, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-                    ]),
-                    // 虛線 + 火車圖示
-                    Expanded(child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Column(children: [
-                        Row(children: [
-                          Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-                          Expanded(child: LayoutBuilder(builder: (ctx, bc) {
-                            final w = bc.maxWidth;
-                            return CustomPaint(size: Size(w, 1.5), painter: _DashedLinePainter(color: c.withValues(alpha: 0.35)));
-                          })),
-                          Icon(widget.isThsr ? Icons.directions_railway_filled_rounded : Icons.train_rounded, size: 16, color: c),
-                          Expanded(child: LayoutBuilder(builder: (ctx, bc) {
-                            final w = bc.maxWidth;
-                            return CustomPaint(size: Size(w, 1.5), painter: _DashedLinePainter(color: c.withValues(alpha: 0.35)));
-                          })),
-                          Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-                        ]),
-                        const SizedBox(height: 4),
-                        // 行駛時間
-                        Builder(builder: (ctx) {
-                          final depParts = _formatTime(widget.dep).split(':');
-                          final arrParts = _formatTime(widget.arr).split(':');
-                          if (depParts.length == 2 && arrParts.length == 2) {
-                            final depMin = (int.tryParse(depParts[0]) ?? 0) * 60 + (int.tryParse(depParts[1]) ?? 0);
-                            final arrMin = (int.tryParse(arrParts[0]) ?? 0) * 60 + (int.tryParse(arrParts[1]) ?? 0);
-                            final diff = arrMin - depMin;
-                            if (diff > 0) {
-                              final h = diff ~/ 60, m = diff % 60;
-                              final label = h > 0 ? '約 $h 小時 $m 分' : '約 $m 分';
-                              return Text(label, style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.7), fontWeight: FontWeight.w600));
-                            }
-                          }
-                          return const SizedBox.shrink();
-                        }),
+                  // 虛線 + 火車
+                  Expanded(child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(children: [
+                      Row(children: [
+                        Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
+                        Expanded(child: LayoutBuilder(builder: (ctx, bc) =>
+                            CustomPaint(size: Size(bc.maxWidth, 1.5),
+                                painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        Icon(widget.isThsr ? Icons.directions_railway_filled_rounded : Icons.train_rounded,
+                            size: 16, color: c),
+                        Expanded(child: LayoutBuilder(builder: (ctx, bc) =>
+                            CustomPaint(size: Size(bc.maxWidth, 1.5),
+                                painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
                       ]),
-                    )),
-                    // 抵達時間（深色）
-                    Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                      Text(_formatTime(widget.arr), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 28, letterSpacing: -0.5, color: AppColors.textPrimary)),
-                      Text(widget.dest, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                      if (_duration.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(_duration,
+                            style: TextStyle(fontSize: 9,
+                                color: c.withValues(alpha: 0.7), fontWeight: FontWeight.w600)),
+                      ],
                     ]),
+                  )),
+                  // 抵達
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text(_formatTime(widget.arr),
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26,
+                            letterSpacing: -0.5, height: 1.0, color: AppColors.textPrimary)),
+                    Text(widget.dest,
+                        style: const TextStyle(fontSize: 11,
+                            color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
                   ]),
-                ])),
+                ]),
+              ]),
+            )),
+            // ── 右側收藏 + 展開 ────────────────────────────
+            Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              GestureDetector(
+                onTap: () => setState(() => _starred = !_starred),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 4),
+                  child: Icon(
+                    _starred ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 22,
+                    color: _starred ? const Color(0xFFFFCC44) : AppColors.textHint,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(
+                  _expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.textHint, size: 18),
               ),
             ]),
-            // ── 展開：停靠站
-            if (_expanded) ...[
-              Divider(height: 1, color: c.withValues(alpha: 0.15)),
-              if (_loading) const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
-              else if (_stops == null || _stops!.isEmpty)
-                Padding(padding: const EdgeInsets.all(14), child: Column(children: [
-                  const Text('無法取得停靠站資料', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
-                  TextButton.icon(onPressed: _loadStops, icon: const Icon(Icons.refresh, size: 15), label: const Text('重試')),
-                ]))
-              else Padding(
-                padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
-                child: Column(children: _stops!.map((s) {
-                  final name = (s['StationName'] ?? s['stationName'] ?? '').toString();
-                  final time = _formatTime((s['ArrivalTime'] ?? s['DepartureTime'] ?? '').toString());
-                  final isTarget = name.contains(widget.origin) || name.contains(widget.dest);
-                  final isLast = s == _stops!.last;
-                  return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    SizedBox(width: 18, child: Column(children: [
-                      Container(width: isTarget ? 13 : 9, height: isTarget ? 13 : 9, decoration: BoxDecoration(shape: BoxShape.circle, color: isTarget ? c : Colors.white, border: Border.all(color: isTarget ? c : AppColors.divider, width: isTarget ? 2.5 : 1.5))),
-                      if (!isLast) Container(width: 1.5, height: 22, color: AppColors.divider),
-                    ])),
-                    const SizedBox(width: 10),
-                    Expanded(child: Padding(padding: EdgeInsets.only(bottom: isLast ? 0 : 4), child: Row(children: [
-                      Expanded(child: Text(name, style: TextStyle(fontSize: 13, fontWeight: isTarget ? FontWeight.w800 : FontWeight.w500, color: isTarget ? AppColors.textPrimary : AppColors.textSecondary))),
-                      Text(time, style: TextStyle(fontSize: 12, fontWeight: isTarget ? FontWeight.w800 : FontWeight.w400, color: isTarget ? AppColors.textPrimary : AppColors.textHint)),
-                    ]))),
-                  ]);
-                }).toList()),
-              ),
-            ],
-          ]),
+          ])),
         ),
-      )),
-    ]);
+        // ── 展開：停靠站 ──────────────────────────────────────
+        if (_expanded) ...[
+          Divider(height: 1, color: c.withValues(alpha: 0.15)),
+          if (_loading)
+            const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
+          else if (_stops == null || _stops!.isEmpty)
+            Padding(padding: const EdgeInsets.all(14), child: Column(children: [
+              const Text('無法取得停靠站資料', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
+              TextButton.icon(onPressed: _loadStops, icon: const Icon(Icons.refresh, size: 15), label: const Text('重試')),
+            ]))
+          else Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: Column(children: _stops!.map((s) {
+              final name = (s['StationName'] ?? s['stationName'] ?? '').toString();
+              final time = _formatTime((s['ArrivalTime'] ?? s['DepartureTime'] ?? '').toString());
+              final isTarget = name.contains(widget.origin) || name.contains(widget.dest);
+              final isLast = s == _stops!.last;
+              return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(width: 18, child: Column(children: [
+                  Container(width: isTarget ? 13 : 9, height: isTarget ? 13 : 9,
+                      decoration: BoxDecoration(shape: BoxShape.circle,
+                          color: isTarget ? c : Colors.white,
+                          border: Border.all(color: isTarget ? c : AppColors.divider,
+                              width: isTarget ? 2.5 : 1.5))),
+                  if (!isLast) Container(width: 1.5, height: 22, color: AppColors.divider),
+                ])),
+                const SizedBox(width: 10),
+                Expanded(child: Padding(padding: EdgeInsets.only(bottom: isLast ? 0 : 4), child: Row(children: [
+                  Expanded(child: Text(name, style: TextStyle(fontSize: 13,
+                      fontWeight: isTarget ? FontWeight.w800 : FontWeight.w500,
+                      color: isTarget ? AppColors.textPrimary : AppColors.textSecondary))),
+                  Text(time, style: TextStyle(fontSize: 12,
+                      fontWeight: isTarget ? FontWeight.w800 : FontWeight.w400,
+                      color: isTarget ? AppColors.textPrimary : AppColors.textHint)),
+                ]))),
+              ]);
+            }).toList()),
+          ),
+        ],
+      ]),
+    );
   }
 }
 
@@ -2028,6 +2044,26 @@ class _EtaDot extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════
 // 記事本外觀元件
 // ═══════════════════════════════════════════════════════════════
+
+/// 車票左側鋸齒分隔線
+class _PerforatedEdgePainter extends CustomPainter {
+  final Color color;
+  const _PerforatedEdgePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..style = PaintingStyle.fill;
+    const r = 5.0;   // 半圓半徑
+    double y = r;
+    while (y < size.height) {
+      // 左邊半圓（切入票根）
+      canvas.drawCircle(Offset(0, y), r, paint);
+      y += r * 2.8;
+    }
+  }
+
+  @override bool shouldRepaint(covariant CustomPainter old) => false;
+}
 
 /// 畫橫線 + 左側紅色邊距線的 Painter
 class _RuledLinePainter extends CustomPainter {

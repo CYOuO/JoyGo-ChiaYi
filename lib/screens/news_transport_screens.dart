@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:animated_digit/animated_digit.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -309,11 +311,13 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                       color: mist, borderRadius: BorderRadius.circular(20)),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.access_time_rounded, size: 12, color: primary),
-                    const SizedBox(width: 4),
-                    Text('${_secs.toString().padLeft(2, '0')}s',
-                        style: TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w700,
-                            color: primary)),
+                    const SizedBox(width: 3),
+                    AnimatedDigitWidget(
+                      value: _secs,
+                      textStyle: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: primary),
+                      duration: const Duration(milliseconds: 400),
+                    ),
+                    Text('s', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: primary)),
                   ]),
                 ),
               ),
@@ -880,7 +884,11 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                                 ]),
                               ])),
                               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                Text('可借 $total 輛', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: good ? yp : AppColors.error)),
+                                Row(mainAxisSize: MainAxisSize.min, children: [
+                                  Text('可借 ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
+                                  AnimatedDigitWidget(value: total, textStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: good ? yp : AppColors.error), duration: const Duration(milliseconds: 500)),
+                                  Text(' 輛', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
+                                ]),
                                 Text('可還 $ret 格', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
                               ]),
                             ]),
@@ -962,16 +970,18 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
                   physics: const NeverScrollableScrollPhysics(),
-                  children: pageTrains.map((t) => Padding(
+                  children: pageTrains.asMap().entries.map((e) => Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: _RailCard(
-                      no: t['train_no']?.toString() ?? '',
-                      type: t['train_type_name']?.toString() ?? '',
-                      dep: t['departure_time']?.toString() ?? '',
-                      arr: t['arrival_time']?.toString() ?? '',
+                      no: e.value['train_no']?.toString() ?? '',
+                      type: e.value['train_type_name']?.toString() ?? '',
+                      dep: e.value['departure_time']?.toString() ?? '',
+                      arr: e.value['arrival_time']?.toString() ?? '',
                       origin: _traO, dest: _traD, date: _today, isThsr: false,
-                      stops: t['stops'] is List ? (t['stops'] as List) : [],
-                    ),
+                      stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
+                    ).animate(key: ValueKey('${e.value['train_no']}_$_traPage'))
+                     .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
+                     .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
                   )).toList(),
                 ),
               );

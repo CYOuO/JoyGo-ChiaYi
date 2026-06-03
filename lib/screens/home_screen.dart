@@ -28,6 +28,7 @@ import 'map_screen.dart' show MapScreen;
 import '../services/rail_service.dart'; // 🌟 引入統一的 Service
 import '../utils/html_utils.dart';
 import '../utils/dept_style.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 
 Map<String, dynamic> _govItemToJson(_GovItem n) => {
@@ -749,13 +750,17 @@ class _HomeScreenState extends State<HomeScreen> {
     Text(v, style: TextStyle(color: Colors.white.withValues(alpha: 0.88), fontSize: 10, fontWeight: FontWeight.w600)),
   ]);
 
-  Widget _quickRow(List<_QuickItem> rowItems) {
+  Widget _quickRow(List<_QuickItem> rowItems, {int baseIndex = 0}) {
     return Row(
       children: rowItems.asMap().entries.map((e) {
         final isLast = e.key == rowItems.length - 1;
+        final delay = (baseIndex + e.key) * 55;
         return Expanded(child: Container(
           margin: isLast ? EdgeInsets.zero : const EdgeInsets.only(right: 10),
-          child: _BounceQuickButton(item: e.value),
+          child: _BounceQuickButton(item: e.value)
+            .animate()
+            .fadeIn(delay: delay.ms, duration: 320.ms)
+            .slideY(begin: 0.18, end: 0, delay: delay.ms, duration: 320.ms, curve: Curves.easeOutCubic),
         ));
       }).toList(),
     );
@@ -781,9 +786,9 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: '快速導覽')),
-            _quickRow(items.sublist(0, 4)),
+            _quickRow(items.sublist(0, 4), baseIndex: 0),
             const SizedBox(height: 10),
-            _quickRow(items.sublist(4, 8)),
+            _quickRow(items.sublist(4, 8), baseIndex: 4),
           ],
         ),
       ),
@@ -1041,7 +1046,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 10),
-            _nearbyLoading ? Column(children: List.generate(4, (_) => _nearbyRowShimmer())) : filtered.isEmpty ? Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('此分類暫無資料', style: TextStyle(color: AppColors.textHint, fontSize: 13)))) : Column(children: shown.map((s) => _nearbyRow(s)).toList()),
+            _nearbyLoading ? Column(children: List.generate(4, (_) => _nearbyRowShimmer())) : filtered.isEmpty ? Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Center(child: Text('此分類暫無資料', style: TextStyle(color: AppColors.textHint, fontSize: 13)))) : Column(children: shown.asMap().entries.map((e) => _nearbyRow(e.value)
+              .animate(key: ValueKey('${e.value.name}_${_nearbyFilter}'))
+              .fadeIn(delay: (e.key * 60).ms, duration: 280.ms)
+              .slideX(begin: 0.06, end: 0, delay: (e.key * 60).ms, duration: 280.ms, curve: Curves.easeOutCubic)).toList()),
           ],
         ),
       ),

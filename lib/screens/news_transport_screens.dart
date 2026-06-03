@@ -937,60 +937,72 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       else if (trains.isEmpty)
         Expanded(child: _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
       else ...[
-        // ── 書頁翻頁（page_flip 套件）──────────────────────────────
+        // ── 螺旋裝訂列 ──────────────────────────────────────────────
+        _SpiralBinding(color: context.appMist),
+        // ── 記事本書頁翻頁（page_flip 套件）────────────────────────
         Expanded(
           child: PageFlipWidget(
-            // key 讓資料更新時重建整個翻頁元件
             key: ValueKey('${_traO}_${_traD}_${trains.length}'),
-            backgroundColor: AppColors.background,
-            lastPage: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.train_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
-                const SizedBox(height: 10),
-                const Text('已是最後一頁', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+            backgroundColor: const Color(0xFFFDF9F0),   // 奶油色紙張
+            lastPage: Container(
+              color: const Color(0xFFFDF9F0),
+              child: Stack(children: [
+                const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.train_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
+                  const SizedBox(height: 10),
+                  const Text('已無更多班次', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                ])),
               ]),
             ),
             children: List.generate(totalPages, (pageIdx) {
               final pageTrains = trains.skip(pageIdx * _kTraPerPage).take(_kTraPerPage).toList();
               return Container(
-                color: AppColors.background,
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                  // 讓卡片展開後可以往下滑
-                  children: [
-                    // 頁碼標示
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(children: [
-                        const Spacer(),
-                        Text('第 ${pageIdx + 1} 頁 / $totalPages 頁',
-                            style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                color: const Color(0xFFFDF9F0),   // 奶油色紙張
+                child: Stack(children: [
+                  // ── 記事本橫線 + 邊距線 ──
+                  const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                  // ── 內容（左邊留出邊距線空間）──
+                  Positioned.fill(child: ListView(
+                    padding: const EdgeInsets.fromLTRB(62, 10, 14, 50),
+                    children: [
+                      ...pageTrains.asMap().entries.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _RailCard(
+                          no: e.value['train_no']?.toString() ?? '',
+                          type: e.value['train_type_name']?.toString() ?? '',
+                          dep: e.value['departure_time']?.toString() ?? '',
+                          arr: e.value['arrival_time']?.toString() ?? '',
+                          origin: _traO, dest: _traD, date: _today, isThsr: false,
+                          stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
+                        ).animate()
+                         .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
+                         .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
+                      )),
+                    ],
+                  )),
+                  // ── 右下角頁碼 ──
+                  Positioned(
+                    bottom: 12, right: 16,
+                    child: Text('${pageIdx + 1} / $totalPages',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                            color: AppColors.textHint.withValues(alpha: 0.6),
+                            fontStyle: FontStyle.italic)),
+                  ),
+                  // ── 左下角滑動提示（只第一頁顯示）──
+                  if (pageIdx == 0)
+                    Positioned(
+                      bottom: 12, left: 62,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.swipe_rounded, size: 12,
+                            color: AppColors.textHint.withValues(alpha: 0.5)),
+                        const SizedBox(width: 4),
+                        Text('左滑翻下一頁',
+                            style: TextStyle(fontSize: 10,
+                                color: AppColors.textHint.withValues(alpha: 0.5))),
                       ]),
                     ),
-                    ...pageTrains.asMap().entries.map((e) => Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: _RailCard(
-                        no: e.value['train_no']?.toString() ?? '',
-                        type: e.value['train_type_name']?.toString() ?? '',
-                        dep: e.value['departure_time']?.toString() ?? '',
-                        arr: e.value['arrival_time']?.toString() ?? '',
-                        origin: _traO, dest: _traD, date: _today, isThsr: false,
-                        stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
-                      ).animate()
-                       .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
-                       .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
-                    )),
-                    // 底部提示
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Icon(Icons.swipe_rounded, size: 13, color: AppColors.textHint),
-                        SizedBox(width: 4),
-                        Text('左右滑動翻頁', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
-                      ]),
-                    ),
-                  ],
-                ),
+                ]),
               );
             }),
           ),
@@ -2013,4 +2025,85 @@ class _EtaDot extends StatelessWidget {
     const SizedBox(width: 5),
     Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
   ]);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 記事本外觀元件
+// ═══════════════════════════════════════════════════════════════
+
+/// 畫橫線 + 左側紅色邊距線的 Painter
+class _RuledLinePainter extends CustomPainter {
+  const _RuledLinePainter();
+  @override
+  void paint(Canvas canvas, Size size) {
+    final linePaint = Paint()
+      ..color = const Color(0xFFD6E4F0)   // 淡藍橫線
+      ..strokeWidth = 0.8;
+    final marginPaint = Paint()
+      ..color = const Color(0xFFE8B4B8)   // 淡粉紅邊距線
+      ..strokeWidth = 1.2;
+
+    // 每 28px 一條橫線，從 56px 開始（讓頂部留空）
+    for (double y = 56; y < size.height; y += 28) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), linePaint);
+    }
+    // 左邊距線
+    canvas.drawLine(
+        const Offset(52, 0), Offset(52, size.height), marginPaint);
+  }
+
+  @override bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// 螺旋圈裝訂列（頁面頂端）
+class _SpiralBinding extends StatelessWidget {
+  final Color color;
+  const _SpiralBinding({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 28,
+      decoration: BoxDecoration(
+        color: color,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 4, offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, bc) {
+          final count = (bc.maxWidth / 28).floor();
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(count, (_) => Container(
+              width: 18, height: 18,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.surface,
+                border: Border.all(
+                  color: Colors.grey.shade400, width: 2.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 3, offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              // 螺旋內孔
+              child: Center(child: Container(
+                width: 7, height: 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                ),
+              )),
+            )),
+          );
+        },
+      ),
+    );
+  }
 }

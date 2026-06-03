@@ -1629,9 +1629,11 @@ class _RailCardState extends State<_RailCard> {
               ]),
             ),
             // ── 鋸齒分隔線 ──────────────────────────────────
-            CustomPaint(
-              size: const Size(10, double.infinity),
-              painter: _PerforatedEdgePainter(color: c.withValues(alpha: 0.18)),
+            SizedBox(
+              width: 10,
+              child: CustomPaint(
+                painter: _PerforatedEdgePainter(color: c.withValues(alpha: 0.18)),
+              ),
             ),
             // ── 主要資訊區 ──────────────────────────────────
             Expanded(child: Padding(

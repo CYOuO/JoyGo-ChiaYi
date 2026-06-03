@@ -981,6 +981,46 @@ class SpotCardSkeleton extends StatelessWidget {
   );
 }
 
+class TransportCardSkeleton extends StatelessWidget {
+  const TransportCardSkeleton({super.key});
+  @override Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+    child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        ShimmerBox(width: 48, height: 20, radius: 6),
+        SizedBox(width: 10),
+        Expanded(child: ShimmerBox(height: 16, radius: 4)),
+        SizedBox(width: 10),
+        Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFFE0E0E0)),
+      ]),
+      SizedBox(height: 10),
+      ShimmerBox(height: 10, radius: 3),
+      SizedBox(height: 6),
+      ShimmerBox(width: 160, height: 10, radius: 3),
+    ]),
+  );
+}
+
+class StampGridSkeleton extends StatelessWidget {
+  const StampGridSkeleton({super.key});
+  @override Widget build(BuildContext context) => GridView.builder(
+    padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 3, childAspectRatio: 0.75, crossAxisSpacing: 12, mainAxisSpacing: 12),
+    itemCount: 12,
+    itemBuilder: (_, __) => Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+      child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        ShimmerBox(width: 64, height: 64, radius: 32),
+        SizedBox(height: 8),
+        ShimmerBox(width: 50, height: 11, radius: 4),
+      ]),
+    ),
+  );
+}
+
 // ═══════════════════════════════════════════════════════════
 //  ② IllustratedEmptyState — 插畫空頁面
 // ═══════════════════════════════════════════════════════════

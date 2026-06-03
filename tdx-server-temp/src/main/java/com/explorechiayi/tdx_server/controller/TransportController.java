@@ -33,6 +33,11 @@ public class TransportController {
         return tdxService.getYoubikeDynamic();
     }
 
+    @GetMapping("/bus/stop/{city}")
+    public Map<String, Object> getBusStop(@PathVariable String city, @RequestParam String q) {
+        return tdxService.getBusStopSearch(city, q);
+    }
+
     @GetMapping("/bus/{city}/{routeName}")
     public Map<String, Object> getBus(@PathVariable String city, @PathVariable String routeName) {
         return tdxService.getBusDynamic(city, routeName);
@@ -48,6 +53,20 @@ public class TransportController {
         return tdxService.getThsrTrainStops(trainNo, date);
     }
     
+    @GetMapping("/bus/gps/{city}/{routeName}")
+    public Map<String, Object> getBusGps(@PathVariable String city, @PathVariable String routeName) {
+        return tdxService.getBusRealTimePosition(city, routeName);
+    }
+
+    @GetMapping("/bus/nearby")
+    public Map<String, Object> getNearbyBusStops(
+            @RequestParam String city,
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(defaultValue = "500") int radius) {
+        return tdxService.getNearbyBusStops(city, lat, lng, radius);
+    }
+
     @GetMapping("/weather/{cityType}")
     public Map<String, Object> getWeather(@PathVariable String cityType) {
         // cityType 可以傳入 "Chiayi" 或 "ChiayiCounty"

@@ -32,7 +32,10 @@ public class TdxService {
     private String syncedDate = "";
     private long lastSyncAttempt = 0;
 
-    private final long REALTIME_CACHE_DURATION = 60000;   
+    // 全市公車站牌（啟動時預載，本地過濾用）
+    private final Map<String, List<Map<String, Object>>> allBusStops = new ConcurrentHashMap<>();
+
+    private final long REALTIME_CACHE_DURATION = 30000;   
     private volatile long rateLimitUntil = 0;
 
     @EventListener(ApplicationReadyEvent.class)
@@ -44,9 +47,20 @@ public class TdxService {
                 getYoubikeDynamic(); 
                 getWeeklyWeather("Chiayi");
                 getWeeklyWeather("ChiayiCounty");
-                System.out.println("✅ 預熱完成 (含天氣與Youbike)，等待冷卻...");
-                Thread.sleep(61000); 
-                syncDailyData(); 
+                System.out.println("✅ 預熱完成 (含天氣與Youbike)，開始載入公車站牌...");
+                
+                // 【核心修正 1】給予 TDX 伺服器 3 秒的緩衝時間
+                Thread.sleep(3000); 
+                preloadBusStops("Chiayi");
+                
+                // 【核心修正 2】在請求嘉義縣的龐大資料前，強制休眠 5 秒，避免觸發瞬間併發限制
+                System.out.println("⏳ 進入冷卻期，準備請求嘉義縣資料...");
+                Thread.sleep(35000); 
+                preloadBusStops("ChiayiCounty");
+                
+                System.out.println("✅ 公車站牌載入完成，等待冷卻後載入火車時刻表...");
+                Thread.sleep(55000);
+                syncDailyData();
                 System.out.println("✅ 伺服器啟動完畢！");
             } catch (Exception e) {}
         }).start();
@@ -54,6 +68,8 @@ public class TdxService {
 
     public synchronized void fetchToken() {
         if (!currentToken.isEmpty()) return; 
+        
+        System.out.println("🔑 準備向 TDX 申請存取權杖 (Access Token)...");
         String url = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -65,7 +81,13 @@ public class TdxService {
         try {
             ResponseEntity<String> response = restTemplate.postForEntity(url, new HttpEntity<>(map, headers), String.class);
             this.currentToken = objectMapper.readTree(response.getBody()).get("access_token").asText();
-        } catch (Exception e) {}
+            System.out.println("✅ 成功取得 TDX API Token！解鎖十萬次額度！"); 
+        } catch (Exception e) {
+            System.out.println("❌ [TDX Token 獲取失敗] 無法兌換 Token！");
+            System.out.println("👉 錯誤原因: " + e.getMessage());
+            System.out.println("💡 請檢查 TdxConfig.java 中的 CLIENT_ID 與 CLIENT_SECRET 是否正確，且前後無多餘空白。");
+            this.currentToken = "";
+        }
     }
 
     private synchronized JsonNode callTdxApi(String apiUrl) {
@@ -185,6 +207,114 @@ public class TdxService {
         }
     }
 
+    // 預載全市公車站牌到記憶體（含重試）
+    // 預載全市公車站牌到記憶體（含重試）
+   // 預載全市公車站牌到記憶體（含重試）
+        private synchronized void preloadBusStops(String city) {
+            if (allBusStops.containsKey(city) && !allBusStops.get(city).isEmpty()) return;
+        System.out.println("⏳ 預載 " + city + " 公車站牌...");
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                if (attempt > 0) {
+                    System.out.println("🔄 重試第 " + attempt + " 次 (" + city + ")...");
+                    this.currentToken = "";
+                    Thread.sleep(2000);
+                }
+                
+                // 【核心修正】移除 $select 參數，繞過 TDX 處理巢狀陣列時會 500 崩潰的 Bug
+                java.net.URI uri = new java.net.URI(
+                    "https", "tdx.transportdata.tw",
+                    "/api/basic/v2/Bus/StopOfRoute/City/" + city,
+                    "$format=JSON", // 只保留 JSON 格式要求
+                    null
+                );
+                
+                JsonNode root = callTdxApiByUri(uri);
+                if (root == null) {
+                    System.out.println("⚠️ " + city + " attempt " + attempt + " returned null (TDX 伺服器未回傳有效資料)");
+                    continue;
+                }
+                
+                List<Map<String, Object>> stops = new ArrayList<>();
+                
+                // 拆解 StopOfRoute 的巢狀結構
+                if (root.isArray()) {
+                    for (JsonNode routeNode : root) {
+                        String routeName = routeNode.path("RouteName").path("Zh_tw").asText("");
+                        int direction = routeNode.path("Direction").asInt(0);
+                        JsonNode stopsArray = routeNode.path("Stops");
+                        
+                        if (stopsArray.isArray()) {
+                            for (JsonNode stopNode : stopsArray) {
+                                Map<String, Object> s = new HashMap<>();
+                                s.put("RouteName", routeName);
+                                s.put("Direction", direction);
+                                s.put("StopName", stopNode.path("StopName").path("Zh_tw").asText(""));
+                                s.put("Lat", stopNode.path("StopPosition").path("PositionLat").asDouble(0));
+                                s.put("Lng", stopNode.path("StopPosition").path("PositionLon").asDouble(0));
+                                if (!routeName.isEmpty()) stops.add(s);
+                            }
+                        }
+                    }
+                }
+                
+                if (!stops.isEmpty()) {
+                    allBusStops.put(city, stops);
+                    System.out.println("✅ " + city + " 站牌預載完成: " + stops.size() + " 筆");
+                    return;
+                }
+            } catch (Exception e) {
+                System.out.println("⚠️ preloadBusStops " + city + " attempt " + attempt + " error: " + e.getMessage());
+            }
+        }
+        System.out.println("❌ " + city + " 站牌預載失敗（3次重試均失敗）");
+    }
+
+    // URI 版 callTdxApi（支援含中文的 OData filter，並強化錯誤偵測）
+    private synchronized JsonNode callTdxApiByUri(java.net.URI apiUri) {
+        if (System.currentTimeMillis() < rateLimitUntil) return null;
+        if (currentToken.isEmpty()) fetchToken();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(currentToken);
+        try {
+            Thread.sleep(300);
+            ResponseEntity<String> response = restTemplate.exchange(apiUri, HttpMethod.GET, new HttpEntity<>(headers), String.class);
+            return objectMapper.readTree(response.getBody());
+        } catch (Exception e) {
+            // 【核心修正】將 TDX 的真實報錯原因印出來，不再靜默吸收
+            System.out.println("❌ [TDX API 請求失敗] " + apiUri.toString() + " -> " + e.getMessage());
+            
+            if (e.getMessage() != null && e.getMessage().contains("429")) {
+                rateLimitUntil = System.currentTimeMillis() + 60000;
+            } else if (e.getMessage() != null && (e.getMessage().contains("401") || e.getMessage().contains("Unauthorized"))) {
+                currentToken = "";
+            }
+            return null;
+        }
+    }
+    // 🔍 站牌名稱搜尋（本地過濾，秒回）
+    public Map<String, Object> getBusStopSearch(String city, String stopQuery) {
+        preloadBusStops(city);
+        List<Map<String, Object>> stops = allBusStops.getOrDefault(city, new ArrayList<>());
+        java.util.LinkedHashSet<String> routes = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> s : stops) {
+            String stopName = (String) s.get("StopName");
+            if (stopName.contains(stopQuery)) {
+                routes.add((String) s.get("RouteName"));
+            }
+        }
+        System.out.println("✅ 站牌搜尋「" + stopQuery + "」→ " + routes.size() + " 條路線 (本地)");
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String route : routes) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("RouteName", route);
+            result.add(item);
+        }
+        return buildResponse(result, System.currentTimeMillis());
+    }
+
+   
+
     // 🌟 修正：車牌為 -1 轉換為尚未發車
     public Map<String, Object> getBusDynamic(String city, String routeName) {
         return getFromCacheOrFetch("BUS_" + city + "_" + routeName, REALTIME_CACHE_DURATION, () -> {
@@ -210,10 +340,46 @@ public class TdxService {
                     bus.put("StopSequence", node.path("StopSequence").asInt(0));
                     bus.put("StopStatus", node.path("StopStatus").asInt());
                     bus.put("EstimateTime", node.has("EstimateTime") ? node.path("EstimateTime").asInt() : null);
+                    bus.put("NextBusTime", node.path("NextBusTime").asText(""));
+                    bus.put("SubRouteName", node.path("SubRouteName").path("Zh_tw").asText(""));
                     resultList.add(bus);
                 }
             }
             return resultList;
+        });
+    }
+
+    // 公車即時 GPS 位置
+    public Map<String, Object> getBusRealTimePosition(String city, String routeName) {
+        return getFromCacheOrFetch("BUS_GPS_" + city + "_" + routeName, 30000L, () -> {
+            // City bus
+            String cityUrl = String.format("https://tdx.transportdata.tw/api/basic/v2/Bus/RealTimeByFrequency/City/%s/%s?$format=JSON", city, routeName);
+            // InterCity bus
+            String interUrl = String.format("https://tdx.transportdata.tw/api/basic/v2/Bus/RealTimeByFrequency/InterCity/%s?$format=JSON", routeName);
+
+            List<Map<String, Object>> resultList = new ArrayList<>();
+            for (String apiUrl : new String[]{cityUrl, interUrl}) {
+                JsonNode root = callTdxApi(apiUrl);
+                if (root != null && root.isArray()) {
+                    for (JsonNode node : root) {
+                        JsonNode pos = node.path("BusPosition");
+                        if (pos.isMissingNode()) continue;
+                        Map<String, Object> bus = new HashMap<>();
+                        bus.put("PlateNumb", node.path("PlateNumb").asText(""));
+                        bus.put("Direction", node.path("Direction").asInt(0));
+                        bus.put("Speed", node.path("Speed").asDouble(0));
+                        bus.put("Lat", pos.path("PositionLat").asDouble());
+                        bus.put("Lng", pos.path("PositionLon").asDouble());
+                        bus.put("RouteName", node.path("RouteName").path("Zh_tw").asText(""));
+                        bus.put("SubRouteName", node.path("SubRouteName").path("Zh_tw").asText(""));
+                        if (bus.get("Lat") != null && (double) bus.get("Lat") > 0) {
+                            resultList.add(bus);
+                        }
+                    }
+                    if (!resultList.isEmpty()) break;
+                }
+            }
+            return resultList.isEmpty() ? null : resultList;
         });
     }
 
@@ -464,6 +630,57 @@ public class TdxService {
             }
         }
         return "0"; 
+    }
+
+    // 🔍 附近站牌查詢（本地 Haversine 過濾，秒回）
+    // 🔍 附近站牌查詢（本地 Haversine 過濾，秒回）
+    public Map<String, Object> getNearbyBusStops(String city, double lat, double lng, int radiusMeters) {
+        preloadBusStops(city);
+        List<Map<String, Object>> stops = allBusStops.getOrDefault(city, new ArrayList<>());
+        LinkedHashMap<String, Map<String, Object>> seen = new LinkedHashMap<>();
+        for (Map<String, Object> s : stops) {
+            double sLat = (double) s.get("Lat");
+            double sLng = (double) s.get("Lng");
+            if (sLat == 0 || sLng == 0) continue;
+            double dist = haversine(lat, lng, sLat, sLng);
+            if (dist > radiusMeters) continue;
+            String routeName = (String) s.get("RouteName");
+            int direction = (int) s.get("Direction");
+            String key = routeName + "_" + direction;
+            
+            if (!seen.containsKey(key)) {
+                Map<String, Object> item = new HashMap<>();
+                item.put("RouteName", routeName);
+                item.put("StopName", s.get("StopName"));
+                item.put("Direction", direction);
+                
+                // 🌟 新增魔法：掃描快取，找出這條線這個方向的「起點」與「終點」
+                String origin = "";
+                String dest = "";
+                for (Map<String, Object> allS : stops) {
+                    if (routeName.equals(allS.get("RouteName")) && direction == (int) allS.get("Direction")) {
+                        String n = (String) allS.get("StopName");
+                        if (origin.isEmpty()) origin = n;
+                        dest = n; // 不斷覆蓋，最後一個站牌就是終點
+                    }
+                }
+                item.put("Origin", origin.isEmpty() ? "起點" : origin);
+                item.put("Destination", dest.isEmpty() ? "終點" : dest);
+
+                seen.put(key, item);
+            }
+        }
+        System.out.println("✅ 附近 " + radiusMeters + "m 共找到 " + seen.size() + " 條路線 (" + city + ", 本地)");
+        return buildResponse(new ArrayList<>(seen.values()), System.currentTimeMillis());
+    }
+    private static double haversine(double lat1, double lon1, double lat2, double lon2) {
+        double R = 6371000;
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+                 + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+                 * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
     public Map<String, Object> getTraTrainStops(String trainNo, String date) {

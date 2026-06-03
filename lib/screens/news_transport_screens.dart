@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -62,12 +63,17 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   // YouBike
   Future<Map<String, dynamic>>? _ybFuture;
   String _ybSearch = '';
+  Position? _ybPosition;
+  bool _ybLocating = false;
 
   // TRA
   Future<Map<String, dynamic>>? _traLive;
   List<Map<String, dynamic>>? _traTrains;
   bool _traLoading = false;
   String? _traError, _traUpdateTime;
+  int _traPage = 0;
+  static const _kTraPerPage = 5;
+  late final PageController _traPageCtrl = PageController();
 
   // Alishan
   List<Map<String, dynamic>>? _aliDocs;
@@ -76,7 +82,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   // THSR
   List<Map<String, dynamic>>? _thsrTrains;
   bool _thsrLoading = false;
-  String? _thsrError, _thsrUpdateTime;
+  String? _thsrError;
 
   static const _traStations = {
     '基隆': '0900', '台北': '1000', '桃園': '1080', '新竹': '1210',
@@ -160,6 +166,18 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     }
   }
 
+  Future<void> _fetchYbLocation() async {
+    if (_ybLocating || _ybPosition != null) return;
+    setState(() => _ybLocating = true);
+    try {
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) { if (mounted) setState(() => _ybLocating = false); return; }
+      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+      if (mounted) setState(() { _ybPosition = pos; _ybLocating = false; });
+    } catch (_) { if (mounted) setState(() => _ybLocating = false); }
+  }
+
   void _loadTab(int i) {
     if (!mounted) return;
     setState(() {
@@ -175,6 +193,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       }
     });
     if (i == 0 && _nearbyStops == null && !_nearbyLoading) _fetchNearbyStops();
+    if (i == 1) _fetchYbLocation();
   }
 
   Future<void> _fetchTra({bool auto = false}) async {
@@ -183,7 +202,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     if (!auto) setState(() { _traLoading = true; _traError = null; _traTrains = []; });
     try {
       final res = await RailService.queryTra(origin: _traO, dest: _traD, trainDate: _today);
-      if (mounted) setState(() { _traTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _traUpdateTime = res['updateTime'] as String?; _traLoading = false; });
+      if (mounted) { setState(() { _traTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _traUpdateTime = res['updateTime'] as String?; _traLoading = false; _traPage = 0; }); if (_traPageCtrl.hasClients) _traPageCtrl.jumpToPage(0); }
     } catch (_) { if (mounted && !auto) setState(() { _traLoading = false; _traError = '無法連線，請稍候重試'; }); }
   }
 
@@ -193,7 +212,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     if (!auto) setState(() { _thsrLoading = true; _thsrError = null; _thsrTrains = []; });
     try {
       final res = await RailService.queryThsr(origin: _thsrO, dest: _thsrD, trainDate: _today);
-      if (mounted) setState(() { _thsrTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _thsrUpdateTime = res['updateTime'] as String?; _thsrLoading = false; });
+      if (mounted) setState(() { _thsrTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _thsrLoading = false; });
     } catch (_) { if (mounted && !auto) setState(() { _thsrLoading = false; _thsrError = '無法連線，請稍候重試'; }); }
   }
 
@@ -234,7 +253,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   @override
   void dispose() {
     _tabCtrl.dispose(); _countdown?.cancel(); _debounce?.cancel();
-    _busCtrl.dispose();
+    _busCtrl.dispose(); _traPageCtrl.dispose();
     super.dispose();
   }
 
@@ -279,24 +298,26 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         ]),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                    color: mist, borderRadius: BorderRadius.circular(20)),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.access_time_rounded, size: 12, color: primary),
-                  const SizedBox(width: 4),
-                  Text('${_secs.toString().padLeft(2, '0')}s',
-                      style: TextStyle(
-                          fontSize: 11, fontWeight: FontWeight.w700,
-                          color: primary)),
-                ]),
+          // 阿里山(3)/高鐵(4) 為固定時刻表，不顯示倒數
+          if (idx < 3)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: mist, borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.access_time_rounded, size: 12, color: primary),
+                    const SizedBox(width: 4),
+                    Text('${_secs.toString().padLeft(2, '0')}s',
+                        style: TextStyle(
+                            fontSize: 11, fontWeight: FontWeight.w700,
+                            color: primary)),
+                  ]),
+                ),
               ),
             ),
-          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(78),
@@ -701,9 +722,89 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   }
 
   // ─── YOUBIKE ───────────────────────────────────────────────────
+  double _ybDist(Map<String, dynamic> s) {
+    if (_ybPosition == null || s['lat'] == null || s['lng'] == null) return double.infinity;
+    return Geolocator.distanceBetween(_ybPosition!.latitude, _ybPosition!.longitude, (s['lat'] as num).toDouble(), (s['lng'] as num).toDouble());
+  }
+
   Widget _buildYb() {
     return Column(children: [
-      Container(color: AppColors.surface, padding: const EdgeInsets.fromLTRB(16, 12, 16, 14), child: TextField(
+      // ── 小地圖（使用者位置 + YouBike 站點）────────────────────
+      SizedBox(
+        height: 200,
+        child: Stack(children: [
+          if (_ybPosition != null)
+            FutureBuilder<Map<String, dynamic>>(
+              future: _ybFuture,
+              builder: (ctx, snap) {
+                final stations = (snap.data?['data'] as List? ?? []).cast<Map<String, dynamic>>();
+                final center = LatLng(_ybPosition!.latitude, _ybPosition!.longitude);
+                // 過濾附近 1.5km 站點才放到地圖（避免全台站點塞滿）
+                final nearby = stations.where((s) {
+                  if (s['lat'] == null || s['lng'] == null) return false;
+                  return _ybDist(s) <= 1500;
+                }).toList();
+                final markers = [
+                  // 使用者位置（藍點 + 光暈）
+                  Marker(point: center, width: 26, height: 26,
+                    child: Stack(alignment: Alignment.center, children: [
+                      Container(width: 26, height: 26, decoration: BoxDecoration(color: context.appPrimary.withValues(alpha: 0.20), shape: BoxShape.circle)),
+                      Container(width: 14, height: 14, decoration: BoxDecoration(color: context.appPrimary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5))),
+                    ])),
+                  // YouBike 站點（顯示站名 + 可借數量）
+                  ...nearby.map((s) {
+                    final avail = (s['GeneralBikes'] as int? ?? 0) + (s['ElectricBikes'] as int? ?? 0);
+                    final name = (s['station_name'] ?? '').toString().replaceAll(RegExp(r'YouBike\d+\.0_'), '');
+                    final hasAvail = avail > 0;
+                    final color = hasAvail ? AppColors.primary : AppColors.textHint;
+                    return Marker(
+                      point: LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()),
+                      width: 72, height: 52,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color, borderRadius: BorderRadius.circular(8),
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 4, offset: const Offset(0, 2))],
+                          ),
+                          child: Text('$avail 輛', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+                        ),
+                        const SizedBox(height: 2),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.88), borderRadius: BorderRadius.circular(4)),
+                          constraints: const BoxConstraints(maxWidth: 72),
+                          child: Text(name, style: const TextStyle(fontSize: 8, color: AppColors.textPrimary, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                        ),
+                      ]),
+                    );
+                  }),
+                ];
+                return FlutterMap(
+                  // key 讓 position 更新時地圖重建並重新對準
+                  key: ValueKey('${_ybPosition!.latitude},${_ybPosition!.longitude}'),
+                  options: MapOptions(initialCenter: center, initialZoom: 15.5),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.chiayicity.explore_chiayi',
+                    ),
+                    MarkerLayer(markers: markers),
+                  ],
+                );
+              },
+            )
+          else
+            Container(
+              color: AppColors.surfaceMoss,
+              child: Center(child: _ybLocating
+                  ? Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: context.appPrimary, strokeWidth: 2), const SizedBox(height: 8), const Text('定位中…', style: TextStyle(color: AppColors.textHint, fontSize: 12))])
+                  : GestureDetector(onTap: _fetchYbLocation, child: const Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.location_on_rounded, color: AppColors.textHint, size: 28), SizedBox(height: 4), Text('點此開啟定位', style: TextStyle(color: AppColors.textHint, fontSize: 12))]))),
+            ),
+        ]),
+      ),
+      // ── 搜尋框 ────────────────────────────────────────────────
+      Container(color: AppColors.surface, padding: const EdgeInsets.fromLTRB(16, 10, 16, 10), child: TextField(
         decoration: const InputDecoration(hintText: '搜尋站點名稱...', prefixIcon: Icon(Icons.search_rounded, size: 18)),
         onChanged: (v) => setState(() => _ybSearch = v),
       )),
@@ -715,10 +816,12 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 if (snap.connectionState == ConnectionState.waiting && !snap.hasData) return const Center(child: CircularProgressIndicator());
                 final all = (snap.data?['data'] as List? ?? []).cast<Map<String, dynamic>>();
                 if (all.isEmpty) return const Center(child: Text('目前沒有車位資料'));
-                final stations = _ybSearch.trim().isEmpty ? all : all.where((s) => (s['station_name'] ?? s['station_uid'] ?? '').toString().contains(_ybSearch.trim())).toList();
+                // 依距離排序（有定位時）
+                var stations = _ybSearch.trim().isEmpty ? List.of(all) : all.where((s) => (s['station_name'] ?? s['station_uid'] ?? '').toString().contains(_ybSearch.trim())).toList();
+                if (_ybPosition != null) stations.sort((a, b) => _ybDist(a).compareTo(_ybDist(b)));
                 return Column(children: [
                   if ((snap.data!['updateTime'] as String? ?? '').isNotEmpty)
-                    Padding(padding: const EdgeInsets.fromLTRB(16,8,16,2), child: _UpdTime(snap.data!['updateTime'] as String, end: true)),
+                    Padding(padding: const EdgeInsets.fromLTRB(16,6,16,2), child: _UpdTime(snap.data!['updateTime'] as String, end: true)),
                   Expanded(child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
                     itemCount: stations.length,
@@ -777,33 +880,109 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
 
   // ─── TRA ───────────────────────────────────────────────────────
   Widget _buildTra() {
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _traO, dest: _traD, stations: _traStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
-        onO: (v) { setState(() { _traO = v; _traLive = RailService.getTraLiveBoard(_traStations[v]!); }); _fetchTra(); },
-        onD: (v) { setState(() => _traD = v); _fetchTra(); },
-        onSwap: () { setState(() { final t = _traO; _traO = _traD; _traD = t; _traLive = RailService.getTraLiveBoard(_traStations[_traO]!); }); _fetchTra(); },
+    final trains = _traTrains ?? [];
+    final totalPages = trains.isEmpty ? 0 : (trains.length / _kTraPerPage).ceil();
+
+    return Column(children: [
+      // ── 固定 header（OD + 即時看板）────────────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+        child: Column(children: [
+          _ODCard(origin: _traO, dest: _traD, stations: _traStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
+            onO: (v) { setState(() { _traO = v; _traLive = RailService.getTraLiveBoard(_traStations[v]!); }); _fetchTra(); },
+            onD: (v) { setState(() => _traD = v); _fetchTra(); },
+            onSwap: () { setState(() { final t = _traO; _traO = _traD; _traD = t; _traLive = RailService.getTraLiveBoard(_traStations[_traO]!); }); _fetchTra(); },
+          ),
+          const SizedBox(height: 10),
+          if ((_traUpdateTime ?? '').isNotEmpty) _UpdTime(_traUpdateTime!),
+          if (_traLive != null) FutureBuilder<Map<String, dynamic>>(
+            future: _traLive,
+            builder: (ctx, snap) => _LiveBoard(
+              station: _traO,
+              trains: snap.data?['data'] as List? ?? [],
+              updateTime: snap.data?['updateTime'] as String? ?? '',
+            ),
+          ),
+          const SizedBox(height: 10),
+        ]),
       ),
-      const SizedBox(height: 12),
-      if (_traLive != null) FutureBuilder<Map<String, dynamic>>(
-        future: _traLive,
-        builder: (ctx, snap) {
-          final trains = (snap.data?['data'] as List? ?? []);
-          final upd = snap.data?['updateTime'] as String? ?? '';
-          return _LiveBoard(station: _traO, trains: trains, updateTime: upd);
-        },
-      ),
-      const SizedBox(height: 12),
-      if (_traLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
-      else if (_traError != null) Center(child: Text(_traError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)))
-      else if (_traTrains == null || _traTrains!.isEmpty)
-        _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
+      // ── 車次翻頁區 ───────────────────────────────────────────────
+      if (_traLoading)
+        Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(3, (i) => const Padding(padding: EdgeInsets.fromLTRB(14, 0, 14, 10), child: TransportCardSkeleton()))))
+      else if (_traError != null)
+        Expanded(child: Center(child: Text(_traError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))))
+      else if (trains.isEmpty)
+        Expanded(child: _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
       else ...[
-        if ((_traUpdateTime ?? '').isNotEmpty) _UpdTime(_traUpdateTime!),
-        const SizedBox(height: 4),
-        ..._traTrains!.asMap().entries.map((e) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: SlideUpFadeIn(index: e.key, child: _RailCard(no: e.value['train_no']?.toString() ?? '', type: e.value['train_type_name']?.toString() ?? '', dep: e.value['departure_time']?.toString() ?? '', arr: e.value['arrival_time']?.toString() ?? '', origin: _traO, dest: _traD, date: _today, isThsr: false, stops: e.value['stops'] is List ? (e.value['stops'] as List) : [])),
-        )),
+        Expanded(
+          child: PageView.builder(
+            controller: _traPageCtrl,
+            onPageChanged: (p) => setState(() => _traPage = p),
+            itemCount: totalPages,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (ctx, pageIdx) {
+              final pageTrains = trains.skip(pageIdx * _kTraPerPage).take(_kTraPerPage).toList();
+              return AnimatedBuilder(
+                animation: _traPageCtrl,
+                builder: (ctx, child) {
+                  double offset = 0;
+                  try { if (_traPageCtrl.hasClients && _traPageCtrl.position.haveDimensions) offset = _traPageCtrl.page! - pageIdx; } catch (_) {}
+                  final angle = offset.clamp(-1.0, 1.0) * (math.pi / 2.2);
+                  final isLeft = offset <= 0;
+                  return Transform(
+                    alignment: isLeft ? FractionalOffset.centerRight : FractionalOffset.centerLeft,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.0018)
+                      ..rotateY(angle),
+                    child: Opacity(
+                      opacity: (1.0 - offset.abs() * 0.45).clamp(0.0, 1.0),
+                      child: child,
+                    ),
+                  );
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: pageTrains.map((t) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _RailCard(
+                      no: t['train_no']?.toString() ?? '',
+                      type: t['train_type_name']?.toString() ?? '',
+                      dep: t['departure_time']?.toString() ?? '',
+                      arr: t['arrival_time']?.toString() ?? '',
+                      origin: _traO, dest: _traD, date: _today, isThsr: false,
+                      stops: t['stops'] is List ? (t['stops'] as List) : [],
+                    ),
+                  )).toList(),
+                ),
+              );
+            },
+          ),
+        ),
+        // 頁碼列
+        if (totalPages > 1) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            _PageBtn(icon: Icons.chevron_left_rounded, enabled: _traPage > 0,
+              onTap: () { final p = _traPage - 1; setState(() => _traPage = p); _traPageCtrl.animateToPage(p, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); }),
+            const SizedBox(width: 14),
+            ...List.generate(totalPages, (i) => GestureDetector(
+              onTap: () { setState(() => _traPage = i); _traPageCtrl.animateToPage(i, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: _traPage == i ? 22 : 8, height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: _traPage == i ? context.appPrimary : AppColors.divider,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            )),
+            const SizedBox(width: 14),
+            _PageBtn(icon: Icons.chevron_right_rounded, enabled: _traPage < totalPages - 1,
+              onTap: () { final p = _traPage + 1; setState(() => _traPage = p); _traPageCtrl.animateToPage(p, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); }),
+          ]),
+        ),
       ],
     ]);
   }
@@ -852,14 +1031,11 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       else if (_thsrError != null) Center(child: Text(_thsrError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)))
       else if (_thsrTrains == null || _thsrTrains!.isEmpty)
         _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
-      else ...[
-        if ((_thsrUpdateTime ?? '').isNotEmpty) _UpdTime(_thsrUpdateTime!),
-        const SizedBox(height: 4),
+      else
         ..._thsrTrains!.asMap().entries.map((e) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: SlideUpFadeIn(index: e.key, child: _RailCard(no: e.value['TrainNo']?.toString() ?? '', type: '高鐵', dep: e.value['DepartureTime']?.toString() ?? '', arr: e.value['ArrivalTime']?.toString() ?? '', origin: _thsrO, dest: _thsrD, date: _today, isThsr: true, stops: e.value['stops'] is List ? (e.value['stops'] as List) : [])),
         )),
-      ],
     ]);
   }
 }
@@ -1317,7 +1493,7 @@ class _BusCardState extends State<_BusCard> {
           FlutterMap(
             options: MapOptions(initialCenter: center, initialZoom: 13.5),
             children: [
-              TileLayer(urlTemplate: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', userAgentPackageName: 'com.chiayicity.explore_chiayi'),
+              TileLayer(urlTemplate: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', userAgentPackageName: 'com.chiayicity.explore_chiayi'),
               MarkerLayer(markers: busMarkers),
             ],
           ),
@@ -1352,15 +1528,6 @@ class _RailCard extends StatefulWidget {
   @override State<_RailCard> createState() => _RailCardState();
 }
 
-// 膠帶顏色循環（模擬圖片中每張卡片不同顏色的膠帶）
-const _kTapeColors = [
-  Color(0xFFFFC1C1), // 粉紅
-  Color(0xFFFFD9A0), // 橙黃
-  Color(0xFFC8E6C9), // 薄荷綠
-  Color(0xFFCFD8FF), // 薰衣草藍
-  Color(0xFFFFECB3), // 奶油黃
-  Color(0xFFB2EBF2), // 天空藍
-];
 
 class _RailCardState extends State<_RailCard> {
   bool _expanded = false;
@@ -1371,19 +1538,16 @@ class _RailCardState extends State<_RailCard> {
   Color get _acc {
     if (widget.isThsr) return const Color(0xFFC4856A); // 陶土橘
     final t = widget.type;
-    if (t.contains('自強'))  return const Color(0xFF5B7FAF); // 天藍（取代深紅）
-    if (t.contains('太魯閣')) return const Color(0xFF3A9E8A); // 清爽青綠
+    if (t.contains('自強'))  return const Color(0xFF5B7FAF); // 天藍
+    if (t.contains('太魯閣')) return const Color(0xFF3A9E8A); // 青綠
     if (t.contains('普悠瑪')) return const Color(0xFF7B6BAE); // 淡紫
     if (t.contains('莒光'))  return const Color(0xFFB07A30); // 暖木棕
-    return context.appPrimary; // 區間 / 其他 — 跟隨主題色
+    return const Color(0xFF5E8C6E); // 區間 / 其他 — 固定苔蘚綠
   }
   Color get _bg => context.appMist;
 
-  // 依班次號碼決定膠帶顏色（穩定不隨刷新改變）
-  Color get _tapeColor {
-    final idx = (int.tryParse(widget.no.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0) % _kTapeColors.length;
-    return _kTapeColors[idx];
-  }
+  // 標籤背景 = 車種強調色的淡色版，同車種永遠一致
+  Color get _tapeColor => _acc.withValues(alpha: 0.14);
 
   @override void initState() { super.initState(); _stops = widget.stops.isNotEmpty ? widget.stops : null; }
 
@@ -1824,6 +1988,25 @@ class _BusNearbyCardState extends State<_BusNearbyCard> {
         if (!widget.isLast) const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.divider),
       ])),
     ]));
+  }
+}
+
+/// 翻頁按鈕（台鐵）
+class _PageBtn extends StatelessWidget {
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _PageBtn({required this.icon, required this.enabled, required this.onTap});
+  @override Widget build(BuildContext context) {
+    final c = enabled ? context.appPrimary : AppColors.divider;
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 34, height: 34,
+        decoration: BoxDecoration(color: c.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
+        child: Icon(icon, size: 20, color: c),
+      ),
+    );
   }
 }
 

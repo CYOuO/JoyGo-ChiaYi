@@ -57,6 +57,9 @@ dependencies:
   qr_flutter: ^4.1.0
   mobile_scanner: ^4.0.0
 
+  # Notifications
+  flutter_local_notifications: ^17.2.1
+
   # UI helpers
   shimmer: ^3.0.0
   lottie: ^3.1.0
@@ -72,6 +75,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_native_splash: ^2.4.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/logo.png"
+  adaptive_icon_background: "#FFF5EDE0"
+  adaptive_icon_foreground: "assets/images/logo.png"
 
 # flutter_native_splash config — kept minimal.
 # We rely on the Flutter default native launch + our Dart SplashScreen animation.

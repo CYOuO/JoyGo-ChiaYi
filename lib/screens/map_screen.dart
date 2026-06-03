@@ -138,6 +138,42 @@ IconData _tdxIcon(Map<String, dynamic> raw) {
   return Icons.place_rounded;
 }
 
+// TDX 景點類別 → 篩選面板同色系，柔化 30% 適合地圖圖標
+Color _tdxColor(Map<String, dynamic> raw) {
+  final v = raw['classes'];
+  final List<String> cls = v is List
+      ? v.whereType<String>().toList()
+      : v is String && v.trim().isNotEmpty
+          ? [v.trim()]
+          : [];
+  for (final c in cls) {
+    switch (c.trim()) {
+      case '休閒農業類':   return const Color(0xFF8BB878);
+      case '古蹟類':       return const Color(0xFFB09468);
+      case '廟宇類':       return const Color(0xFFD4A840);
+      case '文化類':       return const Color(0xFF9B8CF0);
+      case '林場類':       return const Color(0xFF5AAF5A);
+      case '森林遊樂區類': return const Color(0xFF60B460);
+      case '生態類':       return const Color(0xFF6BC06B);
+      case '自然風景類':   return const Color(0xFF40B0A0);
+      case '藝術類':       return const Color(0xFFEE6088);
+      case '觀光工廠類':   return const Color(0xFF9B7B6B);
+      case '遊憩類':       return const Color(0xFFFFB444);
+      case '都會公園類':   return const Color(0xFF70CC70);
+      case '體育健身類':   return const Color(0xFF55B8F0);
+    }
+  }
+  return const Color(0xFFB0B0B0);
+}
+
+// 旅遊設施 → Color
+Color _facilityColor(Map<String, dynamic> raw) {
+  final type = raw['類別']?.toString() ?? '';
+  if (type.contains('旅遊服務中心')) return const Color(0xFF00897B);
+  if (type.contains('借問站')) return const Color(0xFFFF9800);
+  return const Color(0xFFA3C4A3);
+}
+
 // Keep emoji helpers as aliases for legacy fallback (unused but safe to keep)
 String _facilityEmoji(Map<String, dynamic> raw) => '';
 String _tdxEmoji(Map<String, dynamic> raw) => '';
@@ -936,10 +972,18 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  /// 計算 marker 的顏色：有篩選啟用 → 加深 25%（更醒目）
-  Color _markerColor(_Cat cat, Color baseColor) {
-    if (_hasFilterForCat(cat)) return Color.lerp(baseColor, Colors.black, 0.22)!;
-    return baseColor;
+  /// 計算 marker 的顏色：TDX/facility 依分類著色，其他用預設
+  Color _markerColor(_Place p, Color baseColor) {
+    Color c;
+    if (p.cat == _Cat.tdxSpot) {
+      c = _tdxColor(p.raw);
+    } else if (p.cat == _Cat.facility) {
+      c = _facilityColor(p.raw);
+    } else {
+      c = baseColor;
+    }
+    if (_hasFilterForCat(p.cat)) return Color.lerp(c, Colors.black, 0.22)!;
+    return c;
   }
 
   // ── 定位 ─────────────────────────────────────────────────
@@ -976,9 +1020,15 @@ class _MapScreenState extends State<MapScreen> {
             children: [
               _buildTopBar(top),
               Expanded(
-                child: _isListView
-                    ? _buildListView(places)
-                    : _buildMap(places),
+                child: Stack(children: [
+                  _isListView
+                      ? _buildListView(places)
+                      : _buildMap(places),
+                  Positioned(
+                    top: 6, left: 0, right: 0,
+                    child: _buildQuickChips(),
+                  ),
+                ]),
               ),
             ],
           ),
@@ -1054,6 +1104,45 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   // ── 頂部欄 ───────────────────────────────────────────────
+
+  // 快速篩選 chip（常用分類水平列）
+  static const _quickChipCats = [_Cat.tdxSpot, _Cat.chiayiFood, _Cat.drinkShop, _Cat.goodShop, _Cat.petShop, _Cat.hotel];
+
+  Widget _buildQuickChips() {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: _quickChipCats.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final cat = _quickChipCats[i];
+          final cfg = _kCats.firstWhere((c) => c.cat == cat);
+          final on = _visible.contains(cat);
+          return GestureDetector(
+            onTap: () => setState(() => on ? _visible.remove(cat) : _visible.add(cat)),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: on ? cfg.color : Colors.white.withValues(alpha: 0.85),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: on ? cfg.color : Colors.white.withValues(alpha: 0.9)),
+                boxShadow: on ? [BoxShadow(color: cfg.color.withValues(alpha: 0.3), blurRadius: 6, offset: const Offset(0, 2))] : null,
+              ),
+              alignment: Alignment.center,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(cfg.icon, size: 14, color: on ? Colors.white : cfg.color),
+                const SizedBox(width: 5),
+                Text(cfg.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: on ? Colors.white : cfg.color)),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildTopBar(double top) {
     return Container(
@@ -1204,7 +1293,7 @@ class _MapScreenState extends State<MapScreen> {
               alignment: Alignment.topCenter,
               child: GestureDetector(
                 onTap: () => _onMarkerTap(p),
-                child: _MarkerPin(color: _markerColor(p.cat, cfg.color), icon: icon, isSelected: sel),
+                child: _MarkerPin(color: _markerColor(p, cfg.color), icon: icon, isSelected: sel),
               ),
             );
           }).toList(),
@@ -1247,7 +1336,7 @@ class _MapScreenState extends State<MapScreen> {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           leading: CircleAvatar(
-            backgroundColor: cfg.color,
+            backgroundColor: _markerColor(p, cfg.color),
             child: Icon(
               p.cat == _Cat.tdxSpot
                   ? _tdxIcon(p.raw)

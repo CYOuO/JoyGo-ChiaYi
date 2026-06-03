@@ -1,13 +1,19 @@
 ﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
-import '../models/dummy_data.dart';
+import '../widgets/common_widgets.dart' show StampGridSkeleton;
+import '../models/spot.dart';
+import '../services/spot_service.dart';
 import 'camera_screen.dart';
 
 class StampScreen extends StatefulWidget {
@@ -22,21 +28,30 @@ class _StampScreenState extends State<StampScreen>
   late TabController _tabController;
   final MapController _miniMapCtrl = MapController();
 
-  // Map<spotId, visitCount> — visit count drives stamp color depth
-  final Map<String, int> _visitedSpots = {'1': 2, '2': 1, '5': 4};
+  // 真實景點（從 Firestore 載入）
+  List<Spot> _realSpots = [];
+  bool _spotsLoading = true;
+
+  // Map<spotId, visitCount> — 持久化到 SharedPreferences
+  Map<String, int> _visitedSpots = {};
+  static const _kVisitedKey = 'stamp_visited_v1';
+
+  // 連續打卡天數
+  int _streak = 0;
+  String _lastCheckinDate = '';
+  static const _kStreakKey = 'stamp_streak_v1';
+  static const _kLastDateKey = 'stamp_last_date_v1';
 
   // GPS auto check-in
   StreamSubscription<Position>? _posStream;
   Position? _stampPos;
   final Map<String, DateTime> _lastCheckinTime = {};
 
-  // 可拖曳相機按鈕（相對右下角的偏移）
   Offset _cameraFabOffset = const Offset(16, 16);
 
-  static const _kCheckinRadius = 100.0; // metres
+  static const _kCheckinRadius = 100.0;
   static const _kCheckinCooldown = Duration(minutes: 5);
 
-  // Chiayi bounds
   static final _chiayiBounds = LatLngBounds(
     const LatLng(23.25, 120.10),
     const LatLng(23.75, 121.00),
@@ -45,8 +60,64 @@ class _StampScreenState extends State<StampScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _loadVisited();
+    _loadRealSpots();
     _startLocationWatch();
+  }
+
+  Future<void> _loadVisited() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_kVisitedKey);
+    if (raw != null && raw.isNotEmpty) {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      if (mounted) setState(() => _visitedSpots = decoded.map((k, v) => MapEntry(k, v as int)));
+    }
+    _streak = prefs.getInt(_kStreakKey) ?? 0;
+    _lastCheckinDate = prefs.getString(_kLastDateKey) ?? '';
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveVisited() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kVisitedKey, jsonEncode(_visitedSpots));
+    await prefs.setInt(_kStreakKey, _streak);
+    await prefs.setString(_kLastDateKey, _lastCheckinDate);
+    _syncLeaderboard();
+  }
+
+  void _updateStreak() {
+    final now = DateTime.now();
+    final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    if (_lastCheckinDate == today) return;
+    final yesterday = now.subtract(const Duration(days: 1));
+    final yStr = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
+    if (_lastCheckinDate == yStr) {
+      _streak++;
+    } else {
+      _streak = 1;
+    }
+    _lastCheckinDate = today;
+  }
+
+  Future<void> _syncLeaderboard() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final count = _visitedSpots.values.where((v) => v > 0).length;
+    try {
+      await FirebaseFirestore.instance.collection('leaderboard').doc(user.uid).set({
+        'displayName': user.displayName ?? '匿名探索者',
+        'photoURL': user.photoURL ?? '',
+        'stampCount': count,
+        'streak': _streak,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (_) {}
+  }
+
+  Future<void> _loadRealSpots() async {
+    final spots = await SpotService.loadAllSpots();
+    if (mounted) setState(() { _realSpots = spots; _spotsLoading = false; });
   }
 
   @override
@@ -80,7 +151,7 @@ class _StampScreenState extends State<StampScreen>
     setState(() => _stampPos = pos);
     final now = DateTime.now();
 
-    for (final spot in DummyData.spots) {
+    for (final spot in _realSpots) {
       final dist = Geolocator.distanceBetween(
           pos.latitude, pos.longitude, spot.lat, spot.lng);
       if (dist > _kCheckinRadius) continue;
@@ -88,11 +159,12 @@ class _StampScreenState extends State<StampScreen>
       final last = _lastCheckinTime[spot.id];
       if (last != null && now.difference(last) < _kCheckinCooldown) continue;
 
-      // ✅ Auto check-in!
-      HapticFeedback.heavyImpact(); // ⑤ 打卡成功重震動
+      HapticFeedback.heavyImpact();
       _lastCheckinTime[spot.id] = now;
       final newCount = (_visitedSpots[spot.id] ?? 0) + 1;
+      _updateStreak();
       setState(() => _visitedSpots[spot.id] = newCount);
+      _saveVisited();
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('「${spot.name}」自動打卡成功！第 $newCount 次造訪'),
@@ -129,6 +201,7 @@ class _StampScreenState extends State<StampScreen>
           tabs: const [
             Tab(text: '景點印章'),
             Tab(text: '成就徽章'),
+            Tab(text: '排行榜'),
             Tab(text: '小地圖'),
           ],
         ),
@@ -140,6 +213,7 @@ class _StampScreenState extends State<StampScreen>
             children: [
               _buildStampTab(),
               _buildAchievementTab(),
+              _buildLeaderboardTab(),
               _buildMiniMapTab(),
             ],
           ),
@@ -184,8 +258,9 @@ class _StampScreenState extends State<StampScreen>
   }
 
   Widget _buildStampTab() {
-    final spots = DummyData.spots;
-    final visitedCount = _visitedSpots.length;
+    if (_spotsLoading) return const StampGridSkeleton();
+    final spots = _realSpots;
+    final visitedCount = _visitedSpots.keys.where((k) => (_visitedSpots[k] ?? 0) > 0).length;
     final total = spots.length;
 
     return CustomScrollView(
@@ -254,13 +329,30 @@ class _StampScreenState extends State<StampScreen>
                     ClipRRect(
                       borderRadius: BorderRadius.circular(4),
                       child: LinearProgressIndicator(
-                        value: visitedCount / total,
+                        value: total > 0 ? visitedCount / total : 0,
                         backgroundColor: Colors.white.withOpacity(0.3),
                         valueColor:
                             const AlwaysStoppedAnimation<Color>(Colors.white),
                         minHeight: 8,
                       ),
                     ),
+                    if (_streak > 0) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(_streak >= 7 ? Icons.local_fire_department_rounded : Icons.trending_up_rounded,
+                              size: 16, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text('連續打卡 $_streak 天${_streak >= 30 ? ' — 傳說級！' : _streak >= 14 ? ' — 超級！' : _streak >= 7 ? ' — 厲害！' : _streak >= 3 ? ' — 加油！' : ''}',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -277,7 +369,10 @@ class _StampScreenState extends State<StampScreen>
                 final isVisited = visitCount > 0;
 
                 final stampC = _getStampColor(visitCount);
-                return GestureDetector(
+                return SlideUpFadeIn(
+                  index: index,
+                  staggerDelay: const Duration(milliseconds: 40),
+                  child: GestureDetector(
                   onTap: () => _showStampDetail(context, spot, visitCount),
                   child: StitchedBox(
                     color: isVisited ? AppColors.surface : AppColors.surfaceMoss.withValues(alpha: 0.5),
@@ -397,7 +492,7 @@ class _StampScreenState extends State<StampScreen>
                       ],
                     ),
                   ),
-                );
+                ));
               },
               childCount: spots.length,
             ),
@@ -431,97 +526,58 @@ class _StampScreenState extends State<StampScreen>
 
 
   List<Achievement> _computeAchievements() {
-    final base = DummyData.achievements;
-    final spots = DummyData.spots;
+    final spots = _realSpots;
+    final visited = _visitedSpots.entries.where((e) => e.value > 0).length;
 
-    // Count restaurant spots visited
     final restaurantCount = spots
         .where((s) => s.category == 'restaurant' && (_visitedSpots[s.id] ?? 0) > 0)
         .length;
 
-    // Count spots with name containing '阿里山'
     final alishanCount = spots
         .where((s) => s.name.contains('阿里山') && (_visitedSpots[s.id] ?? 0) > 0)
         .length;
+    final alishanTotal = spots.where((s) => s.name.contains('阿里山')).length.clamp(1, 999);
 
-    // Count visit times for spots with name containing '火雞'
-    final turkeyVisits = spots
-        .where((s) => s.name.contains('火雞'))
-        .fold<int>(0, (sum, s) => sum + (_visitedSpots[s.id] ?? 0));
-
-    // Count spots with name containing '雞肉飯'
     final chickenRiceCount = spots
-        .where((s) => s.name.contains('雞肉飯') && (_visitedSpots[s.id] ?? 0) > 0)
+        .where((s) => (s.name.contains('雞肉飯') || s.name.contains('火雞')) && (_visitedSpots[s.id] ?? 0) > 0)
+        .length;
+    final chickenRiceTotal = spots.where((s) => s.name.contains('雞肉飯') || s.name.contains('火雞')).length.clamp(1, 999);
+
+    final attractionCount = spots
+        .where((s) => s.category == 'attraction' && (_visitedSpots[s.id] ?? 0) > 0)
         .length;
 
     List<Achievement> result = [];
     int unlockedSoFar = 0;
 
-    for (final a in base) {
-      int progress;
-      int total;
-      bool isUnlocked;
+    final defs = <(String id, String title, String desc, String icon, int progress, int total, String rarity)>[
+      ('1', '諸羅初探者', '完成第一個景點打卡', '🗺️', visited.clamp(0, 1), 1, 'bronze'),
+      ('2', '美食獵人', '到訪 5 間餐廳', '🍜', restaurantCount.clamp(0, 5), 5, 'silver'),
+      ('3', '阿里山征服者', '打卡所有阿里山景點', '⛰️', alishanCount.clamp(0, alishanTotal), alishanTotal, 'gold'),
+      ('4', '火雞飯控', '造訪嘉義雞肉飯店家', '🦃', chickenRiceCount.clamp(0, chickenRiceTotal), chickenRiceTotal, 'bronze'),
+      ('5', '嘉義通', '解鎖 50 個景點', '🏆', visited.clamp(0, 50), 50, 'gold'),
+      ('6', '景點達人', '到訪 10 個觀光景點', '🌙', attractionCount.clamp(0, 10), 10, 'silver'),
+      ('8', '雞肉飯巡禮', '吃遍所有嘉義雞肉飯', '🍗', chickenRiceCount.clamp(0, chickenRiceTotal), chickenRiceTotal, 'gold'),
+      ('s3', '三日不懈', '連續打卡 3 天', '🗺️', _streak.clamp(0, 3), 3, 'bronze'),
+      ('s7', '一週勇者', '連續打卡 7 天', '🗺️', _streak.clamp(0, 7), 7, 'silver'),
+      ('s14', '半月征途', '連續打卡 14 天', '🗺️', _streak.clamp(0, 14), 14, 'gold'),
+      ('s30', '月月不停', '連續打卡 30 天', '🗺️', _streak.clamp(0, 30), 30, 'special'),
+    ];
 
-      switch (a.id) {
-        case '1':
-          progress = _visitedSpots.length.clamp(0, 1);
-          total = 1;
-          isUnlocked = progress >= 1;
-          break;
-        case '2':
-          progress = restaurantCount.clamp(0, 5);
-          total = 5;
-          isUnlocked = progress >= 5;
-          break;
-        case '3':
-          progress = alishanCount.clamp(0, 8);
-          total = 8;
-          isUnlocked = progress >= 8;
-          break;
-        case '4':
-          progress = turkeyVisits.clamp(0, 3);
-          total = 3;
-          isUnlocked = progress >= 3;
-          break;
-        case '5':
-          progress = _visitedSpots.length.clamp(0, 50);
-          total = 50;
-          isUnlocked = progress >= 50;
-          break;
-        case '6':
-          progress = (_visitedSpots['2'] ?? 0).clamp(0, 3);
-          total = 3;
-          isUnlocked = progress >= 3;
-          break;
-        case '7':
-          progress = unlockedSoFar.clamp(0, 6);
-          total = 6;
-          isUnlocked = progress >= 6;
-          break;
-        case '8':
-          progress = chickenRiceCount.clamp(0, 30);
-          total = 30;
-          isUnlocked = progress >= 30;
-          break;
-        default:
-          progress = a.progress;
-          total = a.total;
-          isUnlocked = a.isUnlocked;
-      }
-
-      final computed = Achievement(
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        icon: a.icon,
-        isUnlocked: isUnlocked,
-        progress: progress,
-        total: total,
-        rarity: a.rarity,
-      );
+    for (final d in defs) {
+      final isUnlocked = d.$5 >= d.$6;
       if (isUnlocked) unlockedSoFar++;
-      result.add(computed);
+      result.add(Achievement(
+        id: d.$1, title: d.$2, description: d.$3, icon: d.$4,
+        isUnlocked: isUnlocked, progress: d.$5, total: d.$6, rarity: d.$7,
+      ));
     }
+    // 守護者成就
+    result.add(Achievement(
+      id: '7', title: '特別獎：諸羅守護者', description: '達成所有成就',
+      icon: '👑', isUnlocked: unlockedSoFar >= defs.length,
+      progress: unlockedSoFar.clamp(0, defs.length), total: defs.length, rarity: 'special',
+    ));
     return result;
   }
 
@@ -851,8 +907,65 @@ class _StampScreenState extends State<StampScreen>
     );
   }
 
+  Widget _buildLeaderboardTab() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('leaderboard')
+          .orderBy('stampCount', descending: true).limit(20).snapshots(),
+      builder: (ctx, snap) {
+        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        final docs = snap.data!.docs;
+        if (docs.isEmpty) return const Center(child: Text('還沒有人上榜！快去集章吧', style: TextStyle(color: AppColors.textHint)));
+        final myUid = FirebaseAuth.instance.currentUser?.uid;
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: docs.length,
+          itemBuilder: (_, i) {
+            final d = docs[i].data();
+            final isMe = docs[i].id == myUid;
+            final count = d['stampCount'] as int? ?? 0;
+            final streak = d['streak'] as int? ?? 0;
+            final name = d['displayName'] as String? ?? '匿名';
+            final photo = d['photoURL'] as String? ?? '';
+            final medal = i == 0 ? Icons.emoji_events_rounded : i == 1 ? Icons.workspace_premium_rounded : i == 2 ? Icons.military_tech_rounded : null;
+            final medalColor = i == 0 ? const Color(0xFFC09848) : i == 1 ? const Color(0xFF8878B0) : const Color(0xFFAA7860);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: isMe ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.08) : AppColors.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: isMe ? Border.all(color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.3)) : null,
+              ),
+              child: Row(children: [
+                SizedBox(width: 28, child: medal != null
+                    ? Icon(medal, color: medalColor, size: 22)
+                    : Text('${i + 1}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textHint))),
+                const SizedBox(width: 12),
+                CircleAvatar(
+                  radius: 18,
+                  backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                  backgroundColor: AppColors.surfaceMoss,
+                  child: photo.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppColors.textHint) : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: isMe ? Theme.of(ctx).colorScheme.primary : AppColors.textPrimary)),
+                  if (streak > 0) Text('連續 $streak 天', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                ])),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text('$count', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: i < 3 ? medalColor : AppColors.textPrimary)),
+                  const Text('景點', style: TextStyle(fontSize: 10, color: AppColors.textHint)),
+                ]),
+              ]),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildMiniMapTab() {
-    final spots = DummyData.spots;
+    final spots = _realSpots;
 
     // 嘉義市中心作為初始中心
     const center = LatLng(23.4801, 120.4515);

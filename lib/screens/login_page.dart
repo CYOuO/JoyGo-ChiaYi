@@ -130,7 +130,7 @@ class _LoginPageState extends State<LoginPage>
           'savedTrips':           [],
           'checkedInSpots':       [],
           'checkedInRestaurants': [],
-          'themeIndex':           2,
+          'themeIndex':           7,
           'language':             'zh',
           'postCount':            0,
           'likeCount':            0,
@@ -264,20 +264,20 @@ class _LoginPageState extends State<LoginPage>
     final mist     = Color.lerp(primary, Colors.white, 0.88)!;
     final screenH  = MediaQuery.of(context).size.height;
 
-    const accentPurple = Color(0xFF8B6BB1);
-    const softPurple   = Color(0xFFBDA4D9);
+    final accentPurple = primary;
+    final softPurple   = Color.lerp(primary, Colors.white, 0.42)!;
+    final titleDark    = Color.lerp(primary, Colors.black, 0.55)!;
 
-    // 插畫區高度：大螢幕給多，小螢幕給少，最小 160，最大 260
-    final illustrationH = (screenH * 0.30).clamp(160.0, 260.0);
-    // 插畫頂部偏移
+    // 插畫區高度：縮小讓表單盡量靠上
+    final illustrationH = (screenH * 0.20).clamp(100.0, 160.0);
+    // 插畫頂部偏移：往下移讓標題文字有乾淨背景
     final illustrationTop = screenH * 0.09;
-    // 表單卡以上的佔位 = 插畫底部 - SafeArea後的已使用高度
-    // 使用 LayoutBuilder 動態計算，用 spacer 配合
-    final headerTextH = 110.0; // brand + back button 的估算高度
-    final spacerH = (illustrationTop + illustrationH - headerTextH - MediaQuery.of(context).padding.top).clamp(60.0, 200.0);
+    // 佔位 spacer 縮小 → 表單卡更靠上，不用滑動就能看到登入按鈕
+    final headerTextH = 100.0;
+    final spacerH = (illustrationTop + illustrationH - headerTextH - MediaQuery.of(context).padding.top).clamp(4.0, 60.0);
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F3FB),
+      backgroundColor: Color.lerp(primary, Colors.white, 0.96)!,
       resizeToAvoidBottomInset: true,
       body: FadeTransition(
         opacity: _fadeAnim,
@@ -288,11 +288,11 @@ class _LoginPageState extends State<LoginPage>
             top: 0, left: 0, right: 0,
             child: Container(
               height: illustrationTop + illustrationH + 40,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFEDE5F5), Color(0xFFF7F3FB)],
+                  colors: [Color.lerp(primary, Colors.white, 0.85)!, Color.lerp(primary, Colors.white, 0.96)!],
                 ),
               ),
             ),
@@ -336,7 +336,7 @@ class _LoginPageState extends State<LoginPage>
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [BoxShadow(color: accentPurple.withValues(alpha: 0.12), blurRadius: 8, offset: const Offset(0, 2))],
                       ),
-                      child: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF8B6BB1), size: 17)),
+                      child: Icon(Icons.arrow_back_ios_new_rounded, color: primary, size: 17)),
                   ),
                 ]),
               ),
@@ -348,19 +348,19 @@ class _LoginPageState extends State<LoginPage>
                   Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                     HandDrawnUnderline(
                       color: accentPurple.withValues(alpha: 0.35),
-                      child: const Text('探索諸羅',
-                        style: TextStyle(color: Color(0xFF3D2A5A), fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 1.5, height: 1.1)),
+                      child: Text('探索諸羅',
+                        style: TextStyle(color: titleDark, fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: 1.5, height: 1.1)),
                     ),
                     const SizedBox(width: 8),
-                    const Text(' JoyGo',
-                      style: TextStyle(color: Color(0xFF8B6BB1), fontSize: 20, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
+                    Text(' JoyGo',
+                      style: TextStyle(color: primary, fontSize: 20, fontWeight: FontWeight.w900, fontStyle: FontStyle.italic)),
                   ]),
                   const SizedBox(height: 4),
                   Row(children: [
                     DoodleHeart(color: accentPurple.withValues(alpha: 0.60), size: 9),
                     const SizedBox(width: 5),
-                    const Text('嘉義旅遊夥伴，陪你玩遍嘉義！',
-                      style: TextStyle(color: Color(0xFF8B6BB1), fontSize: 12, fontWeight: FontWeight.w600)),
+                    Text('嘉義旅遊夥伴，陪你玩遍嘉義！',
+                      style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.w600)),
                     const SizedBox(width: 5),
                     DoodleHeart(color: accentPurple.withValues(alpha: 0.60), size: 9),
                   ]),
@@ -373,10 +373,10 @@ class _LoginPageState extends State<LoginPage>
               // ── 5. 白色表單卡 ──────────────────────────
               Expanded(
                 child: Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                    boxShadow: [BoxShadow(color: Color(0x228B6BB1), blurRadius: 24, offset: Offset(0, -6))],
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                    boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.13), blurRadius: 24, offset: const Offset(0, -6))],
                   ),
                   child: ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
@@ -384,8 +384,8 @@ class _LoginPageState extends State<LoginPage>
                       // 筆記本橫線底紋
                       Positioned.fill(
                         child: NotebookBackground(
-                          lineColor: const Color(0x0F8B6BB1),
-                          marginColor: const Color(0x148B6BB1),
+                          lineColor: accentPurple.withValues(alpha: 0.06),
+                          marginColor: accentPurple.withValues(alpha: 0.08),
                           lineSpacing: 32,
                           child: const SizedBox.expand(),
                         ),
@@ -424,7 +424,7 @@ class _LoginPageState extends State<LoginPage>
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             child: JournalDivider(color: accentPurple.withValues(alpha: 0.30), label: '或'),
                           ),
-                          _socialBtn('Google',   const Color(0xFFEA4335), Icons.g_mobiledata_rounded, accentPurple, onTap: _doGoogleSignIn),
+                          _socialBtn('Google',   accentPurple, Icons.g_mobiledata_rounded, accentPurple, onTap: _doGoogleSignIn),
                           const SizedBox(height: 10),
                           _socialBtn('Facebook', const Color(0xFF1877F2), Icons.facebook_rounded,     accentPurple),
                           const SizedBox(height: 20),
@@ -432,7 +432,7 @@ class _LoginPageState extends State<LoginPage>
                             Icon(Icons.shield_outlined, size: 12, color: accentPurple.withValues(alpha: 0.55)),
                             const SizedBox(width: 5),
                             RichText(text: TextSpan(
-                              style: const TextStyle(fontSize: 11, color: Color(0xFFAA99BB)),
+                              style: TextStyle(fontSize: 11, color: accentPurple.withValues(alpha: 0.55)),
                               children: [
                                 const TextSpan(text: '登入即代表同意 JoyGo '),
                                 TextSpan(text: '服務條款與隱私政策',
@@ -502,7 +502,7 @@ class _LoginPageState extends State<LoginPage>
           labelText: label,
           floatingLabelStyle: TextStyle(color: primary, fontWeight: FontWeight.w700, fontSize: 13),
           prefixIcon: Icon(icon, size: 18, color: primary.withValues(alpha: 0.60)),
-          filled: true, fillColor: const Color(0xFFF5F0FB),
+          filled: true, fillColor: Color.lerp(primary, Colors.white, 0.94)!,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primary.withValues(alpha: 0.15), width: 1)),
           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primary, width: 1.5)),
@@ -524,7 +524,7 @@ class _LoginPageState extends State<LoginPage>
             icon: Icon(visible ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 18, color: primary.withValues(alpha: 0.55)),
             onPressed: toggle,
           ),
-          filled: true, fillColor: const Color(0xFFF5F0FB),
+          filled: true, fillColor: Color.lerp(primary, Colors.white, 0.94)!,
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
           enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primary.withValues(alpha: 0.15), width: 1)),
           focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: primary, width: 1.5)),
@@ -563,15 +563,16 @@ class _LoginPageState extends State<LoginPage>
       }),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(double.infinity, 50),
-        side: BorderSide(color: isReal ? accent.withValues(alpha: 0.4) : const Color(0xFFE8E0F0), width: 1.2),
+        // 統一用淺紫灰邊框，不用品牌色做背景
+        side: BorderSide(color: Color.lerp(primary, Colors.white, 0.60)!, width: 1.2),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        backgroundColor: isReal ? accent.withValues(alpha: 0.04) : Colors.white,
+        backgroundColor: Colors.white,
       ),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(icon, color: accent, size: 22),
+        Icon(icon, color: accent, size: 20),  // icon 才帶品牌色
         const SizedBox(width: 10),
         Text('使用 $platform 帳號登入',
-          style: TextStyle(color: isReal ? accent : const Color(0xFF3D2A5A), fontWeight: isReal ? FontWeight.w700 : FontWeight.w600, fontSize: 14)),
+          style: TextStyle(color: primary, fontWeight: FontWeight.w600, fontSize: 14)),
       ]),
     );
   }
@@ -589,8 +590,8 @@ class _JournalTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StitchedBox(
-      color: const Color(0xFFF5F0FB),
-      stitchColor: const Color(0xFF8B6BB1).withValues(alpha: 0.22),
+      color: Color.lerp(primary, Colors.white, 0.94)!,
+      stitchColor: primary.withValues(alpha: 0.22),
       radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
       padding: const EdgeInsets.all(4),
       child: Row(children: [_tab('登入', showLogin), _tab('註冊', !showLogin)]),
@@ -609,7 +610,7 @@ class _JournalTabBar extends StatelessWidget {
           boxShadow: selected ? [BoxShadow(color: primary.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 2))] : [],
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(label, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: selected ? primary : const Color(0xFFBBAACE))),
+          Text(label, textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: selected ? primary : Color.lerp(primary, Colors.white, 0.55)!)),
           if (selected) ...[
             const SizedBox(height: 3),
             Container(width: 20, height: 2, decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(1))),
@@ -717,11 +718,10 @@ class _ChiayiIllustrationPainter extends CustomPainter {
     // 地面線 (ground line) — 所有建築從這裡往上長
     final gnd = h * 0.73;
 
-    // 雲（大小用 w 的比例，不用固定像素）
-    _cloud(canvas, Offset(w * 0.10, h * 0.10), w * 0.055, softColor.withValues(alpha: 0.50));
-    _cloud(canvas, Offset(w * 0.42, h * 0.05), w * 0.048, softColor.withValues(alpha: 0.38));
-    _cloud(canvas, Offset(w * 0.75, h * 0.10), w * 0.052, softColor.withValues(alpha: 0.44));
-    _cloud(canvas, Offset(w * 0.60, h * 0.20), w * 0.033, softColor.withValues(alpha: 0.28));
+    // 雲：靠右側且更高，讓左側標題保持淨空
+    _cloud(canvas, Offset(w * 0.86, h * 0.07), w * 0.042, softColor.withValues(alpha: 0.40));
+    _cloud(canvas, Offset(w * 0.67, h * 0.12), w * 0.045, softColor.withValues(alpha: 0.44));
+    _cloud(canvas, Offset(w * 0.57, h * 0.21), w * 0.035, softColor.withValues(alpha: 0.30));
 
     // 草地
     final g1 = Paint()..color = const Color(0xFFD5EAD0).withValues(alpha: 0.72);
@@ -738,33 +738,19 @@ class _ChiayiIllustrationPainter extends CustomPainter {
       ..lineTo(w, gnd + h * .04)..lineTo(w, h)..lineTo(0, h)..close();
     canvas.drawPath(gp2, g2);
 
-    // ── 元素：從 ground line 往上，各自分配寬度區塊，不重疊 ──
-    // 1. 城堡  (x: 0-15%)
-    final cW = w * 0.14;
-    final cH = h * 0.43;
-    _castle(canvas, w * 0.01, gnd - cH, cW, cH, primaryColor, softColor);
+    // ── 元素：小火車靠左、日式建築＋樹靠右 ──
+    // 小火車（稍離左緣，尺寸小不擋字）
+    final tW = w * 0.13;
+    _train(canvas, w * 0.15, gnd - tW * 0.52, tW, primaryColor, softColor);
 
-    // 2. 小火車  (x: 16-34%, 在地面上)
-    final tW = w * 0.18;
-    _train(canvas, w * 0.17, gnd - tW * 0.52, tW, primaryColor, softColor);
+    // 日式建築 (x: 61-83%)
+    final bW = w * 0.22;
+    final bH = h * 0.72;
+    _japaneseBuilding(canvas, w * 0.61, gnd - bH * 0.49, bW, bH, primaryColor, softColor);
 
-    // 3. 日式建築  (x: 36-54%)
-    final bW = w * 0.17;
-    final bH = h * 0.46;
-    _japaneseBuilding(canvas, w * 0.37, gnd - bH, bW, bH, primaryColor, softColor);
-
-    // 4. 大樹  (x center: 61%, height=35%)
-    final treeH = h * 0.36;
-    _tree(canvas, w * 0.61, gnd - treeH, treeH, primaryColor, softColor);
-
-    // 5. 火雞肉飯碗  (x: 72%, radius=6% of w — 比之前小很多)
-    final bowlR = w * 0.062;
-    _foodBowl(canvas, w * 0.73, gnd - bowlR * 1.0, bowlR, primaryColor, softColor);
-
-    // 6. 觀景塔  (x: 82-95%)
-    final twW = w * 0.11;
-    final twH = h * 0.50;
-    _tower(canvas, w * 0.83, gnd - twH, twW, twH, primaryColor, softColor);
+    // 小樹 (x center: 89%)
+    final treeH = h * 0.26;
+    _tree(canvas, w * 0.89, gnd - treeH, treeH, primaryColor, softColor);
   }
 
   void _cloud(Canvas c, Offset center, double r, Color color) {

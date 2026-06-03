@@ -335,6 +335,34 @@ class _DoodleHeartPainter extends CustomPainter {
   bool shouldRepaint(covariant _DoodleHeartPainter old) => old.color != color;
 }
 
+class SlideUpFadeIn extends StatefulWidget {
+  final Widget child;
+  final int index;
+  final Duration staggerDelay;
+  final Duration duration;
+  const SlideUpFadeIn({super.key, required this.child, this.index = 0, this.staggerDelay = const Duration(milliseconds: 60), this.duration = const Duration(milliseconds: 400)});
+  @override State<SlideUpFadeIn> createState() => _SlideUpFadeInState();
+}
+class _SlideUpFadeInState extends State<SlideUpFadeIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: widget.duration);
+    _opacity = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
+    _slide = Tween(begin: const Offset(0, 0.12), end: Offset.zero).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    Future.delayed(widget.staggerDelay * widget.index, () { if (mounted) _ctrl.forward(); });
+  }
+
+  @override void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(opacity: _opacity, child: SlideTransition(position: _slide, child: widget.child));
+}
+
 class DoodleHeart extends StatelessWidget {
   final Color? color;
   final double size;

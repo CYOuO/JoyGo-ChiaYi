@@ -2350,9 +2350,14 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
 
   Future<void> _loadUserState() async {
     final liked = await CommunityService.isLiked(widget.post.id);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() { _liked = liked; _saved = false; });
+      return;
+    }
     final savedSnap = await FirebaseFirestore.instance
         .collection('users')
-        .doc(FirebaseAuth.instance.currentUser?.uid ?? '')
+        .doc(uid)
         .collection('saved_posts').doc(widget.post.id).get();
     if (mounted) setState(() { _liked = liked; _saved = savedSnap.exists; });
   }

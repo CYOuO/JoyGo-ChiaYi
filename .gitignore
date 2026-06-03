@@ -47,3 +47,6 @@ app.*.map.json
 # Spring Boot build artifacts
 tdx-server-temp/target/
 tdx-server-temp/.env
+
+# Local environment variables (contains API keys — never commit)
+local.env.json

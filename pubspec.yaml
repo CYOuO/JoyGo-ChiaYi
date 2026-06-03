@@ -63,6 +63,7 @@ dependencies:
   # UI helpers
   shimmer: ^3.0.0
   lottie: ^3.1.0
+  google_generative_ai: ^0.4.7  # Gemini API
   flutter_animate: ^4.5.0   # 鏈式動畫 — fadeIn / slideY / blur / shimmer
   animated_digit: ^3.0.2    # 數字滾動動畫
   page_flip: ^0.2.5+1       # 真實書頁翻頁動畫

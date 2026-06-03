@@ -1,8 +1,8 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:animated_digit/animated_digit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:page_flip/page_flip.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -73,9 +73,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   List<Map<String, dynamic>>? _traTrains;
   bool _traLoading = false;
   String? _traError, _traUpdateTime;
-  int _traPage = 0;
   static const _kTraPerPage = 5;
-  late final PageController _traPageCtrl = PageController();
 
   // Alishan
   List<Map<String, dynamic>>? _aliDocs;
@@ -204,7 +202,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     if (!auto) setState(() { _traLoading = true; _traError = null; _traTrains = []; });
     try {
       final res = await RailService.queryTra(origin: _traO, dest: _traD, trainDate: _today);
-      if (mounted) { setState(() { _traTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _traUpdateTime = res['updateTime'] as String?; _traLoading = false; _traPage = 0; }); if (_traPageCtrl.hasClients) _traPageCtrl.jumpToPage(0); }
+      if (mounted) setState(() { _traTrains = (res['data'] as List).map((d) => Map<String, dynamic>.from(d as Map)).toList(); _traUpdateTime = res['updateTime'] as String?; _traLoading = false; });
     } catch (_) { if (mounted && !auto) setState(() { _traLoading = false; _traError = '無法連線，請稍候重試'; }); }
   }
 
@@ -255,7 +253,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   @override
   void dispose() {
     _tabCtrl.dispose(); _countdown?.cancel(); _debounce?.cancel();
-    _busCtrl.dispose(); _traPageCtrl.dispose();
+    _busCtrl.dispose();
     super.dispose();
   }
 
@@ -939,78 +937,63 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       else if (trains.isEmpty)
         Expanded(child: _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
       else ...[
+        // ── 書頁翻頁（page_flip 套件）──────────────────────────────
         Expanded(
-          child: PageView.builder(
-            controller: _traPageCtrl,
-            onPageChanged: (p) => setState(() => _traPage = p),
-            itemCount: totalPages,
-            physics: const BouncingScrollPhysics(),
-            itemBuilder: (ctx, pageIdx) {
+          child: PageFlipWidget(
+            // key 讓資料更新時重建整個翻頁元件
+            key: ValueKey('${_traO}_${_traD}_${trains.length}'),
+            backgroundColor: AppColors.background,
+            lastPage: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.train_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
+                const SizedBox(height: 10),
+                const Text('已是最後一頁', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+              ]),
+            ),
+            children: List.generate(totalPages, (pageIdx) {
               final pageTrains = trains.skip(pageIdx * _kTraPerPage).take(_kTraPerPage).toList();
-              return AnimatedBuilder(
-                animation: _traPageCtrl,
-                builder: (ctx, child) {
-                  double offset = 0;
-                  try { if (_traPageCtrl.hasClients && _traPageCtrl.position.haveDimensions) offset = _traPageCtrl.page! - pageIdx; } catch (_) {}
-                  final clamped = offset.abs().clamp(0.0, 1.0);
-                  // 離開頁繞左邊緣折入（負 Y），進來頁繞右邊緣展開（正 Y）
-                  final angle = -(offset < 0 ? -1 : 1) * clamped * (math.pi / 2);
-                  final alignment = offset > 0 ? Alignment.centerLeft : Alignment.centerRight;
-                  return Transform(
-                    alignment: alignment,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.0012)
-                      ..rotateY(angle),
-                    child: Opacity(
-                      opacity: (1.0 - clamped * 0.30).clamp(0.0, 1.0),
-                      child: child,
-                    ),
-                  );
-                },
+              return Container(
+                color: AppColors.background,
                 child: ListView(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: pageTrains.asMap().entries.map((e) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: _RailCard(
-                      no: e.value['train_no']?.toString() ?? '',
-                      type: e.value['train_type_name']?.toString() ?? '',
-                      dep: e.value['departure_time']?.toString() ?? '',
-                      arr: e.value['arrival_time']?.toString() ?? '',
-                      origin: _traO, dest: _traD, date: _today, isThsr: false,
-                      stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
-                    ).animate(key: ValueKey('${e.value['train_no']}_$_traPage'))
-                     .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
-                     .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
-                  )).toList(),
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  // 讓卡片展開後可以往下滑
+                  children: [
+                    // 頁碼標示
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: [
+                        const Spacer(),
+                        Text('第 ${pageIdx + 1} 頁 / $totalPages 頁',
+                            style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                      ]),
+                    ),
+                    ...pageTrains.asMap().entries.map((e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _RailCard(
+                        no: e.value['train_no']?.toString() ?? '',
+                        type: e.value['train_type_name']?.toString() ?? '',
+                        dep: e.value['departure_time']?.toString() ?? '',
+                        arr: e.value['arrival_time']?.toString() ?? '',
+                        origin: _traO, dest: _traD, date: _today, isThsr: false,
+                        stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
+                      ).animate()
+                       .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
+                       .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
+                    )),
+                    // 底部提示
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.swipe_rounded, size: 13, color: AppColors.textHint),
+                        SizedBox(width: 4),
+                        Text('左右滑動翻頁', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+                      ]),
+                    ),
+                  ],
                 ),
               );
-            },
+            }),
           ),
-        ),
-        // 頁碼列
-        if (totalPages > 1) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            _PageBtn(icon: Icons.chevron_left_rounded, enabled: _traPage > 0,
-              onTap: () { final p = _traPage - 1; setState(() => _traPage = p); _traPageCtrl.animateToPage(p, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); }),
-            const SizedBox(width: 14),
-            ...List.generate(totalPages, (i) => GestureDetector(
-              onTap: () { setState(() => _traPage = i); _traPageCtrl.animateToPage(i, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: _traPage == i ? 22 : 8, height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                decoration: BoxDecoration(
-                  color: _traPage == i ? context.appPrimary : AppColors.divider,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            )),
-            const SizedBox(width: 14),
-            _PageBtn(icon: Icons.chevron_right_rounded, enabled: _traPage < totalPages - 1,
-              onTap: () { final p = _traPage + 1; setState(() => _traPage = p); _traPageCtrl.animateToPage(p, duration: const Duration(milliseconds: 400), curve: Curves.easeInOutCubic); }),
-          ]),
         ),
       ],
     ]);
@@ -2017,25 +2000,6 @@ class _BusNearbyCardState extends State<_BusNearbyCard> {
         if (!widget.isLast) const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.divider),
       ])),
     ]));
-  }
-}
-
-/// 翻頁按鈕（台鐵）
-class _PageBtn extends StatelessWidget {
-  final IconData icon;
-  final bool enabled;
-  final VoidCallback onTap;
-  const _PageBtn({required this.icon, required this.enabled, required this.onTap});
-  @override Widget build(BuildContext context) {
-    final c = enabled ? context.appPrimary : AppColors.divider;
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Container(
-        width: 34, height: 34,
-        decoration: BoxDecoration(color: c.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
-        child: Icon(icon, size: 20, color: c),
-      ),
-    );
   }
 }
 

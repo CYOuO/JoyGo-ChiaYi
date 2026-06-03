@@ -26,54 +26,9 @@ import 'weather_screen.dart';
 import 'news_transport_screens.dart' show TransportScreen, NewsScreen;
 import 'map_screen.dart' show MapScreen;
 import '../services/rail_service.dart'; // 🌟 引入統一的 Service
+import '../utils/html_utils.dart';
+import '../utils/dept_style.dart';
 
-// ── Department-based color for news/event items ──────────────────────────
-(Color, IconData) _deptColorIcon(String? location, bool isEvent) {
-  final loc = (location ?? '').toLowerCase();
-  if (loc.contains('文化') || loc.contains('藝術') || loc.contains('博物'))
-    return (const Color(0xFFB06090), Icons.museum_rounded);
-  if (loc.contains('教育') || loc.contains('學') || loc.contains('校'))
-    return (const Color(0xFF5A8FAF), Icons.school_rounded);
-  if (loc.contains('體育') || loc.contains('運動'))
-    return (const Color(0xFF5A9F5A), Icons.sports_rounded);
-  if (loc.contains('環保') || loc.contains('環境') || loc.contains('農業'))
-    return (const Color(0xFF5E9F7A), Icons.eco_rounded);
-  if (loc.contains('衛生') || loc.contains('健康') || loc.contains('醫'))
-    return (const Color(0xFFD45A5A), Icons.local_hospital_rounded);
-  if (loc.contains('建設') || loc.contains('工程') || loc.contains('都市'))
-    return (const Color(0xFFB08B40), Icons.construction_rounded);
-  if (loc.contains('社會') || loc.contains('福利') || loc.contains('民政'))
-    return (const Color(0xFF7A7ABF), Icons.people_rounded);
-  if (loc.contains('財政') || loc.contains('稅務') || loc.contains('經濟'))
-    return (const Color(0xFF7A9F5A), Icons.account_balance_rounded);
-  if (loc.contains('警察') || loc.contains('消防') || loc.contains('安全'))
-    return (const Color(0xFF5A7AAF), Icons.local_police_rounded);
-  if (loc.contains('觀光') || loc.contains('旅遊') || loc.contains('景點'))
-    return (const Color(0xFFBF8040), Icons.tour_rounded);
-  if (isEvent) return (const Color(0xFF00838F), Icons.celebration_rounded);
-  return (const Color(0xFF1565C0), Icons.article_rounded);
-}
-
-// ── HTML entity/tag cleaner (mirrors the one in news_transport_screens) ──
-String _cleanHtml(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return '';
-  var s = raw;
-  s = s.replaceAll('&nbsp;',  ' ');
-  s = s.replaceAll('&amp;',   '&');
-  s = s.replaceAll('&lt;',    '<');
-  s = s.replaceAll('&gt;',    '>');
-  s = s.replaceAll('&quot;',  '"');
-  s = s.replaceAll('&#39;',   "'");
-  s = s.replaceAll('&hellip;','…');
-  s = s.replaceAll('&mdash;', '—');
-  s = s.replaceAll('&ndash;', '–');
-  s = s.replaceAll(RegExp(r'<br\s*/?>',    caseSensitive: false), '\n');
-  s = s.replaceAll(RegExp(r'</?p[^>]*>',   caseSensitive: false), '\n');
-  s = s.replaceAll(RegExp(r'<[^>]+>'),      '');
-  s = s.replaceAll(RegExp(r'[ \t]{2,}'),   ' ');
-  s = s.replaceAll(RegExp(r'\n{3,}'),      '\n\n');
-  return s.trim();
-}
 
 Map<String, dynamic> _govItemToJson(_GovItem n) => {
   'title': n.title, 'date': n.date, 'location': n.location,
@@ -236,14 +191,20 @@ class _HomeScreenState extends State<HomeScreen> {
   // 🌟 宣告變數：接收首頁即時天氣數據
   Map<String, dynamic>? _todayLiveWeather;
 
+  // 交通動態即時資料
+  String _busLine = '--', _busInfo = '--';
+  String _ybStation = '--', _ybInfo = '--';
+  String _traInfo = '--:--';
+
   @override
   void initState() {
     super.initState();
-    _fetchLocation();   
+    _fetchLocation();
     _fetchNews();
     _fetchRestaurants();
     _fetchNearbySpots();
     _fetchHomeLiveWeather(); // 🌟 觸發獲取頂部天氣
+    _fetchHomeTransport();
   }
 
   // 🌟 新增：實時調用 Service 獲取今日天氣快照
@@ -258,6 +219,52 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       debugPrint('首頁快照天氣獲取失敗: $e');
     }
+  }
+
+  Future<void> _fetchHomeTransport() async {
+    try {
+      // 公車：抓中山幹線第一個即將到站
+      final busRes = await RailService.getBusDynamic('Chiayi', '中山幹線');
+      final busData = (busRes['data'] as List? ?? []).cast<Map<String, dynamic>>();
+      if (busData.isNotEmpty) {
+        final active = busData.where((s) => (s['StopStatus'] as int? ?? 0) == 0 && s['EstimateTime'] != null).toList()
+          ..sort((a, b) => (a['EstimateTime'] as int).compareTo(b['EstimateTime'] as int));
+        if (active.isNotEmpty) {
+          final m = (active.first['EstimateTime'] as int) ~/ 60;
+          final stop = active.first['StopName'];
+          final stopName = (stop is Map) ? (stop['Zh_tw']?.toString() ?? '') : (stop?.toString() ?? '');
+          if (mounted) setState(() { _busLine = stopName.length > 4 ? stopName.substring(0, 4) : stopName; _busInfo = m <= 1 ? '即將進站' : '$m 分鐘'; });
+        }
+      }
+    } catch (_) {}
+    try {
+      // YouBike：火車站站點
+      final ybRes = await RailService.getYoubikeData();
+      final ybData = (ybRes['data'] as List? ?? []).cast<Map<String, dynamic>>();
+      final station = ybData.firstWhere(
+        (s) => (s['station_name'] ?? '').toString().contains('火車站'),
+        orElse: () => ybData.isNotEmpty ? ybData.first : {},
+      );
+      if (station.isNotEmpty) {
+        final gen = station['GeneralBikes'] as int? ?? 0;
+        final elec = station['ElectricBikes'] as int? ?? 0;
+        var name = (station['station_name'] ?? '').toString().replaceAll(RegExp(r'YouBike\d+\.0_'), '');
+        if (name.length > 4) name = name.substring(0, 4);
+        if (mounted) setState(() { _ybStation = name; _ybInfo = '${gen + elec} 輛可借'; });
+      }
+    } catch (_) {}
+    try {
+      // 台鐵：嘉義→台北 最近一班
+      final n = DateTime.now().toUtc().add(const Duration(hours: 8));
+      final today = '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+      final nowTime = '${n.hour.toString().padLeft(2, '0')}:${n.minute.toString().padLeft(2, '0')}';
+      final traRes = await RailService.queryTra(origin: '嘉義', dest: '台北', trainDate: today);
+      final trains = (traRes['data'] as List? ?? []).cast<Map<String, dynamic>>();
+      final upcoming = trains.where((t) => (t['departure_time']?.toString() ?? '').compareTo(nowTime) >= 0).toList();
+      if (upcoming.isNotEmpty) {
+        if (mounted) setState(() => _traInfo = upcoming.first['departure_time']?.toString().substring(0, 5) ?? '--:--');
+      }
+    } catch (_) {}
   }
 
   Future<void> _fetchLocation() async {
@@ -795,11 +802,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: '交通動態', actionText: '更多', onAction: () => Navigator.push(context, _goRoute(const TransportScreen())))),
             Row(
               children: [
-                Expanded(child: _transportCard(Icons.directions_bus_rounded, '市區公車', '紅幹線', '3 分鐘', const Color(0xFFC4856A), 0)),
+                Expanded(child: _transportCard(Icons.directions_bus_rounded, '中山幹線', _busLine, _busInfo, const Color(0xFFC4856A), 0)),
                 const SizedBox(width: 10),
-                Expanded(child: _transportCard(Icons.pedal_bike_rounded, 'YouBike', '火車站', '8 輛可借', const Color(0xFF5B8A5F), 1)),
+                Expanded(child: _transportCard(Icons.pedal_bike_rounded, 'YouBike', _ybStation, _ybInfo, const Color(0xFF5B8A5F), 1)),
                 const SizedBox(width: 10),
-                Expanded(child: _transportCard(Icons.train_rounded, '台鐵', '嘉→台北', '14:05', const Color(0xFF88B8C8), 2)),
+                Expanded(child: _transportCard(Icons.train_rounded, '台鐵', '嘉→台北', _traInfo, const Color(0xFF88B8C8), 2)),
               ],
             ),
           ],
@@ -861,9 +868,9 @@ class _HomeScreenState extends State<HomeScreen> {
               itemCount: _newsItems.length,
               itemBuilder: (_, index) {
                 final item = _newsItems[index];
-                final (catColor, catIconData) = _deptColorIcon(item.location, item.isEvent);
+                final (catColor, catIconData) = deptColorIcon(item.location, item.isEvent);
                 final catLabel = item.isEvent ? '活動' : '新聞';
-                final subtitle = _cleanHtml(item.summary ?? item.location ?? '');
+                final subtitle = cleanHtml(item.summary ?? item.location ?? '');
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: TapFeedback(
@@ -879,7 +886,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Row(children: [
-                              Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(6)), child: Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: catColor, fontSize: 10, fontWeight: FontWeight.w700))),
+                              Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(6)), child: Text(catLabel, style: TextStyle(color: catColor, fontSize: 10, fontWeight: FontWeight.w700))),
                               const Spacer(),
                               Text(item.date, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
                             ]),
@@ -916,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _showNewsDetail(_GovItem item) {
     final catColor = item.isEvent ? const Color(0xFF00838F) : const Color(0xFF1565C0);
-    final cleanedSummary = _cleanHtml(item.summary);
+    final cleanedSummary = cleanHtml(item.summary);
 
     showModalBottomSheet(
       context: context,

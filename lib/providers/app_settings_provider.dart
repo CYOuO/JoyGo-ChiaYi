@@ -247,7 +247,7 @@ class AppL10n {
 class AppSettingsProvider extends ChangeNotifier {
   static const _kThemeKey = 'settings_theme_index';
 
-  int _themeIndex = 2; // default: 嘉義綠
+  int _themeIndex = 7; // default: 薰衣紫
 
   int get themeIndex => _themeIndex;
 
@@ -255,11 +255,16 @@ class AppSettingsProvider extends ChangeNotifier {
   // Language is always 繁體中文
   AppL10n get l10n => const AppL10n('zh');
 
+  // Cache the SharedPreferences instance so we don't re-resolve it on every op.
+  SharedPreferences? _prefs;
+  Future<SharedPreferences> get _sp async =>
+      _prefs ??= await SharedPreferences.getInstance();
+
   AppSettingsProvider() { _load(); }
 
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    _themeIndex = (prefs.getInt(_kThemeKey) ?? 2)  // default: 嘉義綠
+    final prefs = await _sp;
+    _themeIndex = (prefs.getInt(_kThemeKey) ?? 7)  // default: 薰衣紫
         .clamp(0, kThemePresets.length - 1);
     notifyListeners();
   }
@@ -269,7 +274,7 @@ class AppSettingsProvider extends ChangeNotifier {
     if (i == _themeIndex) return;
     _themeIndex = i;
     notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await _sp;
     await prefs.setInt(_kThemeKey, i);
   }
 }

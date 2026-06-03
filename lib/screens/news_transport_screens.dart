@@ -1,15 +1,15 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
-import '../widgets/common_widgets.dart' show NewsCardSkeleton;
+import '../widgets/common_widgets.dart' show TransportCardSkeleton;
 import '../services/rail_service.dart';
+import '../services/bus_notification_service.dart';
 import 'map_screen.dart';
+export 'news_screen.dart' show NewsScreen;
 
 String _formatTime(String t) {
   if (t.isEmpty || t == '--:--') return '--:--';
@@ -17,165 +17,16 @@ String _formatTime(String t) {
   return t;
 }
 
-// ─────────── News helpers (unchanged) ─────────────────────────
-(Color, IconData) _newsItemColor(String? location, bool isEvent) {
-  final loc = (location ?? '').toLowerCase();
-  if (loc.contains('文化') || loc.contains('藝術') || loc.contains('博物')) return (const Color(0xFFB06090), Icons.museum_rounded);
-  if (loc.contains('教育') || loc.contains('學') || loc.contains('校')) return (const Color(0xFF5A8FAF), Icons.school_rounded);
-  if (loc.contains('體育') || loc.contains('運動')) return (const Color(0xFF5A9F5A), Icons.sports_rounded);
-  if (loc.contains('環保') || loc.contains('環境') || loc.contains('農業')) return (const Color(0xFF5E9F7A), Icons.eco_rounded);
-  if (loc.contains('衛生') || loc.contains('健康') || loc.contains('醫')) return (const Color(0xFFD45A5A), Icons.local_hospital_rounded);
-  if (loc.contains('建設') || loc.contains('工程') || loc.contains('都市')) return (const Color(0xFFB08B40), Icons.construction_rounded);
-  if (loc.contains('社會') || loc.contains('福利') || loc.contains('民政')) return (const Color(0xFF7A7ABF), Icons.people_rounded);
-  if (loc.contains('財政') || loc.contains('稅務') || loc.contains('經濟')) return (const Color(0xFF7A9F5A), Icons.account_balance_rounded);
-  if (loc.contains('警察') || loc.contains('消防') || loc.contains('安全')) return (const Color(0xFF5A7AAF), Icons.local_police_rounded);
-  if (loc.contains('觀光') || loc.contains('旅遊')) return (const Color(0xFFBF8040), Icons.tour_rounded);
-  if (isEvent) return (const Color(0xFF00838F), Icons.celebration_rounded);
-  return (const Color(0xFF1565C0), Icons.article_rounded);
-}
-
-class _RealNewsItem {
-  final String title, date;
-  final String? summary, location, url, imageUrl, endDate;
-  final bool isEvent;
-  const _RealNewsItem({required this.title, required this.date, this.summary, this.location, this.url, this.imageUrl, this.endDate, required this.isEvent});
-}
-
-String _cleanHtml(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return '';
-  var s = raw;
-  s = s.replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&hellip;', '…').replaceAll('&mdash;', '—').replaceAll('&ndash;', '–');
-  s = s.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n').replaceAll(RegExp(r'</?p[^>]*>', caseSensitive: false), '\n').replaceAll(RegExp(r'<[^>]+>'), '').replaceAll(RegExp(r'[ \t]{2,}'), ' ').replaceAll(RegExp(r'\n{3,}'), '\n\n');
-  return s.trim();
-}
-
-Map<String, dynamic> _realNewsItemToJson(_RealNewsItem n) => {'title': n.title, 'date': n.date, 'summary': n.summary, 'location': n.location, 'url': n.url, 'imageUrl': n.imageUrl, 'endDate': n.endDate, 'isEvent': n.isEvent};
-_RealNewsItem _realNewsItemFromJson(Map<String, dynamic> m) => _RealNewsItem(title: m['title'] as String? ?? '', date: m['date'] as String? ?? '', summary: m['summary'] as String?, location: m['location'] as String?, url: m['url'] as String?, imageUrl: m['imageUrl'] as String?, endDate: m['endDate'] as String?, isEvent: m['isEvent'] as bool? ?? false);
-
-// ─────────── NewsScreen (unchanged) ───────────────────────────
-class NewsScreen extends StatefulWidget {
-  const NewsScreen({super.key});
-  @override State<NewsScreen> createState() => _NewsScreenState();
-}
-class _NewsScreenState extends State<NewsScreen> with SingleTickerProviderStateMixin {
-  static const _eventsUrl = 'https://data.chiayi.gov.tw/opendata/api/getResource?oid=33c3225e-f786-4eaf-8b9c-774cc39c72e0&rid=a809167f-bba6-475d-9dfe-33b4ea7749f6';
-  static const _newsUrl = 'https://data.chiayi.gov.tw/opendata/api/getResource?oid=6dcaf207-e99b-4846-bd72-c334ce0d4b59&rid=87d4b27c-07c3-4546-815d-1e733dfd9497';
-  static const _kCacheKey = 'news_screen_v1', _kCacheTsKey = 'news_screen_ts_v1', _kCacheTTLMs = 30 * 60 * 1000;
-
-  late final TabController _tabCtrl;
-  List<_RealNewsItem> _all = [];
-  bool _loading = true, _hasError = false;
-  List<_RealNewsItem> get _allItems => _all;
-  List<_RealNewsItem> get _eventItems => _all.where((n) => n.isEvent).toList();
-  List<_RealNewsItem> get _newsItems => _all.where((n) => !n.isEvent).toList();
-
-  @override void initState() { super.initState(); _tabCtrl = TabController(length: 3, vsync: this); _fetch(); }
-  @override void dispose() { _tabCtrl.dispose(); super.dispose(); }
-
-  Future<void> _fetch() async {
-    if (!mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    final ts = prefs.getInt(_kCacheTsKey) ?? 0;
-    final cached = prefs.getString(_kCacheKey);
-    if (cached != null && cached.isNotEmpty) {
-      try {
-        final list = (jsonDecode(cached) as List).map((m) => _realNewsItemFromJson(m as Map<String, dynamic>)).toList();
-        if (mounted && list.isNotEmpty) { setState(() { _all = list; _loading = false; _hasError = false; }); if ((DateTime.now().millisecondsSinceEpoch - ts) < _kCacheTTLMs) return; }
-      } catch (_) {}
-    }
-    if (mounted && _all.isEmpty) setState(() { _loading = true; _hasError = false; });
-    try {
-      final results = await Future.wait([_fetchOne(_eventsUrl, isEvent: true), _fetchOne(_newsUrl, isEvent: false)]).timeout(const Duration(seconds: 12));
-      final combined = [...results[0], ...results[1]]..sort((a, b) => b.date.compareTo(a.date));
-      if (!mounted) return; setState(() { _all = combined; _loading = false; _hasError = false; });
-      try { await prefs.setString(_kCacheKey, jsonEncode(combined.map(_realNewsItemToJson).toList())); await prefs.setInt(_kCacheTsKey, DateTime.now().millisecondsSinceEpoch); } catch (_) {}
-    } catch (_) { if (mounted && _all.isEmpty) setState(() { _hasError = true; _loading = false; }); }
-  }
-
-  Future<List<_RealNewsItem>> _fetchOne(String url, {required bool isEvent}) async {
-    try {
-      final res = await http.get(Uri.parse(url), headers: {'Accept': 'application/json'}); if (res.statusCode != 200) return []; final data = jsonDecode(res.body);
-      List<dynamic> list = (data is List) ? data : (data['result'] is List ? data['result'] : (data['records'] is List ? data['records'] : []));
-      return list.whereType<Map>().map((m) {
-        final raw = Map<String, dynamic>.from(m);
-        String? pick(List<String> keys) { for (final k in keys) { final v = raw[k]; if (v != null && v.toString().trim().isNotEmpty) return v.toString().trim(); } return null; }
-        return _RealNewsItem(title: pick(['title','標題','活動名稱','名稱','Title','Subject']) ?? '無標題', date: isEvent ? pick(['ActiveStart','發布日期','活動開始日期','日期','date','Date','建立時間']) ?? '' : pick(['PostDate','發布日期','日期','date','Date','PublishDate','建立時間']) ?? '', endDate: isEvent ? pick(['ActiveEnd']) : null, summary: pick(['Content','內容','摘要','描述','活動說明','summary','content','description']), location: pick(['PostUnit','發布單位','主辦單位','活動地點','地點','location','venue']), url: pick(['Source','連結','url','URL','link','詳細連結','WebUrl']), imageUrl: pick(['Pic','Thumbnail','圖片','pic','thumbnail']), isEvent: isEvent);
-      }).toList();
-    } catch (_) { return []; }
-  }
-
-  Widget _buildList(List<_RealNewsItem> items, Color primary) {
-    if (_loading) return ListView.separated(padding: const EdgeInsets.all(16), itemCount: 5, separatorBuilder: (_, __) => const SizedBox(height: 10), itemBuilder: (_, __) => const NewsCardSkeleton());
-    if (_hasError) return Center(child: ElevatedButton(onPressed: _fetch, child: const Text('重試')));
-    if (items.isEmpty) return const Center(child: Text('目前無相關消息'));
-    return ListView.separated(padding: const EdgeInsets.all(16), itemCount: items.length, separatorBuilder: (_, __) => const SizedBox(height: 10), itemBuilder: (_, i) => _RealNewsCard(item: items[i]));
-  }
-
-  @override Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.surface, elevation: 0,
-        title: Builder(builder: (bCtx) {
-          final p = Theme.of(bCtx).colorScheme.primary;
-          return Row(mainAxisSize: MainAxisSize.min, children: [DoodleHeart(color: p.withValues(alpha: 0.55), size: 10), const SizedBox(width: 6), const Text('最新消息', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)), const SizedBox(width: 6), DoodleLightning(color: p.withValues(alpha: 0.55), size: 10)]);
-        }),
-        bottom: TabBar(controller: _tabCtrl, labelColor: primary, indicatorColor: primary, tabs: const [Tab(text: '全部'), Tab(text: '活動'), Tab(text: '新聞')]),
-      ),
-      body: TabBarView(controller: _tabCtrl, children: [_buildList(_allItems, primary), _buildList(_eventItems, primary), _buildList(_newsItems, primary)]),
-    );
-  }
-}
-
-class _RealNewsCard extends StatelessWidget {
-  final _RealNewsItem item; const _RealNewsCard({required this.item});
-  void _showDetail(BuildContext context) {
-    final (c, _) = _newsItemColor(item.location, item.isEvent);
-    final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
-    final dateRange = item.isEvent && (item.endDate?.isNotEmpty ?? false) ? '${item.date} ～ ${item.endDate}' : item.date;
-    final cleanedSummary = _cleanHtml(item.summary);
-    showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => DraggableScrollableSheet(initialChildSize: 0.75, maxChildSize: 0.95, builder: (ctx, scroll) => Container(decoration: const BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(24))), child: ListView(controller: scroll, padding: EdgeInsets.zero, children: [
-      Padding(padding: const EdgeInsets.only(top: 12, bottom: 0), child: Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))))),
-      if (hasImage) Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(item.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox.shrink()))),
-      Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Row(children: [Icon(item.isEvent ? Icons.celebration_rounded : Icons.article_rounded, size: 13, color: c), const SizedBox(width: 4), Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700))])), const Spacer(), if (dateRange.isNotEmpty) Text(dateRange, style: const TextStyle(color: AppColors.textHint, fontSize: 12))]),
-        const SizedBox(height: 12), Text(item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.4)),
-        if (item.location != null && item.location!.isNotEmpty) ...[const SizedBox(height: 8), Row(children: [const Icon(Icons.business_rounded, size: 13, color: AppColors.textHint), const SizedBox(width: 4), Expanded(child: Text(item.location!, style: const TextStyle(color: AppColors.textHint, fontSize: 12)))])],
-        const SizedBox(height: 16),
-        if (cleanedSummary.isNotEmpty) ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), SelectableText(cleanedSummary, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.85))]
-        else ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), Text(item.isEvent ? '詳細活動資訊請點擊下方連結查看。' : '詳細新聞內容請點擊下方連結查看。', style: const TextStyle(fontSize: 15, color: AppColors.textHint, height: 1.85))],
-        if (item.url != null && item.url!.isNotEmpty) ...[const SizedBox(height: 20), Row(children: [Expanded(child: ElevatedButton.icon(onPressed: () async { final uri = Uri.tryParse(item.url!); if (uri != null && await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.open_in_new_rounded, size: 16), label: const Text('開啟連結'))), const SizedBox(width: 10), OutlinedButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: item.url!)); }, icon: const Icon(Icons.copy, size: 16), label: const Text('複製'))])]
-      ]))
-    ]))));
-  }
-
-  @override Widget build(BuildContext context) {
-    final (c, iconData) = _newsItemColor(item.location, item.isEvent);
-    return GestureDetector(onTap: () => _showDetail(context), child: StitchedBox(color: Color.lerp(c, Colors.white, 0.93)!, stitchColor: c.withValues(alpha: 0.35), radius: 16, inset: 4, dashWidth: 4, dashGap: 3, padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(iconData, size: 10, color: c), const SizedBox(width: 3), Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700))])), const Spacer(), Text(item.date, style: const TextStyle(fontSize: 10, color: AppColors.textHint))]),
-      const SizedBox(height: 8),
-      Text(item.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
-      if ((item.location ?? '').isNotEmpty) ...[const SizedBox(height: 4), Text(item.location!, style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.7)), maxLines: 1, overflow: TextOverflow.ellipsis)],
-    ])));
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  TRANSPORT SCREEN  ─ 日記手繪風，搭配 AppColors 色票
 // ═══════════════════════════════════════════════════════════════
 
-// 每個交通種類的配色對（背景 pastel, 強調色）
-const _kBusBg      = AppColors.cuteSky;        // #C4E1F0
-const _kBusAcc     = AppColors.accentSky;      // #88B8C8
-const _kYbBg       = AppColors.cuteMint;       // #C2E8D5
-const _kYbAcc      = AppColors.primary;        // #5B8A5F
-const _kTraBg      = AppColors.cuteLavender;   // #D8CCEC
-const _kTraAcc     = Color(0xFF7B6BAE);        // soft purple
-const _kAliBg      = AppColors.cuteLemon;      // #FFE9A8
-const _kAliAcc     = AppColors.accentSand;     // #D4B896
-const _kThsrBg     = AppColors.cutePeach;      // #FFD3C2
-const _kThsrAcc    = AppColors.accentTerra;    // #C4856A
+// 附近路線卡片循環配色（與主題 palette 一致）
+const _kRouteColors = [
+  Color(0xFF5B8FAF), Color(0xFF5B8A5F), Color(0xFF4A7A5A),
+  Color(0xFF88B8C8), Color(0xFFC4856A), Color(0xFFB06090),
+  Color(0xFFB07A30), Color(0xFF7B6BAE),
+];
 
 class TransportScreen extends StatefulWidget {
   final int initialTab;
@@ -188,13 +39,25 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   late TabController _tabCtrl;
   Timer? _countdown, _debounce;
   int _secs = 30;
-
+  int _busTick = 0;
   // Bus
   String _busCity = 'Chiayi', _busRoute = '';
-  String _busStopFilter = '';  // 站點名稱過濾
+  int _busSubTab = 0;          // 0=搜尋路線, 1=搜尋站牌
+  String _busStopQuery = '';
+  List<String> _busStopRoutes = [];
+  bool _busSearching = false;
   final _busCtrl = TextEditingController();
-  final _busStopCtrl = TextEditingController();
   Future<Map<String, dynamic>>? _busFuture;
+  // 附近站牌（GPS）
+  List<Map<String, dynamic>>? _nearbyStops;
+  bool _nearbyLoading = false;
+  String? _nearbyError; // 'permission_denied' | 'gps_error' | 'backend_error' | null
+  // 計算屬性：根據其他 state 自動推導，不需要手動設值
+  String get _busMode {
+    if (_busStopQuery.isNotEmpty) return 'stop';
+    if (_busFuture != null || _busRoute.isNotEmpty) return 'route';
+    return 'idle';
+  }
 
   // YouBike
   Future<Map<String, dynamic>>? _ybFuture;
@@ -260,6 +123,43 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     });
   }
 
+  Future<void> _fetchNearbyStops() async {
+    if (_nearbyLoading) return;
+    setState(() { _nearbyLoading = true; _nearbyError = null; });
+
+    // ── Step 1: GPS ──────────────────────────────────────────────
+    Position pos;
+    try {
+      LocationPermission perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        if (mounted) setState(() { _nearbyLoading = false; _nearbyError = 'permission_denied'; });
+        return;
+      }
+      pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
+    } catch (e) {
+      debugPrint('GPS error: $e');
+      if (mounted) setState(() { _nearbyLoading = false; _nearbyError = 'gps_error'; });
+      return;
+    }
+
+    // ── Step 2: 後端 API（GPS 已成功）────────────────────────────
+    try {
+      final res = await RailService.getNearbyBusStops(_busCity, pos.latitude, pos.longitude, radius: 800);
+      if (!mounted) return;
+      final data = (res['data'] as List? ?? []).cast<Map<String, dynamic>>();
+      setState(() { _nearbyStops = data; _nearbyLoading = false; });
+    } catch (e) {
+      debugPrint('Nearby API error: $e');
+      // GPS 成功但後端失敗 → 顯示空清單 + 後端錯誤提示
+      if (mounted) setState(() { _nearbyLoading = false; _nearbyStops = []; _nearbyError = 'backend_error'; });
+    }
+  }
+
   void _loadTab(int i) {
     if (!mounted) return;
     setState(() {
@@ -274,6 +174,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         case 4: if (_thsrTrains == null && !_thsrLoading) _fetchThsr(); break;
       }
     });
+    if (i == 0 && _nearbyStops == null && !_nearbyLoading) _fetchNearbyStops();
   }
 
   Future<void> _fetchTra({bool auto = false}) async {
@@ -311,9 +212,16 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       if (!mounted) return;
       setState(() {
         if (_secs <= 1) {
-          _secs = 30;
+          _secs = 35;
           final i = _tabCtrl.index;
-          if (i == 0 && _busRoute.isNotEmpty) _busFuture = RailService.getBusDynamic(_busCity, _busRoute);
+          
+          if (i == 0) {
+            // 🌟 發送無感更新信號
+            _busTick++; 
+            if (_busMode == 'route' && _busRoute.isNotEmpty) {
+              _busFuture = RailService.getBusDynamic(_busCity, _busRoute);
+            }
+          }
           else if (i == 1) _ybFuture = RailService.getYoubikeData();
           else if (i == 2) { _traLive = RailService.getTraLiveBoard(_traStations[_traO]!); _fetchTra(auto: true); }
           else if (i == 3) _fetchAli(auto: true);
@@ -326,49 +234,114 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   @override
   void dispose() {
     _tabCtrl.dispose(); _countdown?.cancel(); _debounce?.cancel();
-    _busCtrl.dispose(); _busStopCtrl.dispose();
+    _busCtrl.dispose();
     super.dispose();
   }
 
+  // ── 模式配色 helpers ─────────────────────────────────────────
+  static const _tabIcons  = [Icons.directions_bus_rounded, Icons.pedal_bike_rounded, Icons.train_rounded, Icons.landscape_rounded, Icons.directions_railway_filled_rounded];
+  static const _tabNames  = ['公車', 'YouBike', '台鐵', '阿里山', '高鐵'];
+  static const _tabTitles = ['公車動態查詢', 'YouBike 租借站', '台鐵時刻查詢', '阿里山森林鐵路', '高鐵時刻查詢'];
+
   @override
   Widget build(BuildContext context) {
+    final idx = _tabCtrl.index;
     final primary = context.appPrimary;
+    final mist = context.appMist;
+    final canPop = Navigator.canPop(context);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        titleSpacing: canPop ? 0 : 20,
+        leading: canPop
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                    size: 18, color: AppColors.textPrimary),
+                onPressed: () => Navigator.pop(context),
+              )
+            : null,
+        automaticallyImplyLeading: false,
         title: Row(mainAxisSize: MainAxisSize.min, children: [
-          DoodleLightning(color: primary.withValues(alpha: 0.7), size: 12),
+          SizedBox(width: 16, height: 22, child: Stack(children: [
+            Positioned(left: 0, top: 3,
+                child: Container(width: 8, height: 8,
+                    decoration: BoxDecoration(shape: BoxShape.circle, color: primary))),
+            Positioned(left: 6, top: 12,
+                child: Container(width: 5, height: 5,
+                    decoration: BoxDecoration(shape: BoxShape.circle,
+                        color: primary.withValues(alpha: 0.35)))),
+          ])),
           const SizedBox(width: 6),
-          Text('交通動態', style: TextStyle(fontWeight: FontWeight.w800, color: primary)),
-          const SizedBox(width: 6),
-          DoodleHeart(color: primary.withValues(alpha: 0.5), size: 10),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(20)),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: 6, height: 6, decoration: BoxDecoration(color: primary, shape: BoxShape.circle)),
-              const SizedBox(width: 5),
-              Text('${_secs.toString().padLeft(2,'0')} 秒', style: TextStyle(fontSize: 11, color: primary, fontWeight: FontWeight.w700)),
-            ]),
-          ),
+          Text(_tabTitles[idx],
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         ]),
-        bottom: TabBar(
-          controller: _tabCtrl,
-          labelColor: primary,
-          unselectedLabelColor: AppColors.textHint,
-          indicatorColor: primary,
-          labelStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-          unselectedLabelStyle: const TextStyle(fontSize: 11),
-          tabs: const [
-            Tab(icon: Icon(Icons.directions_bus_rounded, size: 18), text: '公車'),
-            Tab(icon: Icon(Icons.pedal_bike_rounded, size: 18), text: 'YouBike'),
-            Tab(icon: Icon(Icons.train_rounded, size: 18), text: '台鐵'),
-            Tab(icon: Icon(Icons.forest_rounded, size: 18), text: '阿里山'),
-            Tab(icon: Icon(Icons.directions_railway_filled_rounded, size: 18), text: '高鐵'),
-          ],
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                    color: mist, borderRadius: BorderRadius.circular(20)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.access_time_rounded, size: 12, color: primary),
+                  const SizedBox(width: 4),
+                  Text('${_secs.toString().padLeft(2, '0')}s',
+                      style: TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700,
+                          color: primary)),
+                ]),
+              ),
+            ),
+          ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(78),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+              child: SizedBox(
+                height: 70,
+                child: Row(
+                  children: List.generate(5, (i) {
+                    final isSelected = idx == i;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () { _tabCtrl.animateTo(i); setState(() {}); },
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: 46, height: 46,
+                            decoration: BoxDecoration(
+                              color: isSelected ? primary : mist,
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            child: Icon(_tabIcons[i],
+                                color: isSelected
+                                    ? Colors.white
+                                    : primary.withValues(alpha: 0.55),
+                                size: 22),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(_tabNames[i],
+                              style: TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w600,
+                                color: isSelected ? primary : AppColors.textHint,
+                              )),
+                        ]),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: AppColors.divider),
+          ]),
         ),
       ),
       body: TabBarView(
@@ -378,91 +351,352 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     );
   }
 
-  // ─── BUS ───────────────────────────────────────────────────────
+  // ─── BUS ────────────────────────────────────────────────────
+  Future<void> _searchByStop(String q) async {
+    if (q.isEmpty) return;
+    setState(() => _busSearching = true);
+    final routes = await RailService.getBusByStop(_busCity, q);
+    if (!mounted) return;
+    setState(() { _busSearching = false; _busStopQuery = q; _busStopRoutes = routes; _busFuture = null; _busRoute = ''; });
+  }
+
   Widget _builtBus() {
-    final chips = _busCity == 'Chiayi' ? ['中山幹線', '忠孝新民幹線', '光林我嘉線'] : ['7329', '7308', '7322'];
-    return Column(children: [
-      Container(
-        color: AppColors.surface,
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return _buildBusIdle();
+  }
+
+  Widget _buildBusIdle() {
+    final c = context.appPrimary;
+    final isChiayi = _busCity == 'Chiayi';
+
+    // 熱門搜尋路線（含顏色標示）
+    final hotRoutes = isChiayi
+        ? [('中山幹線', const Color(0xFF7878F0)), ('忠孝新民幹線', const Color(0xFF5B7CE8)),]
+        : [('7329', const Color(0xFF5B9ECC)), ('7308', const Color(0xFF3D9E74)),];
+
+
+    return ListView(padding: EdgeInsets.zero, children: [
+      // ── 搜尋卡片（縫線風格）─────────────────────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: StitchedBox(
+          color: Color.lerp(context.appMist, Colors.white, 0.55)!,
+          stitchColor: c.withValues(alpha: 0.30),
+          radius: 20, inset: 4, dashWidth: 4, dashGap: 3,
+          padding: EdgeInsets.zero,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 底線 Tabs
           Row(children: [
-            _CityToggle(value: _busCity, onChanged: (v) => setState(() { _busCity = v; _busRoute = ''; _busCtrl.clear(); _busStopCtrl.clear(); _busStopFilter = ''; _busFuture = null; })),
-            const Spacer(),
-            Text('支援全縣市公車', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+            _BusUnderTab('搜尋路線', 0, _busSubTab, c, () => setState(() => _busSubTab = 0)),
+            _BusUnderTab('搜尋站牌', 1, _busSubTab, c, () => setState(() => _busSubTab = 1)),
           ]),
-          const SizedBox(height: 10),
-          // Route search
-          TextField(
-            controller: _busCtrl,
-            decoration: InputDecoration(
-              hintText: '輸入路線名稱（如：中山幹線）',
-              prefixIcon: const Icon(Icons.directions_bus_rounded, size: 18),
-              suffixIcon: _busCtrl.text.isNotEmpty ? IconButton(icon: const Icon(Icons.clear_rounded, size: 16), onPressed: () => setState(() { _busCtrl.clear(); _busRoute = ''; _busStopCtrl.clear(); _busStopFilter = ''; _busFuture = null; })) : null,
-            ),
-            onSubmitted: (v) { if (v.trim().isNotEmpty) setState(() { _busRoute = v.trim(); _busStopFilter = ''; _busStopCtrl.clear(); _busFuture = RailService.getBusDynamic(_busCity, _busRoute); }); },
-          ),
-          // Stop filter (only shows when route loaded)
-          if (_busFuture != null) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _busStopCtrl,
+          // 搜尋框（全寬，無插圖遮擋）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            child: TextField(
+              controller: _busCtrl,
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: '🔍 站點名稱過濾（如：文化路）',
-                prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                suffixIcon: _busStopFilter.isNotEmpty ? IconButton(icon: const Icon(Icons.clear_rounded, size: 16), onPressed: () => setState(() { _busStopCtrl.clear(); _busStopFilter = ''; })) : null,
+                hintText: _busSubTab == 0
+                    ? '搜尋公車路線（如：中山幹線）'
+                    : '搜尋站牌名稱（如：嘉義火車站）',
+                hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
+                prefixIcon: _busSearching
+                    ? Padding(padding: const EdgeInsets.all(12), child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: c)))
+                    : const Icon(Icons.search_rounded, size: 18, color: Color(0xFFB8B8C8)),
+                filled: true, fillColor: AppColors.background,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE8E8F0))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFFE8E8F0))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                suffixIcon: _busCtrl.text.isNotEmpty
+                    ? IconButton(icon: const Icon(Icons.clear_rounded, size: 16), onPressed: () => setState(() => _busCtrl.clear()))
+                    : null,
               ),
-              onChanged: (v) => setState(() => _busStopFilter = v.trim()),
+              onChanged: (v) => setState(() {}),
+              onSubmitted: (v) {
+                if (_busSubTab == 0) { setState(() { _busRoute = v; _busFuture = RailService.getBusDynamic(_busCity, v); }); }
+                else { _searchByStop(v); }
+              },
             ),
-          ],
-          const SizedBox(height: 10),
-          Wrap(spacing: 8, children: chips.map((c) => GestureDetector(
-            onTap: () => setState(() { _busCtrl.text = c; _busRoute = c; _busStopCtrl.clear(); _busStopFilter = ''; _busFuture = RailService.getBusDynamic(_busCity, _busRoute); }),
-            child: StitchedBox(
-              color: Color.lerp(_kBusBg, Colors.white, 0.3)!,
-              stitchColor: _kBusAcc.withValues(alpha: 0.45),
-              radius: 20, inset: 3, dashWidth: 3, dashGap: 2.5,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              child: Text(c, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
-            ),
-          )).toList()),
+          ),
+          // 熱門搜尋（單行橫向滑動）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 0, 16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('熱門搜尋',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textHint)),
+              const SizedBox(height: 8),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(children: hotRoutes.asMap().entries.map((e) {
+                  final i = e.key;
+                  final (name, rColor) = e.value;
+                  return Padding(
+                    padding: EdgeInsets.only(right: i < hotRoutes.length - 1 ? 8 : 16),
+                    child: GestureDetector(
+                      onTap: () { _busCtrl.text = name; setState(() { _busRoute = name; _busFuture = RailService.getBusDynamic(_busCity, name); }); },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(color: rColor.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
+                        child: Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: rColor)),
+                      ),
+                    ),
+                  );
+                }).toList()),
+              ),
+            ]),
+          ),
+        ]),
+      )),
+      // 城市切換
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+        child: Row(children: [
+          _CityToggle(value: _busCity, onChanged: (v) {
+            setState(() {
+              _busCity = v; _busRoute = ''; _busStopQuery = ''; _busStopRoutes = [];
+              _busCtrl.clear(); _busFuture = null;
+              _nearbyStops = null; _nearbyLoading = false; _nearbyError = null;
+            });
+            _fetchNearbyStops();
+          }),
+          const Spacer(),
+          const Text('支援全縣市公車', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
         ]),
       ),
-      Expanded(child: _busFuture == null
-          ? _Hint(icon: Icons.directions_bus_rounded, color: _kBusAcc, text: '輸入路線名稱查詢即時公車資訊')
-          : FutureBuilder<Map<String, dynamic>>(
-              future: _busFuture,
-              builder: (ctx, snap) {
-                if (snap.connectionState == ConnectionState.waiting && !snap.hasData)
-                  return const Center(child: CircularProgressIndicator());
-                if (!snap.hasData || snap.hasError)
-                  return _Hint(icon: Icons.wifi_off_rounded, color: _kBusAcc, text: '無法取得資料，請稍後重試');
-                var all = (snap.data!['data'] as List? ?? []).cast<Map<String, dynamic>>();
-                if (all.isEmpty) return _Hint(icon: Icons.search_off_rounded, color: _kBusAcc, text: '查無「$_busRoute」的即時資訊');
+      // ── 搜尋中 ──────────────────────────────────────────────────
+      if (_busSearching)
+        Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: c))),
 
-                // Dedup by direction + StopUID
-                final seen = <String>{};
-                all = all.where((s) => seen.add('${s['Direction']}:${s['StopUID'] ?? s['StopName']}')).toList();
-
-                // Stop name filter
-                if (_busStopFilter.isNotEmpty) {
-                  all = all.where((s) => (s['StopName'] as String? ?? '').contains(_busStopFilter)).toList();
-                }
-
-                final dir0 = (all.where((s) => (s['Direction'] as int? ?? 0) == 0).toList()..sort((a, b) => (a['StopSequence'] as int? ?? 0).compareTo(b['StopSequence'] as int? ?? 0)));
-                final dir1 = (all.where((s) => (s['Direction'] as int? ?? 0) == 1).toList()..sort((a, b) => (a['StopSequence'] as int? ?? 0).compareTo(b['StopSequence'] as int? ?? 0)));
-
-                if (dir0.isEmpty && dir1.isEmpty)
-                  return _Hint(icon: Icons.search_off_rounded, color: _kBusAcc, text: '站點「$_busStopFilter」不在此路線內');
-
-                return ListView(padding: const EdgeInsets.all(14), children: [
-                  if ((snap.data!['updateTime'] as String? ?? '').isNotEmpty)
-                    _UpdTime(snap.data!['updateTime'] as String),
-                  if (dir0.isNotEmpty) ...[_BusCard(stops: dir0, onSwitchTab: widget.onSwitchTab), const SizedBox(height: 12)],
-                  if (dir1.isNotEmpty) _BusCard(stops: dir1, onSwitchTab: widget.onSwitchTab),
-                ]);
-              },
+      // ── 站牌搜尋結果（inline，不跳頁）──────────────────────────
+      if (!_busSearching && _busMode == 'stop') ...[
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          child: Row(children: [
+            Icon(Icons.place_rounded, size: 15, color: c),
+            const SizedBox(width: 6),
+            Expanded(child: Text(
+              _busStopRoutes.isEmpty
+                  ? '找不到站牌「$_busStopQuery」，請確認名稱'
+                  : '「$_busStopQuery」停靠 ${_busStopRoutes.length} 條路線 — 點卡片展開即時到站',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c),
             )),
+            if (_busStopRoutes.isNotEmpty)
+              GestureDetector(
+                onTap: () => widget.onSwitchTab?.call(1),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+                  child: Text('地圖', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
+                ),
+              ),
+          ]),
+        ),
+        if (_busStopRoutes.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 3))]),
+            child: Column(children: _busStopRoutes.asMap().entries.map((e) {
+              final i = e.key; final route = e.value;
+              return _BusNearbyCard(name: route, direction: '點擊展開即時到站', via: '', color: c, isLast: i == _busStopRoutes.length - 1, city: _busCity,tick: _busTick);
+            }).toList()),
+          ),
+      ],
+
+      // ── 路線搜尋結果（inline，不跳頁）──────────────────────────
+      if (!_busSearching && _busMode == 'route')
+        FutureBuilder<Map<String, dynamic>>(
+          future: _busFuture,
+          builder: (ctx, snap) {
+            if (!snap.hasData && snap.connectionState == ConnectionState.waiting)
+              return Padding(padding: const EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator(color: c)));
+            if (!snap.hasData || snap.hasError)
+              return Padding(padding: const EdgeInsets.all(20), child: _Hint(icon: Icons.wifi_off_rounded, color: c, text: '無法取得資料，請確認後端服務是否啟動'));
+            var all = (snap.data!['data'] as List? ?? []).cast<Map<String, dynamic>>();
+            if (all.isEmpty) return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                _Hint(icon: Icons.search_off_rounded, color: c, text: '查無路線「$_busRoute」\n若輸入的是站牌名稱，請改用「搜尋站牌」'),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () => setState(() { _busSubTab = 1; _busFuture = null; _busRoute = ''; _busCtrl.clear(); }),
+                  child: Container(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    decoration: BoxDecoration(color: c.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+                    child: Text('切換至搜尋站牌', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c))),
+                ),
+              ]),
+            );
+            String getZh(dynamic field) => (field is Map) ? (field['Zh_tw']?.toString() ?? '') : (field?.toString() ?? '');
+            final seen = <String>{};
+            all = all.where((s) {
+              final sub = getZh(s['SubRouteName']);
+              final stopN = getZh(s['StopName']);
+              final uid = s['StopUID'] ?? stopN;
+              return seen.add('$sub:${s['Direction']}:$uid');
+            }).toList();
+
+            // 以 direction+SubRouteName 分組，同一支線同一方向為一張卡
+            final groups = <String, List<Map<String, dynamic>>>{};
+            for (final stop in all) {
+              final subRoute = getZh(stop['SubRouteName']);
+              final dir = stop['Direction'] as int? ?? 0;
+              groups.putIfAbsent('$dir:$subRoute', () => []).add(stop);
+            }
+
+            final sortedKeys = groups.keys.toList()..sort();
+            for (final k in sortedKeys) {
+              groups[k]!.sort((a, b) => (a['StopSequence'] as int? ?? 0).compareTo(b['StopSequence'] as int? ?? 0));
+            }
+            return Column(mainAxisSize: MainAxisSize.min, children: [
+              if ((snap.data!['updateTime'] as String? ?? '').isNotEmpty)
+                Padding(padding: const EdgeInsets.fromLTRB(16, 6, 16, 4), child: _UpdTime(snap.data!['updateTime'] as String)),
+              ...sortedKeys.asMap().entries.map((e) => Padding(
+                padding: EdgeInsets.fromLTRB(16, e.key == 0 ? 4 : 0, 16, 8),
+                child: SlideUpFadeIn(index: e.key, child: _BusCard(stops: groups[e.value]!, onSwitchTab: widget.onSwitchTab)),
+              )),
+            ]);
+          },
+        ),
+
+      // ── 附近路線（GPS 即時資料，只在 idle 時顯示）──────────────
+      if (_busMode == 'idle') ...[
+      Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+        child: Row(children: [
+          const Text('附近路線',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          const SizedBox(width: 6),
+          const Icon(Icons.gps_fixed_rounded, size: 13, color: AppColors.textHint),
+          const SizedBox(width: 4),
+          Expanded(child: Text(
+            _nearbyLoading ? '定位中…' :
+            _nearbyError == 'permission_denied' ? '開啟定位以顯示' :
+            _nearbyError == 'gps_error' ? '定位失敗，點右重試' :
+            _nearbyError == 'backend_error' ? '後端未啟動' :
+            _nearbyStops == null ? '開啟定位以顯示' :
+            _nearbyStops!.isEmpty ? '附近 800m 無路線' :
+            '附近 ${_nearbyStops!.map((s) => s["RouteName"]).toSet().length} 條路線',
+            style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+          )),
+          GestureDetector(
+            onTap: _fetchNearbyStops,
+            child: Text('重新定位',
+                style: TextStyle(fontSize: 12, color: c, fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      ),
+      // 狀態卡：定位中
+      if (_nearbyLoading)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))]),
+            child: Row(children: [
+              Container(width: 36, height: 36,
+                decoration: BoxDecoration(color: context.appMist, borderRadius: BorderRadius.circular(10)),
+                child: Padding(padding: const EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.5, color: c))),
+              const SizedBox(width: 12),
+              const Text('正在取得您的位置…', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+            ]),
+          ),
+        )
+      // 狀態卡：無權限或 GPS 失敗（backend_error 走下面的空清單流程）
+      else if ((_nearbyError == 'permission_denied' || _nearbyError == 'gps_error') || _nearbyStops == null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: GestureDetector(
+            onTap: _fetchNearbyStops,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))]),
+              child: Row(children: [
+                Container(width: 36, height: 36,
+                  decoration: BoxDecoration(color: AppColors.primaryMist, borderRadius: BorderRadius.circular(10)),
+                  child: Icon(_nearbyError == 'permission_denied'
+                      ? Icons.location_off_rounded : Icons.location_searching_rounded,
+                      size: 18, color: c)),
+                const SizedBox(width: 12),
+                Expanded(child: Text(
+                  _nearbyError == 'permission_denied'
+                      ? '點此開啟定位服務以查看附近站牌'
+                      : '無法取得位置，點此重試',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textHint),
+                )),
+              ]),
+            ),
+          ),
+        )
+      // 附近無路線 或 後端錯誤
+      else if (_nearbyStops!.isEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: GestureDetector(
+            onTap: _nearbyError == 'backend_error' ? _fetchNearbyStops : null,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))]),
+              child: Row(children: [
+                Icon(
+                  _nearbyError == 'backend_error' ? Icons.cloud_off_rounded : Icons.directions_bus_outlined,
+                  size: 18, color: AppColors.textHint),
+                const SizedBox(width: 12),
+                Text(
+                  _nearbyError == 'backend_error'
+                      ? '後端服務未啟動，點此重試'
+                      : '附近 800 公尺內無公車路線',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
+              ]),
+            ),
+          ),
+        )
+      // 真實路線卡片（縫線風格）
+      else
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: StitchedBox(
+            color: Color.lerp(context.appMist, Colors.white, 0.50)!,
+            stitchColor: c.withValues(alpha: 0.30),
+            radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+            padding: EdgeInsets.zero,
+          child: Column(children: _nearbyStops!.asMap().entries.map((e) {
+            final i = e.key;
+            final s = e.value;
+            final rName = s['RouteName'] as String? ?? '';
+            final stopName = s['StopName'] as String? ?? '';
+            
+            // 🌟 讀取後端算好的起訖點，組合出「起點 ➔ 終點」
+            final origin = s['Origin'] as String? ?? '';
+            final dest = s['Destination'] as String? ?? '';
+            final fallbackDir = (s['Direction'] as int? ?? 0) == 0 ? '去程' : '返程';
+            final dirText = origin.isNotEmpty && dest.isNotEmpty ? '$origin ➔ $dest' : fallbackDir;
+            
+            final rColor = _kRouteColors[rName.hashCode.abs() % _kRouteColors.length];
+            return _BusNearbyCard(
+              name: rName, 
+              direction: dirText, // 這裡將會顯示 嘉義火車站 ➔ 蘭潭校區
+              via: stopName, 
+              color: rColor,
+              isLast: i == _nearbyStops!.length - 1, city: _busCity, tick: _busTick,
+            );
+          }).toList()),
+        )),
+      // ETA 圖例
+      const Padding(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Wrap(spacing: 16, runSpacing: 6, children: [
+          _EtaDot(AppColors.success, '即將進站（0-5 分）'),
+          _EtaDot(AppColors.warning, '將進站（6-15 分）'),
+          _EtaDot(AppColors.textHint, '未發車（15 分以上）'),
+        ]),
+      ),
+      ], // end if (_busMode == 'idle')
+
+      const SizedBox(height: 20),
     ]);
   }
 
@@ -489,6 +723,8 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                     padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
                     itemCount: stations.length,
                     itemBuilder: (ctx, i) {
+                      final yp = context.appPrimary;
+                      final ym = context.appMist;
                       final s = stations[i];
                       final gen = s['GeneralBikes'] as int? ?? 0;
                       final elec = s['ElectricBikes'] as int? ?? 0;
@@ -507,12 +743,12 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                             }
                           },
                           child: StitchedBox(
-                            color: Color.lerp(_kYbBg, Colors.white, 0.45)!,
-                            stitchColor: _kYbAcc.withValues(alpha: 0.35),
+                            color: Color.lerp(ym, Colors.white, 0.45)!,
+                            stitchColor: yp.withValues(alpha: 0.35),
                             radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
                             padding: const EdgeInsets.all(14),
                             child: Row(children: [
-                              Container(width: 42, height: 42, decoration: BoxDecoration(color: _kYbAcc.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.pedal_bike_rounded, size: 22, color: _kYbAcc)),
+                              Container(width: 42, height: 42, decoration: BoxDecoration(color: yp.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.pedal_bike_rounded, size: 22, color: yp)),
                               const SizedBox(width: 12),
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
@@ -524,7 +760,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                                 ]),
                               ])),
                               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                                Text('可借 $total 輛', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: good ? _kYbAcc : AppColors.error)),
+                                Text('可借 $total 輛', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: good ? yp : AppColors.error)),
                                 Text('可還 $ret 格', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
                               ]),
                             ]),
@@ -542,7 +778,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   // ─── TRA ───────────────────────────────────────────────────────
   Widget _buildTra() {
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _traO, dest: _traD, stations: _traStations.keys.toList(), bg: _kTraBg, acc: _kTraAcc,
+      _ODCard(origin: _traO, dest: _traD, stations: _traStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
         onO: (v) { setState(() { _traO = v; _traLive = RailService.getTraLiveBoard(_traStations[v]!); }); _fetchTra(); },
         onD: (v) { setState(() => _traD = v); _fetchTra(); },
         onSwap: () { setState(() { final t = _traO; _traO = _traD; _traD = t; _traLive = RailService.getTraLiveBoard(_traStations[_traO]!); }); _fetchTra(); },
@@ -557,16 +793,16 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         },
       ),
       const SizedBox(height: 12),
-      if (_traLoading) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+      if (_traLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
       else if (_traError != null) Center(child: Text(_traError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)))
       else if (_traTrains == null || _traTrains!.isEmpty)
-        _Hint(icon: Icons.train_rounded, color: _kTraAcc, text: '此區間今日無直達班次')
+        _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
       else ...[
         if ((_traUpdateTime ?? '').isNotEmpty) _UpdTime(_traUpdateTime!),
         const SizedBox(height: 4),
-        ..._traTrains!.map((t) => Padding(
+        ..._traTrains!.asMap().entries.map((e) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: _RailCard(no: t['train_no']?.toString() ?? '', type: t['train_type_name']?.toString() ?? '', dep: t['departure_time']?.toString() ?? '', arr: t['arrival_time']?.toString() ?? '', origin: _traO, dest: _traD, date: _today, isThsr: false, stops: t['stops'] is List ? (t['stops'] as List) : []),
+          child: SlideUpFadeIn(index: e.key, child: _RailCard(no: e.value['train_no']?.toString() ?? '', type: e.value['train_type_name']?.toString() ?? '', dep: e.value['departure_time']?.toString() ?? '', arr: e.value['arrival_time']?.toString() ?? '', origin: _traO, dest: _traD, date: _today, isThsr: false, stops: e.value['stops'] is List ? (e.value['stops'] as List) : [])),
         )),
       ],
     ]);
@@ -580,7 +816,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         try {
           final raw = d['stopTimes'] ?? d['StopTimes'] ?? d['stops'] ?? d['Stops'];
           if (raw == null || raw is! List) continue;
-          final stops = (raw as List).map((s) => Map<dynamic, dynamic>.from(s as Map)).toList()
+          final stops = raw.map((s) => Map<dynamic, dynamic>.from(s as Map)).toList()
             ..sort((a, b) => ((a['StopSequence'] as num?)?.toInt() ?? 0).compareTo((b['StopSequence'] as num?)?.toInt() ?? 0));
           final oIdx = stops.indexWhere((s) => (s['StationName'] ?? '').toString().contains(_aliO));
           final dIdx = stops.indexWhere((s) => (s['StationName'] ?? '').toString().contains(_aliD));
@@ -591,14 +827,14 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       valid.sort((a, b) => (a['dep'] as String).compareTo(b['dep'] as String));
     }
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _aliO, dest: _aliD, stations: _aliStations, bg: _kAliBg, acc: _kAliAcc,
+      _ODCard(origin: _aliO, dest: _aliD, stations: _aliStations, bg: context.appMist, acc: context.appPrimary,
         onO: (v) => setState(() => _aliO = v), onD: (v) => setState(() => _aliD = v),
         onSwap: () => setState(() { final t = _aliO; _aliO = _aliD; _aliD = t; }),
       ),
       const SizedBox(height: 12),
-      if (_aliLoading) const Center(child: CircularProgressIndicator())
+      if (_aliLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
       else if (_aliO == _aliD) Center(child: Text('請選擇不同的起迄站', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)))
-      else if (valid.isEmpty) _Hint(icon: Icons.forest_rounded, color: _kAliAcc, text: '此區間今日無直達班次')
+      else if (valid.isEmpty) _Hint(icon: Icons.forest_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
       else ...valid.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _AliCard(train: t, origin: _aliO, dest: _aliD))),
     ]);
   }
@@ -606,22 +842,22 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   // ─── THSR ──────────────────────────────────────────────────────
   Widget _buildThsr() {
     return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _thsrO, dest: _thsrD, stations: _thsrStations.keys.toList(), bg: _kThsrBg, acc: _kThsrAcc,
+      _ODCard(origin: _thsrO, dest: _thsrD, stations: _thsrStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
         onO: (v) { setState(() => _thsrO = v); _fetchThsr(); },
         onD: (v) { setState(() => _thsrD = v); _fetchThsr(); },
         onSwap: () { setState(() { final t = _thsrO; _thsrO = _thsrD; _thsrD = t; }); _fetchThsr(); },
       ),
       const SizedBox(height: 12),
-      if (_thsrLoading) const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
+      if (_thsrLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
       else if (_thsrError != null) Center(child: Text(_thsrError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)))
       else if (_thsrTrains == null || _thsrTrains!.isEmpty)
-        _Hint(icon: Icons.directions_railway_filled_rounded, color: _kThsrAcc, text: '此區間今日無直達班次')
+        _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
       else ...[
         if ((_thsrUpdateTime ?? '').isNotEmpty) _UpdTime(_thsrUpdateTime!),
         const SizedBox(height: 4),
-        ..._thsrTrains!.map((t) => Padding(
+        ..._thsrTrains!.asMap().entries.map((e) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
-          child: _RailCard(no: t['TrainNo']?.toString() ?? '', type: '高鐵', dep: t['DepartureTime']?.toString() ?? '', arr: t['ArrivalTime']?.toString() ?? '', origin: _thsrO, dest: _thsrD, date: _today, isThsr: true, stops: t['stops'] is List ? (t['stops'] as List) : []),
+          child: SlideUpFadeIn(index: e.key, child: _RailCard(no: e.value['TrainNo']?.toString() ?? '', type: '高鐵', dep: e.value['DepartureTime']?.toString() ?? '', arr: e.value['ArrivalTime']?.toString() ?? '', origin: _thsrO, dest: _thsrD, date: _today, isThsr: true, stops: e.value['stops'] is List ? (e.value['stops'] as List) : [])),
         )),
       ],
     ]);
@@ -780,39 +1016,41 @@ class _LiveBoard extends StatelessWidget {
   final List<dynamic> trains;
   const _LiveBoard({required this.station, required this.trains, required this.updateTime});
   @override Widget build(BuildContext context) {
+    final p = context.appPrimary;
+    final m = context.appMist;
     if (trains.isEmpty) {
       return StitchedBox(
-        color: Color.lerp(_kTraBg, Colors.white, 0.55)!,
-        stitchColor: _kTraAcc.withValues(alpha: 0.35),
+        color: Color.lerp(m, Colors.white, 0.55)!,
+        stitchColor: p.withValues(alpha: 0.35),
         radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(children: [
-          Icon(Icons.info_outline_rounded, size: 15, color: _kTraAcc),
+          Icon(Icons.info_outline_rounded, size: 15, color: p),
           const SizedBox(width: 8),
           Text('$station 目前暫無即時進站資訊', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ]),
       );
     }
     return StitchedBox(
-      color: Color.lerp(_kTraBg, Colors.white, 0.4)!,
-      stitchColor: _kTraAcc.withValues(alpha: 0.4),
+      color: Color.lerp(m, Colors.white, 0.4)!,
+      stitchColor: p.withValues(alpha: 0.4),
       radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
       padding: const EdgeInsets.all(12),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Icon(Icons.departure_board_rounded, size: 16, color: _kTraAcc),
+          Icon(Icons.departure_board_rounded, size: 16, color: p),
           const SizedBox(width: 6),
-          Text('$station 即將進站', style: TextStyle(color: _kTraAcc, fontWeight: FontWeight.w800, fontSize: 13)),
+          Text('$station 即將進站', style: TextStyle(color: p, fontWeight: FontWeight.w800, fontSize: 13)),
           const Spacer(),
           if (updateTime.isNotEmpty) Text(updateTime, style: const TextStyle(color: AppColors.textHint, fontSize: 10)),
         ]),
-        Divider(color: _kTraAcc.withValues(alpha: 0.2), height: 14),
+        Divider(color: p.withValues(alpha: 0.2), height: 14),
         ...trains.map((t) {
           final delay = t['delay_time'] as int? ?? 0;
           return Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Row(children: [
             Expanded(flex: 3, child: Text('${t['train_type_name'] ?? ''} ${t['train_no'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary))),
             Expanded(flex: 1, child: Text(t['direction'] == 0 ? '順行' : '逆行', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
-            Text(_formatTime(t['schedule_departure_time']?.toString() ?? ''), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: _kTraAcc)),
+            Text(_formatTime(t['schedule_departure_time']?.toString() ?? ''), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: p)),
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -835,11 +1073,40 @@ class _BusCard extends StatefulWidget {
 }
 class _BusCardState extends State<_BusCard> {
   bool _expanded = false;
+  bool _showMap = false;
+  List<Map<String, dynamic>>? _busPositions;
 
   String _etaText(Map s) {
     final status = s['StopStatus'] as int? ?? 0;
     final eta = s['EstimateTime'] as int?;
-    if (status == 1) return '尚未發車';
+    
+    if (status == 1) {
+      // 1. 嘗試直接解析 TDX 提供的 NextBusTime 字串
+      final nbt = s['NextBusTime'] as String? ?? '';
+      if (nbt.isNotEmpty) {
+        if (nbt.contains('T')) {
+          try {
+            final parts = nbt.split('T');
+            if (parts.length > 1 && parts[1].length >= 5) {
+              return '${parts[1].substring(0, 5)} 預計';
+            }
+          } catch (_) {}
+        } else if (nbt.length >= 5) {
+          return '${nbt.substring(0, 5)} 預計'; // 相容只傳回時間的格式
+        }
+      }
+      
+      // 2. 前端魔法：如果是市區公車沒給時間字串，但有給「預估秒數」，我們自己換算成時刻！
+      if (eta != null && eta > 0) {
+        final arrTime = DateTime.now().add(Duration(seconds: eta));
+        final hh = arrTime.hour.toString().padLeft(2, '0');
+        final mm = arrTime.minute.toString().padLeft(2, '0');
+        return '$hh:$mm 預計';
+      }
+      
+      return '尚未發車';
+    }
+    
     if (status == 2) return '交管停靠';
     if (status == 3) return '末班已過';
     if (status == 4) return '今日停駛';
@@ -849,15 +1116,19 @@ class _BusCardState extends State<_BusCard> {
     return m <= 1 ? '即將進站' : '$m 分鐘';
   }
 
-  Color _etaColor(Map s) {
+  Color _etaColor(Map s, Color primary) {
     final status = s['StopStatus'] as int? ?? 0;
-    if (status != 0) return AppColors.textHint;
+    if (status == 1) {
+      final nbt = s['NextBusTime'] as String? ?? '';
+      final eta = s['EstimateTime'] as int?;
+      return (nbt.isNotEmpty || (eta != null && eta > 0)) ? primary : AppColors.textHint;
+    }
+    if (status != 0 && status != 1) return AppColors.textHint;
     final eta = s['EstimateTime'] as int? ?? 9999;
     if (eta <= 60) return AppColors.success;
     if (eta <= 300) return AppColors.warning;
-    return _kBusAcc;
+    return primary;
   }
-
   bool _showPlate(Map s) {
     if ((s['StopStatus'] as int? ?? 0) != 0) return false;
     final eta = s['EstimateTime'] as int? ?? 9999;
@@ -866,14 +1137,19 @@ class _BusCardState extends State<_BusCard> {
   }
 
   @override Widget build(BuildContext context) {
+    final p = context.appPrimary;
+    final m = context.appMist;
     final stops = widget.stops;
     final dir = (stops.first['Direction'] as int? ?? 0) == 0 ? '去程' : '返程';
-    final origin = stops.first['StopName'] as String? ?? '起點';
-    final dest = stops.last['StopName'] as String? ?? '終點';
+    String getZh(dynamic field) => (field is Map) ? (field['Zh_tw']?.toString() ?? '') : (field?.toString() ?? '');
+
+    final subRouteName = getZh(stops.first['SubRouteName']);
+    final origin = getZh(stops.first['StopName']).isEmpty ? '起點' : getZh(stops.first['StopName']);
+    final dest = getZh(stops.last['StopName']).isEmpty ? '終點' : getZh(stops.last['StopName']);
 
     return StitchedBox(
-      color: Color.lerp(_kBusBg, Colors.white, 0.45)!,
-      stitchColor: _kBusAcc.withValues(alpha: 0.35),
+      color: Color.lerp(m, Colors.white, 0.45)!,
+      stitchColor: p.withValues(alpha: 0.35),
       radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
       padding: EdgeInsets.zero,
       child: ClipRRect(
@@ -882,7 +1158,18 @@ class _BusCardState extends State<_BusCard> {
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(padding: const EdgeInsets.fromLTRB(14, 13, 12, 13), child: Row(children: [
-              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: _kBusAcc.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)), child: Text(dir, style: TextStyle(color: _kBusAcc, fontSize: 11, fontWeight: FontWeight.w700))),
+              Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: p.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(6)), child: Text(dir, style: TextStyle(color: p, fontSize: 11, fontWeight: FontWeight.w700))),
+              if (subRouteName.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 90),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(color: p.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(5)),
+                    child: Text(subRouteName, style: TextStyle(color: p, fontSize: 10, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis, maxLines: 1),
+                  ),
+                ),
+              ],
               const SizedBox(width: 10),
               Expanded(child: Row(children: [
                 Flexible(child: Text(origin, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.textPrimary), overflow: TextOverflow.ellipsis)),
@@ -893,14 +1180,14 @@ class _BusCardState extends State<_BusCard> {
             ])),
           ),
           if (_expanded) ...[
-            Divider(height: 1, color: _kBusAcc.withValues(alpha: 0.15)),
+            Divider(height: 1, color: p.withValues(alpha: 0.15)),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
               child: Column(children: List.generate(stops.length, (i) {
                 final s = stops[i];
                 final isLast = i == stops.length - 1;
                 final etaText = _etaText(s);
-                final etaColor = _etaColor(s);
+                final etaColor = _etaColor(s, p);
                 final showP = _showPlate(s);
                 final plate = s['PlateNumb'] as String? ?? '';
                 final imminent = (s['EstimateTime'] as int? ?? 9999) <= 120 && (s['StopStatus'] as int? ?? 0) == 0;
@@ -913,8 +1200,30 @@ class _BusCardState extends State<_BusCard> {
                   const SizedBox(width: 10),
                   Expanded(child: Padding(padding: EdgeInsets.only(bottom: isLast ? 0 : 4), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      Expanded(child: Text(s['StopName'] as String? ?? '', style: TextStyle(fontSize: 13, fontWeight: imminent ? FontWeight.w800 : FontWeight.w500, color: imminent ? AppColors.textPrimary : AppColors.textSecondary))),
-                      const SizedBox(width: 8),
+                      Expanded(child: Text(getZh(s['StopName']), style: TextStyle(fontSize: 13, fontWeight: imminent ? FontWeight.w800 : FontWeight.w500, color: imminent ? AppColors.textPrimary : AppColors.textSecondary))),
+                      if ((s['EstimateTime'] as int? ?? 0) > 180 && (s['StopStatus'] as int? ?? 0) == 0)
+                        GestureDetector(
+                          onTap: () async {
+                            final subRoute = getZh(stops.first['SubRouteName']);
+                            await BusNotificationService.scheduleBusArrival(
+                              routeName: subRoute.isNotEmpty ? subRoute : '公車',
+                              stopName: getZh(s['StopName']),
+                              etaSeconds: s['EstimateTime'] as int,
+                              notifyBeforeMinutes: 3,
+                            );
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('已設定到站提醒：${getZh(s['StopName'])}（約 ${(s['EstimateTime'] as int) ~/ 60} 分鐘後）'),
+                              behavior: SnackBarBehavior.floating,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              duration: const Duration(seconds: 3),
+                            ));
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Icon(Icons.notifications_none_rounded, size: 16, color: p.withValues(alpha: 0.6)),
+                          ),
+                        ),
+                      const SizedBox(width: 4),
                       Text(etaText, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: etaColor)),
                     ]),
                     if (showP) ...[
@@ -929,7 +1238,105 @@ class _BusCardState extends State<_BusCard> {
                 ]);
               })),
             ),
+            // 公車即時位置地圖按鈕
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+              child: GestureDetector(
+                onTap: () async {
+                  if (_showMap) { setState(() => _showMap = false); return; }
+                  setState(() => _showMap = true);
+                  if (_busPositions != null) return;
+                  final routeName = getZh(stops.first['SubRouteName']).isNotEmpty ? getZh(stops.first['SubRouteName']) : '';
+                  if (routeName.isEmpty) return;
+                  final res = await RailService.getBusGpsPositions('Chiayi', routeName);
+                  if (mounted) setState(() => _busPositions = (res['data'] as List? ?? []).cast<Map<String, dynamic>>());
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(color: p.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(_showMap ? Icons.list_rounded : Icons.map_rounded, size: 14, color: p),
+                    const SizedBox(width: 6),
+                    Text(_showMap ? '收合地圖' : '公車即時位置', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p)),
+                  ]),
+                ),
+              ),
+            ),
+            if (_showMap) _buildBusGpsMap(stops),
           ],
+        ]),
+      ),
+    );
+  }
+
+  bool _gpsRefreshing = false;
+
+  Future<void> _refreshGps() async {
+    String getZh(dynamic field) => (field is Map) ? (field['Zh_tw']?.toString() ?? '') : (field?.toString() ?? '');
+    final routeName = getZh(widget.stops.first['SubRouteName']);
+    if (routeName.isEmpty) return;
+    setState(() => _gpsRefreshing = true);
+    final res = await RailService.getBusGpsPositions('Chiayi', routeName);
+    if (mounted) setState(() {
+      _busPositions = (res['data'] as List? ?? []).cast<Map<String, dynamic>>();
+      _gpsRefreshing = false;
+    });
+  }
+
+  Widget _buildBusGpsMap(List<Map<String, dynamic>> stops) {
+    final gp = context.appPrimary;
+    const defaultCenter = LatLng(23.4801, 120.4500);
+    final busMarkers = (_busPositions ?? []).map((b) {
+      final lat = b['Lat'] as double? ?? 0;
+      final lng = b['Lng'] as double? ?? 0;
+      if (lat == 0 || lng == 0) return null;
+      return Marker(
+        point: LatLng(lat, lng),
+        width: 36, height: 36,
+        child: Container(
+          decoration: BoxDecoration(
+            color: gp,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [BoxShadow(color: gp.withValues(alpha: 0.5), blurRadius: 8)],
+          ),
+          child: const Icon(Icons.directions_bus_rounded, color: Colors.white, size: 16),
+        ),
+      );
+    }).whereType<Marker>().toList();
+
+    final center = busMarkers.isNotEmpty
+        ? busMarkers.first.point
+        : defaultCenter;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
+      child: SizedBox(
+        height: 200,
+        child: Stack(children: [
+          FlutterMap(
+            options: MapOptions(initialCenter: center, initialZoom: 13.5),
+            children: [
+              TileLayer(urlTemplate: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', userAgentPackageName: 'com.chiayicity.explore_chiayi'),
+              MarkerLayer(markers: busMarkers),
+            ],
+          ),
+          if (busMarkers.isEmpty)
+            const Center(child: Text('暫無公車位置資料', style: TextStyle(color: AppColors.textHint, fontSize: 12))),
+          Positioned(
+            right: 8, bottom: 8,
+            child: GestureDetector(
+              onTap: _gpsRefreshing ? null : _refreshGps,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6)]),
+                child: _gpsRefreshing
+                    ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: gp))
+                    : Icon(Icons.refresh_rounded, size: 16, color: gp),
+              ),
+            ),
+          ),
         ]),
       ),
     );
@@ -962,15 +1369,15 @@ class _RailCardState extends State<_RailCard> {
   bool _loading = false;
 
   Color get _acc {
-    if (widget.isThsr) return _kThsrAcc;
+    if (widget.isThsr) return const Color(0xFFC4856A); // 陶土橘
     final t = widget.type;
-    if (t.contains('自強')) return const Color(0xFFBF4040);
-    if (t.contains('太魯閣')) return AppColors.accentSky;
-    if (t.contains('普悠瑪')) return const Color(0xFF7B5FAE);
-    if (t.contains('莒光')) return AppColors.primary;
-    return _kTraAcc;
+    if (t.contains('自強'))  return const Color(0xFF5B7FAF); // 天藍（取代深紅）
+    if (t.contains('太魯閣')) return const Color(0xFF3A9E8A); // 清爽青綠
+    if (t.contains('普悠瑪')) return const Color(0xFF7B6BAE); // 淡紫
+    if (t.contains('莒光'))  return const Color(0xFFB07A30); // 暖木棕
+    return context.appPrimary; // 區間 / 其他 — 跟隨主題色
   }
-  Color get _bg => widget.isThsr ? _kThsrBg : _kTraBg;
+  Color get _bg => context.appMist;
 
   // 依班次號碼決定膠帶顏色（穩定不隨刷新改變）
   Color get _tapeColor {
@@ -1167,26 +1574,28 @@ class _AliCard extends StatefulWidget {
 class _AliCardState extends State<_AliCard> {
   bool _expanded = false;
   @override Widget build(BuildContext context) {
+    final p = context.appPrimary;
+    final m = context.appMist;
     final stops = widget.train['stops'] as List<dynamic>? ?? [];
     return StitchedBox(
-      color: Color.lerp(_kAliBg, Colors.white, 0.45)!,
-      stitchColor: _kAliAcc.withValues(alpha: 0.4),
+      color: Color.lerp(m, Colors.white, 0.45)!,
+      stitchColor: p.withValues(alpha: 0.4),
       radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: Column(children: [
-          Container(height: 4, decoration: const BoxDecoration(color: _kAliAcc, borderRadius: BorderRadius.vertical(top: Radius.circular(15)))),
+          Container(height: 4, decoration: BoxDecoration(color: p, borderRadius: const BorderRadius.vertical(top: Radius.circular(15)))),
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
-              Container(width: 42, height: 42, decoration: BoxDecoration(color: _kAliAcc.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Container(width: 42, height: 42, decoration: BoxDecoration(color: p.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Text('🚃', style: TextStyle(fontSize: 16)),
                 Text(widget.train['no']?.toString() ?? '', style: const TextStyle(color: AppColors.textSecondary, fontSize: 9, fontWeight: FontWeight.w800)),
               ])),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: _kAliAcc.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: const Text('觀光列車', style: TextStyle(color: _kAliAcc, fontSize: 10, fontWeight: FontWeight.w700))), const Spacer(), Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint)]),
+                Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text('觀光列車', style: TextStyle(color: p, fontSize: 10, fontWeight: FontWeight.w700))), const Spacer(), Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint)]),
                 const SizedBox(height: 8),
                 Row(children: [
                   Text(_formatTime(widget.train['dep']?.toString() ?? ''), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.textPrimary)),
@@ -1197,7 +1606,7 @@ class _AliCardState extends State<_AliCard> {
             ])),
           ),
           if (_expanded && stops.isNotEmpty) ...[
-            Divider(height: 1, color: _kAliAcc.withValues(alpha: 0.15)),
+            Divider(height: 1, color: p.withValues(alpha: 0.15)),
             Padding(padding: const EdgeInsets.fromLTRB(18, 12, 18, 16), child: Column(children: stops.map((s) {
               final name = (s['StationName'] ?? s['stationName'] ?? '').toString();
               final time = _formatTime((s['ArrivalTime'] ?? s['arrivalTime'] ?? '').toString());
@@ -1205,7 +1614,7 @@ class _AliCardState extends State<_AliCard> {
               final isLast = s == stops.last;
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 SizedBox(width: 18, child: Column(children: [
-                  Container(width: isTarget ? 13 : 9, height: isTarget ? 13 : 9, decoration: BoxDecoration(shape: BoxShape.circle, color: isTarget ? _kAliAcc : Colors.white, border: Border.all(color: isTarget ? _kAliAcc : AppColors.divider, width: isTarget ? 2.5 : 1.5))),
+                  Container(width: isTarget ? 13 : 9, height: isTarget ? 13 : 9, decoration: BoxDecoration(shape: BoxShape.circle, color: isTarget ? p : Colors.white, border: Border.all(color: isTarget ? p : AppColors.divider, width: isTarget ? 2.5 : 1.5))),
                   if (!isLast) Container(width: 1.5, height: 22, color: AppColors.divider),
                 ])),
                 const SizedBox(width: 10),
@@ -1220,4 +1629,212 @@ class _AliCardState extends State<_AliCard> {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 公車 UI 新元件（對標參考圖）
+// ═══════════════════════════════════════════════════════════════
+
+/// 底線樣式 sub-tab（搜尋路線 / 搜尋站牌）
+class _BusUnderTab extends StatelessWidget {
+  final String label;
+  final int index, current;
+  final Color color;
+  final VoidCallback onTap;
+  const _BusUnderTab(this.label, this.index, this.current, this.color, this.onTap);
+  @override Widget build(BuildContext context) => Expanded(
+    child: GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(
+            color: current == index ? color : Colors.transparent, width: 2,
+          )),
+        ),
+        child: Text(label, textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+              color: current == index ? color : AppColors.textHint)),
+      ),
+    ),
+  );
+}
+
+
+/// 附近路線卡片（Stateful，點擊展開即時 ETA）
+class _BusNearbyCard extends StatefulWidget {
+  final String name, direction, via, city;
+  final Color color;
+  final bool isLast;
+  final int tick; 
+  const _BusNearbyCard({required this.name, required this.direction, required this.via,
+    required this.color, required this.isLast, required this.city, required this.tick});
+  @override State<_BusNearbyCard> createState() => _BusNearbyCardState();
+}
+class _BusNearbyCardState extends State<_BusNearbyCard> {
+  bool _expanded = false;
+  Future<Map<String, dynamic>>? _future;
+  @override
+  void didUpdateWidget(_BusNearbyCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.tick != oldWidget.tick && _expanded) {
+      setState(() {
+        _future = RailService.getBusDynamic(widget.city, widget.name);
+      });
+    }
+  }
+  void _toggle() {
+    if (!_expanded && _future == null) {
+      _future = RailService.getBusDynamic(widget.city, widget.name);
+    }
+    setState(() => _expanded = !_expanded);
+  }
+
+  String _etaText(Map s) {
+    final status = s['StopStatus'] as int? ?? 0;
+    final eta = s['EstimateTime'] as int?;
+    
+    if (status == 1) {
+      // 1. 嘗試直接解析 TDX 提供的 NextBusTime 字串
+      final nbt = s['NextBusTime'] as String? ?? '';
+      if (nbt.isNotEmpty) {
+        if (nbt.contains('T')) {
+          try {
+            final parts = nbt.split('T');
+            if (parts.length > 1 && parts[1].length >= 5) {
+              return '${parts[1].substring(0, 5)} 預計';
+            }
+          } catch (_) {}
+        } else if (nbt.length >= 5) {
+          return '${nbt.substring(0, 5)} 預計';
+        }
+      }
+      
+      // 2. 前端魔法：如果沒給字串，但有給「預估秒數」，自己換算成時刻！
+      if (eta != null && eta > 0) {
+        final arrTime = DateTime.now().add(Duration(seconds: eta));
+        final hh = arrTime.hour.toString().padLeft(2, '0');
+        final mm = arrTime.minute.toString().padLeft(2, '0');
+        return '$hh:$mm 預計';
+      }
+      
+      return '尚未發車';
+    }
+    
+    if (status == 2) return '交管停靠';
+    if (status == 3) return '末班已過';
+    if (status == 4) return '今日停駛';
+    if (eta == null) return '---';
+    if (eta == 0) return '進站中';
+    final m = eta ~/ 60;
+    return m <= 1 ? '即將進站' : '$m 分';
+  }
+
+  Color _etaColor(Map s) {
+    final status = s['StopStatus'] as int? ?? 0;
+    if (status == 1) {
+      final nbt = s['NextBusTime'] as String? ?? '';
+      final eta = s['EstimateTime'] as int?;
+      // 只要有任何一種預計時間的線索，就套用卡片專屬色
+      return (nbt.isNotEmpty || (eta != null && eta > 0)) ? widget.color : AppColors.textHint;
+    }
+    if (status != 0 && status != 1) return AppColors.textHint;
+    final eta = s['EstimateTime'] as int? ?? 9999;
+    if (eta <= 60)  return AppColors.success;
+    if (eta <= 300) return AppColors.warning;
+    return AppColors.textHint;
+  }
+
+  @override Widget build(BuildContext context) {
+    final c = widget.color;
+    final isLast = widget.isLast && !_expanded;
+    return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Container(width: 5, decoration: BoxDecoration(color: c,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(16),
+          bottomLeft: Radius.circular(isLast ? 16 : 0)))),
+      Expanded(child: Column(children: [
+        GestureDetector(
+          onTap: _toggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 13, 14, 11),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: c.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8)),
+                child: Text(widget.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: c))),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.direction, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                if (widget.via.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text('附近：${widget.via}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                ],
+              ])),
+              AnimatedRotation(
+                turns: _expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.textHint, size: 20)),
+            ]),
+          ),
+        ),
+        if (_expanded) ...[
+          const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.divider),
+          FutureBuilder<Map<String, dynamic>>(
+            future: _future,
+            builder: (ctx, snap) {
+              if (!snap.hasData) return Padding(padding: const EdgeInsets.all(16), child: Center(child: CircularProgressIndicator(color: ctx.appPrimary, strokeWidth: 2)));
+              final all = (snap.data!['data'] as List? ?? []).cast<Map<String, dynamic>>();
+              
+              String getZh(dynamic field) => (field is Map) ? (field['Zh_tw']?.toString() ?? '') : (field?.toString() ?? '');
+              
+              // 1. 先濾出特定方向
+              final allDir0 = all.where((s) => (s['Direction'] as int? ?? 0) == 0).toList();
+              
+              // 2. 解決「合起來」問題：取得第一種子路線名稱作為基準，濾掉其他分支
+              final firstSubRoute = allDir0.isNotEmpty ? getZh(allDir0.first['SubRouteName']) : '';
+              
+              // 3. 確保只排序並顯示同一條子路線的站牌
+              final dir = allDir0.where((s) => getZh(s['SubRouteName']) == firstSubRoute).toList()
+                ..sort((a, b) => (a['StopSequence'] as int? ?? 0).compareTo(b['StopSequence'] as int? ?? 0));
+                
+              if (dir.isEmpty) return Padding(padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+                child: Text('無法取得即時資訊', style: TextStyle(fontSize: 12, color: AppColors.textHint)));
+              
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                child: Column(children: dir.take(10).map((s) {
+                  final etaTxt = _etaText(s);
+                  final etaClr = _etaColor(s);
+                  final isImm = (s['EstimateTime'] as int? ?? 9999) <= 120 && (s['StopStatus'] as int? ?? 0) == 0;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(children: [
+                      Container(width: 6, height: 6, margin: const EdgeInsets.only(right: 8, top: 1),
+                        decoration: BoxDecoration(color: etaClr, shape: BoxShape.circle)),
+                      Expanded(child: Text(getZh(s['StopName']), style: TextStyle(fontSize: 12, fontWeight: isImm ? FontWeight.w700 : FontWeight.w400, color: isImm ? AppColors.textPrimary : AppColors.textSecondary))),
+                      Text(etaTxt, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: etaClr)),
+                    ]),
+                  );
+                }).toList()),
+              );
+            },
+          ),
+        ],
+        if (!widget.isLast) const Divider(height: 1, indent: 14, endIndent: 14, color: AppColors.divider),
+      ])),
+    ]));
+  }
+}
+
+/// ETA 圖例小點
+class _EtaDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  const _EtaDot(this.color, this.label);
+  @override Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+    const SizedBox(width: 5),
+    Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
+  ]);
 }

@@ -1656,14 +1656,12 @@ class _RailCardState extends State<_RailCard> {
                     child: Column(children: [
                       Row(children: [
                         Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-                        Expanded(child: LayoutBuilder(builder: (ctx, bc) =>
-                            CustomPaint(size: Size(bc.maxWidth, 1.5),
-                                painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        Expanded(child: SizedBox(height: 1.5,
+                            child: CustomPaint(painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
                         Icon(widget.isThsr ? Icons.directions_railway_filled_rounded : Icons.train_rounded,
                             size: 16, color: c),
-                        Expanded(child: LayoutBuilder(builder: (ctx, bc) =>
-                            CustomPaint(size: Size(bc.maxWidth, 1.5),
-                                painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        Expanded(child: SizedBox(height: 1.5,
+                            child: CustomPaint(painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
                         Container(width: 5, height: 5, decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
                       ]),
                       if (_duration.isNotEmpty) ...[

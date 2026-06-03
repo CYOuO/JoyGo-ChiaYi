@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "152569932828-vonm84iufo78cqdsqgqdloieav8lm1n9.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.chiayicity_claudep_1",
+            "certificate_hash": "a6325097553576a9ae5dc3cf265b15a35ec584e5"
+          }
+        },
+        {
           "client_id": "152569932828-d8lpm1f8shc4bdiaut96fcvksvdg1gq9.apps.googleusercontent.com",
           "client_type": 3
         }

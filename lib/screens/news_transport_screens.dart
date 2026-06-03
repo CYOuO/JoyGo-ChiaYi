@@ -258,7 +258,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   }
 
   // ── 模式配色 helpers ─────────────────────────────────────────
-  static const _tabIcons  = [Icons.directions_bus_rounded, Icons.pedal_bike_rounded, Icons.train_rounded, Icons.landscape_rounded, Icons.directions_railway_filled_rounded];
+  static const _tabIcons  = [Icons.directions_bus_rounded, Icons.directions_bike_rounded, Icons.train_rounded, Icons.landscape_rounded, Icons.directions_railway_filled_rounded];
   static const _tabNames  = ['公車', 'YouBike', '台鐵', '阿里山', '高鐵'];
   static const _tabTitles = ['公車動態查詢', 'YouBike 租借站', '台鐵時刻查詢', '阿里山森林鐵路', '高鐵時刻查詢'];
 
@@ -731,7 +731,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     return Column(children: [
       // ── 小地圖（使用者位置 + YouBike 站點）────────────────────
       SizedBox(
-        height: 200,
+        height: 230,
         child: Stack(children: [
           if (_ybPosition != null)
             FutureBuilder<Map<String, dynamic>>(
@@ -783,7 +783,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 return FlutterMap(
                   // key 讓 position 更新時地圖重建並重新對準
                   key: ValueKey('${_ybPosition!.latitude},${_ybPosition!.longitude}'),
-                  options: MapOptions(initialCenter: center, initialZoom: 15.5),
+                  options: MapOptions(initialCenter: center, initialZoom: 16.5),
                   children: [
                     TileLayer(
                       urlTemplate: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
@@ -804,10 +804,27 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         ]),
       ),
       // ── 搜尋框 ────────────────────────────────────────────────
-      Container(color: AppColors.surface, padding: const EdgeInsets.fromLTRB(16, 10, 16, 10), child: TextField(
-        decoration: const InputDecoration(hintText: '搜尋站點名稱...', prefixIcon: Icon(Icons.search_rounded, size: 18)),
-        onChanged: (v) => setState(() => _ybSearch = v),
-      )),
+      Builder(builder: (ctx) {
+        final yp = ctx.appPrimary;
+        return Container(
+          color: AppColors.surface,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          child: TextField(
+            decoration: InputDecoration(
+              hintText: '搜尋站點名稱...',
+              hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
+              prefixIcon: Icon(Icons.search_rounded, size: 18, color: yp),
+              filled: true,
+              fillColor: AppColors.background,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: yp, width: 1.5)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            ),
+            onChanged: (v) => setState(() => _ybSearch = v),
+          ),
+        );
+      }),
       Expanded(child: _ybFuture == null
           ? const Center(child: CircularProgressIndicator())
           : FutureBuilder<Map<String, dynamic>>(
@@ -851,7 +868,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                             radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
                             padding: const EdgeInsets.all(14),
                             child: Row(children: [
-                              Container(width: 42, height: 42, decoration: BoxDecoration(color: yp.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.pedal_bike_rounded, size: 22, color: yp)),
+                              Container(width: 42, height: 42, decoration: BoxDecoration(color: yp.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)), child: Icon(Icons.directions_bike_rounded, size: 22, color: yp)),
                               const SizedBox(width: 12),
                               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                                 Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
@@ -927,15 +944,17 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 builder: (ctx, child) {
                   double offset = 0;
                   try { if (_traPageCtrl.hasClients && _traPageCtrl.position.haveDimensions) offset = _traPageCtrl.page! - pageIdx; } catch (_) {}
-                  final angle = offset.clamp(-1.0, 1.0) * (math.pi / 2.2);
-                  final isLeft = offset <= 0;
+                  final clamped = offset.abs().clamp(0.0, 1.0);
+                  // 離開頁繞左邊緣折入（負 Y），進來頁繞右邊緣展開（正 Y）
+                  final angle = -(offset < 0 ? -1 : 1) * clamped * (math.pi / 2);
+                  final alignment = offset > 0 ? Alignment.centerLeft : Alignment.centerRight;
                   return Transform(
-                    alignment: isLeft ? FractionalOffset.centerRight : FractionalOffset.centerLeft,
+                    alignment: alignment,
                     transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.0018)
+                      ..setEntry(3, 2, 0.0012)
                       ..rotateY(angle),
                     child: Opacity(
-                      opacity: (1.0 - offset.abs() * 0.45).clamp(0.0, 1.0),
+                      opacity: (1.0 - clamped * 0.30).clamp(0.0, 1.0),
                       child: child,
                     ),
                   );

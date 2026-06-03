@@ -937,8 +937,6 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       else if (trains.isEmpty)
         Expanded(child: _Hint(icon: Icons.train_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
       else ...[
-        // ── 螺旋裝訂列 ──────────────────────────────────────────────
-        _SpiralBinding(color: context.appMist),
         // ── 記事本書頁翻頁（page_flip 套件）────────────────────────
         Expanded(
           child: PageFlipWidget(
@@ -2055,55 +2053,3 @@ class _RuledLinePainter extends CustomPainter {
   @override bool shouldRepaint(covariant CustomPainter old) => false;
 }
 
-/// 螺旋圈裝訂列（頁面頂端）
-class _SpiralBinding extends StatelessWidget {
-  final Color color;
-  const _SpiralBinding({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 28,
-      decoration: BoxDecoration(
-        color: color,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 4, offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: LayoutBuilder(
-        builder: (ctx, bc) {
-          final count = (bc.maxWidth / 28).floor();
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(count, (_) => Container(
-              width: 18, height: 18,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(
-                  color: Colors.grey.shade400, width: 2.5),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.12),
-                    blurRadius: 3, offset: const Offset(0, 1),
-                  ),
-                ],
-              ),
-              // 螺旋內孔
-              child: Center(child: Container(
-                width: 7, height: 7,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: color,
-                ),
-              )),
-            )),
-          );
-        },
-      ),
-    );
-  }
-}

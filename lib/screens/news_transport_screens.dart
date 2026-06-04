@@ -73,7 +73,8 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   List<Map<String, dynamic>>? _traTrains;
   bool _traLoading = false;
   String? _traError, _traUpdateTime;
-  static const _kTraPerPage = 5;
+  static const _kTraPerPage = 4;
+  static const _kThsrPerPage = 4;
 
   // Alishan
   List<Map<String, dynamic>>? _aliDocs;
@@ -730,8 +731,10 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   }
 
   Widget _buildYb() {
+    final primary = context.appPrimary;
+    final mist = context.appMist;
     return Column(children: [
-      // ── 小地圖（使用者位置 + YouBike 站點）────────────────────
+      // ── 小地圖（使用者位置 + YouBike 站點，靜態標記）───────────
       SizedBox(
         height: 230,
         child: Stack(children: [
@@ -741,49 +744,30 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
               builder: (ctx, snap) {
                 final stations = (snap.data?['data'] as List? ?? []).cast<Map<String, dynamic>>();
                 final center = LatLng(_ybPosition!.latitude, _ybPosition!.longitude);
-                // 過濾附近 1.5km 站點才放到地圖（避免全台站點塞滿）
                 final nearby = stations.where((s) {
                   if (s['lat'] == null || s['lng'] == null) return false;
                   return _ybDist(s) <= 1500;
                 }).toList();
                 final markers = [
-                  // 使用者位置（藍點 + 光暈）
                   Marker(point: center, width: 26, height: 26,
                     child: Stack(alignment: Alignment.center, children: [
-                      Container(width: 26, height: 26, decoration: BoxDecoration(color: context.appPrimary.withValues(alpha: 0.20), shape: BoxShape.circle)),
-                      Container(width: 14, height: 14, decoration: BoxDecoration(color: context.appPrimary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5))),
+                      Container(width: 26, height: 26, decoration: BoxDecoration(color: primary.withValues(alpha: 0.20), shape: BoxShape.circle)),
+                      Container(width: 14, height: 14, decoration: BoxDecoration(color: primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5))),
                     ])),
-                  // YouBike 站點（顯示站名 + 可借數量）
-                  ...nearby.map((s) {
-                    final avail = (s['GeneralBikes'] as int? ?? 0) + (s['ElectricBikes'] as int? ?? 0);
-                    final name = (s['station_name'] ?? '').toString().replaceAll(RegExp(r'YouBike\d+\.0_'), '');
-                    final hasAvail = avail > 0;
-                    final color = hasAvail ? AppColors.primary : AppColors.textHint;
-                    return Marker(
-                      point: LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()),
-                      width: 72, height: 52,
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: color, borderRadius: BorderRadius.circular(8),
-                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 4, offset: const Offset(0, 2))],
-                          ),
-                          child: Text('$avail 輛', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
-                        ),
-                        const SizedBox(height: 2),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.88), borderRadius: BorderRadius.circular(4)),
-                          constraints: const BoxConstraints(maxWidth: 72),
-                          child: Text(name, style: const TextStyle(fontSize: 8, color: AppColors.textPrimary, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
-                        ),
-                      ]),
-                    );
-                  }),
+                  ...nearby.map((s) => Marker(
+                    point: LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()),
+                    width: 16, height: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 3, offset: const Offset(0, 1))],
+                      ),
+                    ),
+                  )),
                 ];
                 return FlutterMap(
-                  // key 讓 position 更新時地圖重建並重新對準
                   key: ValueKey('${_ybPosition!.latitude},${_ybPosition!.longitude}'),
                   options: MapOptions(initialCenter: center, initialZoom: 16.5),
                   children: [
@@ -798,32 +782,49 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
             )
           else
             Container(
-              color: AppColors.surfaceMoss,
+              color: mist,
               child: Center(child: _ybLocating
-                  ? Column(mainAxisSize: MainAxisSize.min, children: [CircularProgressIndicator(color: context.appPrimary, strokeWidth: 2), const SizedBox(height: 8), const Text('定位中…', style: TextStyle(color: AppColors.textHint, fontSize: 12))])
-                  : GestureDetector(onTap: _fetchYbLocation, child: const Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.location_on_rounded, color: AppColors.textHint, size: 28), SizedBox(height: 4), Text('點此開啟定位', style: TextStyle(color: AppColors.textHint, fontSize: 12))]))),
+                  ? Column(mainAxisSize: MainAxisSize.min, children: [
+                      CircularProgressIndicator(color: primary, strokeWidth: 2),
+                      const SizedBox(height: 8),
+                      Text('定位中…', style: TextStyle(color: primary.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600)),
+                    ])
+                  : GestureDetector(
+                      onTap: _fetchYbLocation,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(width: 52, height: 52, decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), shape: BoxShape.circle),
+                          child: Icon(Icons.location_on_rounded, color: primary, size: 26)),
+                        const SizedBox(height: 8),
+                        Text('點此開啟定位', style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                      ]),
+                    )),
             ),
         ]),
       ),
-      // ── 搜尋框 ────────────────────────────────────────────────
+      // ── 搜尋框（縫線風格）────────────────────────────────────
       Builder(builder: (ctx) {
         final yp = ctx.appPrimary;
-        return Container(
-          color: AppColors.surface,
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: TextField(
-            decoration: InputDecoration(
-              hintText: '搜尋站點名稱...',
-              hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
-              prefixIcon: Icon(Icons.search_rounded, size: 18, color: yp),
-              filled: true,
-              fillColor: AppColors.background,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: yp, width: 1.5)),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: StitchedBox(
+            color: Color.lerp(yp, Colors.white, 0.93)!,
+            stitchColor: yp.withValues(alpha: 0.25),
+            radius: 14, inset: 3, dashWidth: 4, dashGap: 3,
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: TextField(
+              decoration: InputDecoration(
+                hintText: '搜尋 YouBike 站點…',
+                hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
+                prefixIcon: Icon(Icons.search_rounded, size: 18, color: yp),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: yp, width: 1.5)),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              ),
+              onChanged: (v) => setState(() => _ybSearch = v),
             ),
-            onChanged: (v) => setState(() => _ybSearch = v),
           ),
         );
       }),
@@ -1042,22 +1043,93 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
 
   // ─── THSR ──────────────────────────────────────────────────────
   Widget _buildThsr() {
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _thsrO, dest: _thsrD, stations: _thsrStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
-        onO: (v) { setState(() => _thsrO = v); _fetchThsr(); },
-        onD: (v) { setState(() => _thsrD = v); _fetchThsr(); },
-        onSwap: () { setState(() { final t = _thsrO; _thsrO = _thsrD; _thsrD = t; }); _fetchThsr(); },
+    final trains = _thsrTrains ?? [];
+    final totalPages = trains.isEmpty ? 0 : (trains.length / _kThsrPerPage).ceil();
+
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+        child: Column(children: [
+          _ODCard(
+            origin: _thsrO, dest: _thsrD,
+            stations: _thsrStations.keys.toList(),
+            bg: context.appMist, acc: context.appPrimary,
+            onO: (v) { setState(() => _thsrO = v); _fetchThsr(); },
+            onD: (v) { setState(() => _thsrD = v); _fetchThsr(); },
+            onSwap: () { setState(() { final t = _thsrO; _thsrO = _thsrD; _thsrD = t; }); _fetchThsr(); },
+          ),
+          const SizedBox(height: 10),
+        ]),
       ),
-      const SizedBox(height: 12),
-      if (_thsrLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
-      else if (_thsrError != null) Center(child: Text(_thsrError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)))
-      else if (_thsrTrains == null || _thsrTrains!.isEmpty)
-        _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
-      else
-        ..._thsrTrains!.asMap().entries.map((e) => Padding(
-          padding: const EdgeInsets.only(bottom: 10),
-          child: SlideUpFadeIn(index: e.key, child: _RailCard(no: e.value['TrainNo']?.toString() ?? '', type: '高鐵', dep: e.value['DepartureTime']?.toString() ?? '', arr: e.value['ArrivalTime']?.toString() ?? '', origin: _thsrO, dest: _thsrD, date: _today, isThsr: true, stops: e.value['stops'] is List ? (e.value['stops'] as List) : [])),
-        )),
+      if (_thsrLoading)
+        Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(3, (i) => const Padding(padding: EdgeInsets.fromLTRB(14, 0, 14, 10), child: TransportCardSkeleton()))))
+      else if (_thsrError != null)
+        Expanded(child: Center(child: Text(_thsrError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))))
+      else if (trains.isEmpty)
+        Expanded(child: _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
+      else ...[
+        Expanded(
+          child: PageFlipWidget(
+            key: ValueKey('${_thsrO}_${_thsrD}_${trains.length}'),
+            backgroundColor: const Color(0xFFF7F7F9),
+            lastPage: Container(
+              color: const Color(0xFFFDF9F0),
+              child: Stack(children: [
+                const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.directions_railway_filled_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
+                  const SizedBox(height: 10),
+                  const Text('已無更多班次', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                ])),
+              ]),
+            ),
+            children: List.generate(totalPages, (pageIdx) {
+              final pageTrains = trains.skip(pageIdx * _kThsrPerPage).take(_kThsrPerPage).toList();
+              return Container(
+                color: const Color(0xFFF7F7F9),
+                child: Stack(children: [
+                  const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                  Positioned.fill(child: ListView(
+                    padding: const EdgeInsets.fromLTRB(62, 10, 14, 50),
+                    children: [
+                      ...pageTrains.asMap().entries.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _RailCard(
+                          no: e.value['TrainNo']?.toString() ?? '',
+                          type: '高鐵',
+                          dep: e.value['DepartureTime']?.toString() ?? '',
+                          arr: e.value['ArrivalTime']?.toString() ?? '',
+                          origin: _thsrO, dest: _thsrD, date: _today, isThsr: true,
+                          stops: e.value['stops'] is List ? (e.value['stops'] as List) : [],
+                        ).animate()
+                         .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
+                         .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
+                      )),
+                    ],
+                  )),
+                  Positioned(
+                    bottom: 12, right: 16,
+                    child: Text('${pageIdx + 1} / $totalPages',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                            color: AppColors.textHint.withValues(alpha: 0.6),
+                            fontStyle: FontStyle.italic)),
+                  ),
+                  if (pageIdx == 0)
+                    Positioned(
+                      bottom: 12, left: 62,
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.swipe_rounded, size: 12, color: AppColors.textHint.withValues(alpha: 0.5)),
+                        const SizedBox(width: 4),
+                        Text('左滑翻下一頁',
+                            style: TextStyle(fontSize: 10, color: AppColors.textHint.withValues(alpha: 0.5))),
+                      ]),
+                    ),
+                ]),
+              );
+            }),
+          ),
+        ),
+      ],
     ]);
   }
 }

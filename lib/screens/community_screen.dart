@@ -1007,13 +1007,19 @@ class _CommunityScreenState extends State<CommunityScreen> {
               const SizedBox(height: 12),
               Text(trip.creatorName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: AppColors.textPrimary)),
               const SizedBox(height: 16),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                _profileStat('追蹤者', '${128 + (followed ? 1 : 0)}'),
-                Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                _profileStat('追蹤中', '34'),
-                Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
-                _profileStat('已發布行程', '$publishedTrips'),
-              ]),
+              FutureBuilder<Map<String, int>>(
+                future: _loadAuthorStats(dummyUserId),
+                builder: (ctx, snap) {
+                  final stats = snap.data ?? {'followers': 0, 'following': 0};
+                  return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    _profileStat('追蹤者', '${(stats['followers'] ?? 0) + (followed ? 0 : 0)}'),
+                    Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                    _profileStat('追蹤中', '${stats['following'] ?? 0}'),
+                    Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
+                    _profileStat('已發布行程', '$publishedTrips'),
+                  ]);
+                },
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -1033,9 +1039,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   icon: Icon(followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
                   label: Text(followed ? '取消追蹤' : '追蹤'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: followed ? AppColors.textHint : Theme.of(ctx).colorScheme.primary,
+                    backgroundColor: followed
+                        ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.12)
+                        : Theme.of(ctx).colorScheme.primary,
+                    foregroundColor: followed ? Theme.of(ctx).colorScheme.primary : Colors.white,
+                    side: followed ? BorderSide(color: Theme.of(ctx).colorScheme.primary, width: 1.2) : null,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
                   ),
                 ),
               ),
@@ -1101,7 +1112,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
               icon: Icon(followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
               label: Text(followed ? '取消追蹤' : '追蹤'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: followed ? AppColors.textHint : primary,
+                backgroundColor: followed ? primary.withValues(alpha: 0.12) : primary,
+                foregroundColor: followed ? primary : Colors.white,
+                side: followed ? BorderSide(color: primary, width: 1.2) : null,
+                elevation: 0,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
             )),
@@ -3040,7 +3054,10 @@ class _UserProfileSheetState extends State<_UserProfileSheet> {
             icon: Icon(_followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
             label: Text(_followed ? '取消追蹤' : '追蹤'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _followed ? AppColors.textHint : p,
+              backgroundColor: _followed ? p.withValues(alpha: 0.12) : p,
+              foregroundColor: _followed ? p : Colors.white,
+              side: _followed ? BorderSide(color: p, width: 1.2) : null,
+              elevation: 0,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           )),

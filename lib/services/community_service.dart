@@ -335,15 +335,31 @@ class CommunityService {
   static Future<bool> toggleFollow(String targetUserId, String targetName) async {
     final uid = _uid;
     if (uid == null) return false;
-    final ref = _db.collection('users').doc(uid)
-        .collection('following').doc(targetUserId);
-    final snap = await ref.get();
+    final myRef     = _db.collection('users').doc(uid);
+    final targetRef = _db.collection('users').doc(targetUserId);
+    final followRef = myRef.collection('following').doc(targetUserId);
+    final snap = await followRef.get();
     if (snap.exists) {
-      await ref.delete();
+      await followRef.delete();
+      // Remove from target's followers list and update counts
+      await targetRef.collection('followers').doc(uid).delete();
+      await targetRef.set({'followersCount': FieldValue.increment(-1)}, SetOptions(merge: true));
+      await myRef.set({'followingCount': FieldValue.increment(-1)}, SetOptions(merge: true));
       return false;
     } else {
-      await ref.set({'userId': targetUserId, 'name': targetName,
-          'followedAt': FieldValue.serverTimestamp()});
+      final myDoc = await myRef.get();
+      final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '';
+      await followRef.set({
+        'userId': targetUserId, 'name': targetName,
+        'followedAt': FieldValue.serverTimestamp(),
+      });
+      // Add to target's followers list and update counts
+      await targetRef.collection('followers').doc(uid).set({
+        'userId': uid, 'name': myName,
+        'followedAt': FieldValue.serverTimestamp(),
+      });
+      await targetRef.set({'followersCount': FieldValue.increment(1)}, SetOptions(merge: true));
+      await myRef.set({'followingCount': FieldValue.increment(1)}, SetOptions(merge: true));
       return true;
     }
   }

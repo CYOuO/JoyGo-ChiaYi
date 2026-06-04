@@ -168,8 +168,23 @@ Widget _menuItem(BuildContext context, {
 Widget _menuDivider() => const Divider(
     height: 1, indent: 66, endIndent: 0, color: AppColors.divider);
 
+// ── 加入時間轉換為會員稱號 ─────────────────────────────────
+String _memberTitle(DateTime? createdAt) {
+  if (createdAt == null) return '旅途探索者';
+  final days = DateTime.now().difference(createdAt).inDays;
+  if (days < 30)  return '探索新手 🌱';
+  if (days < 90)  return '旅途探索者 🗺️';
+  if (days < 365) return '資深旅人 ✈️';
+  return '★ 小火雞';
+}
+
+String _formatJoinDate(DateTime? createdAt) {
+  if (createdAt == null) return '加入中…';
+  return '加入時間：${createdAt.year} 年 ${createdAt.month} 月';
+}
+
 // ── 旅人會員卡 ──────────────────────────────────────────────
-Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false}) {
+Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false, DateTime? joinedAt}) {
   return Container(
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
     decoration: BoxDecoration(
@@ -187,12 +202,16 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false}) 
       Expanded(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(isGuest ? '登入享探索旅人特權' : '旅人會員',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary)),
+          Text(
+            isGuest ? '登入享探索旅人特權' : _memberTitle(joinedAt),
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary),
+          ),
           const SizedBox(height: 3),
-          Text(isGuest ? '行程管理 · 集章成就 · 旅行分享' : '效期至 2025/12/31',
-            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          Text(
+            isGuest ? '行程管理 · 集章成就 · 旅行分享' : _formatJoinDate(joinedAt),
+            style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
         ],
       )),
       const SizedBox(width: 12),
@@ -200,7 +219,7 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false}) 
         onPressed: isGuest
             ? () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const LoginPage()))
-            : () {},
+            : () => _showBenefitsDialog(context, primary),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: primary,
@@ -212,6 +231,56 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false}) 
         child: Text(isGuest ? '立即登入' : '查看權益'),
       ),
     ]),
+  );
+}
+
+void _showBenefitsDialog(BuildContext context, Color primary) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => Container(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
+      decoration: const BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Center(child: Container(width: 36, height: 4,
+          margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+        Row(children: [
+          Container(width: 40, height: 40,
+            decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.card_membership_rounded, color: primary, size: 22)),
+          const SizedBox(width: 12),
+          const Text('旅人會員權益', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+        ]),
+        const SizedBox(height: 20),
+        ...[
+          (Icons.map_rounded, '無限行程管理', '建立、編輯無限個旅行行程'),
+          (Icons.emoji_events_rounded, '集章成就系統', '探索嘉義各景點集滿成就徽章'),
+          (Icons.people_rounded, '旅伴邀請功能', '加入旅伴共同規劃行程'),
+          (Icons.bookmark_rounded, '景點收藏同步', '收藏景點雲端同步跨裝置'),
+          (Icons.forum_rounded, '社群發文功能', '分享旅遊心得與旅友交流'),
+          (Icons.notifications_rounded, '即時交通提醒', '設定公車到站自訂通知'),
+        ].map((item) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(children: [
+            Container(width: 36, height: 36,
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+              child: Icon(item.$1, color: primary, size: 18)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(item.$2, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text(item.$3, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            ])),
+            Icon(Icons.check_circle_rounded, color: primary, size: 18),
+          ]),
+        )),
+        const SizedBox(height: 8),
+      ]),
+    ),
   );
 }
 
@@ -366,7 +435,7 @@ class _GuestProfileView extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                 child: Column(children: [
                   Row(children: [
-                    const Text('我的',
+                    const Text('關於我',
                       style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
                           color: AppColors.textPrimary)),
                   ]),
@@ -678,7 +747,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               child: Column(children: [
                 // 旅人會員卡
-                _memberCard(context, primary),
+                _memberCard(context, primary, joinedAt: user.metadata.creationTime),
                 const SizedBox(height: 14),
                 // 我的資料（縫線快捷區塊）
                 Container(

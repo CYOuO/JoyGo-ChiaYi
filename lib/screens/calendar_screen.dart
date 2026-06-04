@@ -142,8 +142,9 @@ class CalendarScreen extends StatefulWidget {
 class _CalendarScreenState extends State<CalendarScreen> {
   DateTime       _focused    = DateTime.now();
   DateTime?      _selected;
-  List<CalEvent> _apiEvents  = [];
-  bool           _apiLoading = true;
+  List<CalEvent> _apiEvents   = [];
+  List<CalEvent> _localEvents = [];
+  bool           _apiLoading  = true;
 
   // Filter toggles (only 2 categories now)
   bool _showGovEvent = true;
@@ -176,6 +177,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
         endDate: t.endDate,
         type: CalEventType.userTrip,
       )));
+      list.addAll(_localEvents);
     }
     return list;
   }
@@ -215,7 +217,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         heroTag: 'cal_add',
-        backgroundColor: primary,
+        backgroundColor: const Color(0xFF5B6BAE),
         foregroundColor: Colors.white,
         mini: true,
         onPressed: () => _showAddEventSheet(context, primary, l10n),
@@ -226,171 +228,26 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   // ── 新增事件 sheet（支援日期區間）─────────────────────────────
   void _showAddEventSheet(BuildContext context, Color primary, AppL10n l10n) {
-    final titleCtrl = TextEditingController();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: StatefulBuilder(builder: (ctx, setLocal) {
-          DateTimeRange? range = _selected != null
-              ? DateTimeRange(start: _selected!, end: _selected!)
-              : null;
-
-          String _fmtDate(DateTime d) =>
-              '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
-
-          return Container(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Center(child: Container(width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
-              Text('新增行事曆事件', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primary)),
-              const SizedBox(height: 16),
-              TextField(
-                controller: titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: '事件名稱',
-                  hintText: '例如：阿里山日出、文化路夜市'),
-              ),
-              const SizedBox(height: 14),
-              // ── 日期區間選擇器 ────────────────────────────────
-              GestureDetector(
-                onTap: () async {
-                  final picked = await showDateRangePicker(
-                    context: context,
-                    firstDate: DateTime(2024),
-                    lastDate: DateTime(2030),
-                    initialDateRange: range,
-                    helpText: '選擇事件日期區間',
-                    cancelText: '取消',
-                    confirmText: '確定',
-                    builder: (ctx, child) => Theme(
-                      data: Theme.of(ctx).copyWith(
-                        colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: primary),
-                      ),
-                      child: child!,
-                    ),
-                  );
-                  if (picked != null) setLocal(() => range = picked);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: primary.withValues(alpha: range != null ? 0.08 : 0.04),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: primary.withValues(alpha: range != null ? 0.4 : 0.2)),
-                  ),
-                  child: Row(children: [
-                    Icon(Icons.date_range_rounded, size: 18, color: primary),
-                    const SizedBox(width: 10),
-                    Expanded(child: range == null
-                        ? Text('點選選擇日期（可選區間）',
-                            style: TextStyle(color: primary.withValues(alpha: 0.7), fontSize: 14))
-                        : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text('開始：${_fmtDate(range.start)}',
-                              style: TextStyle(fontWeight: FontWeight.w700, color: primary, fontSize: 13)),
-                            if (range.start != range.end)
-                              Text('結束：${_fmtDate(range.end)}',
-                                style: TextStyle(color: primary.withValues(alpha: 0.8), fontSize: 12)),
-                          ]),
-                    ),
-                    Icon(Icons.chevron_right_rounded, size: 16, color: primary),
-                  ]),
-                ),
-              ),
-              if (range != null) Builder(builder: (_) {
-                final r = range!;
-                if (r.start == r.end) return const SizedBox.shrink();
-                return Column(mainAxisSize: MainAxisSize.min, children: [
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: primary.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '共 ${r.duration.inDays + 1} 天',
-                      style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ]);
-              }),
-              // 如果有行程，顯示「套用行程日期」選項
-              if (widget.userTrips.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Text('或套用行程日期:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 36,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: widget.userTrips.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (_, i) {
-                      final t = widget.userTrips[i];
-                      return GestureDetector(
-                        onTap: () {
-                          final end = t.endDate ?? t.date;
-                          setLocal(() => range = DateTimeRange(start: t.date, end: end));
-                          if (titleCtrl.text.isEmpty) titleCtrl.text = t.title;
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: primary.withValues(alpha: 0.10),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: primary.withValues(alpha: 0.25)),
-                          ),
-                          child: Text(t.title,
-                            style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (titleCtrl.text.trim().isEmpty) return;
-                    final startDate = range?.start ?? _selected ?? DateTime.now();
-                    final endDate = (range != null && range!.start != range!.end) ? range!.end : null;
-                    final newEvent = CalEvent(
-                      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
-                      title: titleCtrl.text.trim(),
-                      date: startDate,
-                      endDate: endDate,
-                      type: CalEventType.userTrip,
-                    );
-                    setState(() {
-                      _apiEvents.add(newEvent);
-                      _selected = startDate;
-                    });
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('已新增「${titleCtrl.text.trim()}」到行事曆'),
-                      behavior: SnackBarBehavior.floating,
-                      backgroundColor: primary,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ));
-                  },
-                  child: const Text('新增到行事曆'),
-                ),
-              ),
-            ]),
-          );
-        }),
+      builder: (_) => _AddEventSheet(
+        primary: primary,
+        selectedDate: _selected,
+        userTrips: widget.userTrips,
+        onAdd: (event) {
+          setState(() {
+            _localEvents.add(event);
+            _selected = event.date;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('已新增「${event.title}」到行事曆'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF5B6BAE),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
+        },
       ),
     );
   }
@@ -829,6 +686,218 @@ class _EventTile extends StatelessWidget {
           ]),
         ),
       ]),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  新增事件 Sheet（StatefulWidget 以正確保存 DateRange 狀態）
+// ═══════════════════════════════════════════════════════════
+class _AddEventSheet extends StatefulWidget {
+  final Color primary;
+  final DateTime? selectedDate;
+  final List<({String title, DateTime date, DateTime? endDate})> userTrips;
+  final void Function(CalEvent) onAdd;
+
+  const _AddEventSheet({
+    required this.primary,
+    this.selectedDate,
+    required this.userTrips,
+    required this.onAdd,
+  });
+
+  @override
+  State<_AddEventSheet> createState() => _AddEventSheetState();
+}
+
+class _AddEventSheetState extends State<_AddEventSheet> {
+  final _titleCtrl = TextEditingController();
+  DateTimeRange? _range;
+
+  static const _kAccent = Color(0xFF5B6BAE);
+
+  @override
+  void initState() {
+    super.initState();
+    final d = widget.selectedDate;
+    if (d != null) _range = DateTimeRange(start: d, end: d);
+  }
+
+  @override
+  void dispose() {
+    _titleCtrl.dispose();
+    super.dispose();
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  Widget build(BuildContext context) {
+    final range = _range;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+          Row(children: [
+            Container(width: 4, height: 20, decoration: BoxDecoration(color: _kAccent, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 10),
+            const Text('新增行事曆事件', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          ]),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _titleCtrl,
+            autofocus: true,
+            decoration: InputDecoration(
+              labelText: '事件名稱',
+              labelStyle: const TextStyle(color: _kAccent),
+              hintText: '例如：阿里山日出、文化路夜市',
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _kAccent, width: 1.5)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.divider)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () async {
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2024),
+                lastDate: DateTime(2030),
+                initialDateRange: _range,
+                helpText: '選擇事件日期區間',
+                cancelText: '取消',
+                confirmText: '確定',
+                builder: (ctx, child) => Theme(
+                  data: Theme.of(ctx).copyWith(
+                    colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: _kAccent),
+                  ),
+                  child: child!,
+                ),
+              );
+              if (picked != null) setState(() => _range = picked);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: _kAccent.withValues(alpha: range != null ? 0.08 : 0.04),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _kAccent.withValues(alpha: range != null ? 0.45 : 0.2)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.date_range_rounded, size: 18, color: _kAccent),
+                const SizedBox(width: 10),
+                Expanded(child: range == null
+                    ? const Text('點選選擇日期（可選區間）',
+                        style: TextStyle(color: _kAccent, fontSize: 14))
+                    : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('開始：${_fmtDate(range.start)}',
+                          style: const TextStyle(fontWeight: FontWeight.w700, color: _kAccent, fontSize: 13)),
+                        if (range.start != range.end)
+                          Text('結束：${_fmtDate(range.end)}',
+                            style: TextStyle(color: _kAccent.withValues(alpha: 0.8), fontSize: 12)),
+                      ]),
+                ),
+                const Icon(Icons.chevron_right_rounded, size: 16, color: _kAccent),
+              ]),
+            ),
+          ),
+          if (range != null && range.start != range.end) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: _kAccent.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(8)),
+              child: Text('共 ${range.duration.inDays + 1} 天',
+                style: const TextStyle(fontSize: 12, color: _kAccent, fontWeight: FontWeight.w600)),
+            ),
+          ],
+          if (widget.userTrips.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text('或套用行程日期:',
+              style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 36,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: widget.userTrips.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (_, i) {
+                  final t = widget.userTrips[i];
+                  return GestureDetector(
+                    onTap: () {
+                      final end = t.endDate ?? t.date;
+                      setState(() => _range = DateTimeRange(start: t.date, end: end));
+                      if (_titleCtrl.text.isEmpty) _titleCtrl.text = t.title;
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _kAccent.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: _kAccent.withValues(alpha: 0.25)),
+                      ),
+                      child: Text(t.title,
+                        style: const TextStyle(fontSize: 12, color: _kAccent, fontWeight: FontWeight.w600)),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF5B6BAE), Color(0xFF4A7EC4)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [BoxShadow(color: _kAccent.withValues(alpha: 0.30), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () {
+                    if (_titleCtrl.text.trim().isEmpty) return;
+                    final startDate = _range?.start ?? DateTime.now();
+                    final endDate = (_range != null && _range!.start != _range!.end) ? _range!.end : null;
+                    final newEvent = CalEvent(
+                      id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                      title: _titleCtrl.text.trim(),
+                      date: startDate,
+                      endDate: endDate,
+                      type: CalEventType.userTrip,
+                    );
+                    Navigator.pop(context);
+                    widget.onAdd(newEvent);
+                  },
+                  child: const Center(
+                    child: Text('新增到行事曆',
+                      style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

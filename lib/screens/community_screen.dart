@@ -333,39 +333,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   Widget _buildExploreTab() {
     final primary = Theme.of(context).colorScheme.primary;
-    final trips = DummyData.communityTrips;
-
-    // 依排序排列
-    final sorted = [...trips];
-    if (!_sortLatest) sorted.sort((a, b) => b.likes.compareTo(a.likes));
-
-    // 依搜尋 + 預算 + 標籤過濾
     final q = _searchQuery.trim().toLowerCase();
-    final filtered = sorted.where((t) {
-      // 預算篩選
-      final budgetOk = t.budget >= _budgetRange.start &&
-          (t.budget <= _budgetRange.end || _budgetRange.end >= _budgetMax);
-      if (!budgetOk) return false;
-      // 標籤篩選（簡單關鍵字比對行程標題或景點名稱）
-      if (_selectedTag != null) {
-        final tag = _selectedTag!.toLowerCase();
-        final tagMatch = t.title.toLowerCase().contains(tag) ||
-            t.spotIds.any((id) {
-              final spot = DummyData.spots.firstWhere(
-                  (s) => s.id == id, orElse: () => DummyData.spots[0]);
-              return spot.name.toLowerCase().contains(tag) ||
-                  spot.address.toLowerCase().contains(tag);
-            });
-        if (!tagMatch) return false;
-      }
-      if (q.isEmpty) return true;
-      return t.title.toLowerCase().contains(q) ||
-          t.spotIds.any((id) {
-            final spot = DummyData.spots.firstWhere(
-                (s) => s.id == id, orElse: () => DummyData.spots[0]);
-            return spot.name.toLowerCase().contains(q);
-          });
-    }).toList();
 
     return Column(
       children: [
@@ -432,7 +400,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
         // ── Content ───────────────────────────────────────────
         Expanded(
           child: _contentTab == 0
-              ? _buildTripList(filtered, primary, q)
+              ? _buildFirebaseTripList(primary, q)
               : _buildDiscussionList(primary),
         ),
       ],
@@ -768,6 +736,56 @@ class _CommunityScreenState extends State<CommunityScreen> {
               foregroundColor: Colors.white,
             ),
           ),
+        ]);
+      },
+    );
+  }
+
+  // ── 行程分享：Firebase community_posts where type='trip' ──────
+  Widget _buildFirebaseTripList(Color primary, String q) {
+    return StreamBuilder<List<CommunityPost>>(
+      stream: CommunityService.postsStream(type: 'trip', byLikes: !_sortLatest),
+      builder: (ctx, snap) {
+        final isFirstLoad = snap.connectionState == ConnectionState.waiting && snap.data == null;
+        if (isFirstLoad) return const Center(child: CircularProgressIndicator());
+        var posts = snap.data ?? [];
+        // 搜尋過濾
+        if (q.isNotEmpty) {
+          posts = posts.where((p) =>
+              p.title.toLowerCase().contains(q) ||
+              p.content.toLowerCase().contains(q) ||
+              p.spotNames.any((s) => s.toLowerCase().contains(q))
+          ).toList();
+        }
+        if (posts.isEmpty) {
+          return Stack(children: [
+            Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              const Icon(Icons.map_outlined, size: 52, color: AppColors.textHint),
+              const SizedBox(height: 12),
+              Text(q.isNotEmpty ? '找不到「$q」相關行程' : '還沒有行程分享',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              const Text('點下方按鈕分享你的行程！', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+            ])),
+            Positioned(right: 16, bottom: 16, child: FloatingActionButton.extended(
+              heroTag: 'create_trip_post',
+              onPressed: () => _showCreatePostSheet(context, primary, defaultType: 'trip'),
+              icon: const Icon(Icons.add_rounded), label: const Text('分享行程'),
+              backgroundColor: primary, foregroundColor: Colors.white,
+            )),
+          ]);
+        }
+        return Stack(children: [
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: posts.map((p) => _firebasePostCard(p, primary)).toList(),
+          ),
+          Positioned(right: 16, bottom: 16, child: FloatingActionButton.extended(
+            heroTag: 'create_trip_post2',
+            onPressed: () => _showCreatePostSheet(context, primary, defaultType: 'trip'),
+            icon: const Icon(Icons.add_rounded), label: const Text('分享行程'),
+            backgroundColor: primary, foregroundColor: Colors.white,
+          )),
         ]);
       },
     );

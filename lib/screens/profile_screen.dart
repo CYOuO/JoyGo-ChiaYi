@@ -1229,13 +1229,413 @@ class _GuestSavedSpotsPageState extends State<_GuestSavedSpotsPage> {
 }
 
 // ════════════════════════════════════════════════════════════
-//  優惠券頁面
+//  優惠券頁面（Firestore 驅動）
+//  Firestore 結構：
+//    coupons/{couponId}
+//      title, desc, expiryDate (Timestamp), couponCode (String),
+//      maxUses (int), usedCount (int), isActive (bool),
+//      iconName (String), colorHex (String), createdBy (String)
+//    users/{uid}/claimed_coupons/{couponId}
+//      claimedAt (Timestamp), isUsed (bool), usedAt (Timestamp?)
 // ════════════════════════════════════════════════════════════
-class CouponsScreen extends StatelessWidget {
+class CouponsScreen extends StatefulWidget {
   const CouponsScreen({super.key});
+  @override State<CouponsScreen> createState() => _CouponsScreenState();
+}
 
-  static const _kCoupons = [
-    _CouponData(
+class _CouponsScreenState extends State<CouponsScreen> {
+  static final _db   = FirebaseFirestore.instance;
+  static final _auth = FirebaseAuth.instance;
+  String? get _uid => _auth.currentUser?.uid;
+
+  /// 領取優惠券
+  Future<void> _claimCoupon(String couponId, Map<String, dynamic> coupon) async {
+    final uid = _uid;
+    if (uid == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('請先登入才能領取優惠券'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    // 檢查是否已領取
+    final alreadyClaimed = await _db
+        .collection('users').doc(uid)
+        .collection('claimed_coupons').doc(couponId).get();
+    if (alreadyClaimed.exists) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('你已經領取過這張優惠券了'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    // 檢查是否超過使用上限
+    final maxUses = (coupon['maxUses'] as num?)?.toInt() ?? 9999;
+    final usedCount = (coupon['usedCount'] as num?)?.toInt() ?? 0;
+    if (usedCount >= maxUses) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('此優惠券已發放完畢'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    // 寫入 claimed_coupons + 更新 usedCount
+    final batch = _db.batch();
+    batch.set(
+      _db.collection('users').doc(uid).collection('claimed_coupons').doc(couponId),
+      {'claimedAt': FieldValue.serverTimestamp(), 'isUsed': false},
+    );
+    batch.update(_db.collection('coupons').doc(couponId), {
+      'usedCount': FieldValue.increment(1),
+    });
+    await batch.commit();
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Text('優惠券已成功領取！'),
+      backgroundColor: Theme.of(context).colorScheme.primary,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  /// 使用優惠券（出示優惠碼）
+  Future<void> _useCoupon(BuildContext ctx, String couponId, String couponCode, Color color) async {
+    final uid = _uid;
+    if (uid == null) return;
+    // 顯示優惠碼 dialog
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('出示優惠碼', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('請向店家出示以下優惠碼：', style: TextStyle(color: AppColors.textSecondary)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.local_offer_rounded, color: color, size: 18),
+              const SizedBox(width: 8),
+              Text(couponCode.isNotEmpty ? couponCode : 'CHIAYI2026',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
+                    color: color, letterSpacing: 2)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          const Text('確認使用後此優惠券將標記為已使用',
+            style: TextStyle(fontSize: 12, color: AppColors.textHint), textAlign: TextAlign.center),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, elevation: 0),
+            child: const Text('確認使用'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    // 標記為已使用
+    await _db.collection('users').doc(uid)
+        .collection('claimed_coupons').doc(couponId)
+        .update({'isUsed': true, 'usedAt': FieldValue.serverTimestamp()});
+    if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      content: const Text('優惠券使用成功！'),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  Color _parseColor(String hex) {
+    try { return Color(int.parse(hex.replaceFirst('#', '0xFF'))); } catch (_) { return AppColors.accentSky; }
+  }
+
+  IconData _parseIcon(String name) {
+    const map = {
+      'account_balance': Icons.account_balance_rounded,
+      'landscape':       Icons.landscape_rounded,
+      'restaurant':      Icons.restaurant_rounded,
+      'local_offer':     Icons.local_offer_rounded,
+      'hotel':           Icons.hotel_rounded,
+      'directions_bus':  Icons.directions_bus_rounded,
+    };
+    return map[name] ?? Icons.local_offer_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final uid = _uid;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('優惠券', style: TextStyle(fontWeight: FontWeight.w800)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: _db.collection('coupons')
+            .where('isActive', isEqualTo: true)
+            .orderBy('createdAt', descending: true)
+            .snapshots(),
+        builder: (ctx, couponSnap) {
+          if (!couponSnap.hasData) return const Center(child: CircularProgressIndicator());
+          final coupons = couponSnap.data!.docs;
+
+          if (coupons.isEmpty) {
+            return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.local_offer_outlined, size: 52, color: AppColors.textHint.withValues(alpha: 0.5)),
+              const SizedBox(height: 14),
+              const Text('目前沒有優惠券', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              const Text('敬請期待管理員上架更多優惠！', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+            ]));
+          }
+
+          return uid == null
+              ? _buildGuestView(coupons, primary)
+              : StreamBuilder<QuerySnapshot>(
+                  stream: _db.collection('users').doc(uid)
+                      .collection('claimed_coupons').snapshots(),
+                  builder: (ctx, claimSnap) {
+                    final claimed = <String, Map<String, dynamic>>{};
+                    for (final d in claimSnap.data?.docs ?? []) {
+                      claimed[d.id] = d.data() as Map<String, dynamic>;
+                    }
+                    return _buildCouponList(coupons, claimed, primary);
+                  },
+                );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGuestView(List<QueryDocumentSnapshot> coupons, Color primary) {
+    return Column(children: [
+      Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(children: [
+          Icon(Icons.lock_outline_rounded, color: primary),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('登入後即可領取優惠券！',
+              style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary))),
+        ]),
+      ),
+      Expanded(child: _buildCouponList(coupons, {}, primary)),
+    ]);
+  }
+
+  Widget _buildCouponList(
+      List<QueryDocumentSnapshot> coupons,
+      Map<String, Map<String, dynamic>> claimed,
+      Color primary) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 提示橫幅
+        Container(
+          padding: const EdgeInsets.all(14), margin: const EdgeInsets.only(bottom: 16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [primary.withValues(alpha: 0.12), primary.withValues(alpha: 0.05)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(children: [
+            Icon(Icons.local_fire_department_rounded, color: primary, size: 22),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('集章打卡，解鎖更多優惠！',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
+              const Text('探索嘉義各景點即可獲得景點周邊折扣',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+            ])),
+          ]),
+        ),
+        ...coupons.map((doc) {
+          final d = doc.data() as Map<String, dynamic>;
+          final claimInfo = claimed[doc.id];
+          final isClaimed = claimInfo != null;
+          final isUsed    = claimInfo?['isUsed'] as bool? ?? false;
+          final maxUses   = (d['maxUses']   as num?)?.toInt() ?? 9999;
+          final usedCount = (d['usedCount'] as num?)?.toInt() ?? 0;
+          final isFull    = usedCount >= maxUses;
+          final color     = _parseColor(d['colorHex'] as String? ?? '#88B8C8');
+          final icon      = _parseIcon(d['iconName']  as String? ?? 'local_offer');
+          final code      = d['couponCode'] as String? ?? '';
+          final expiry    = d['expiryDate'] as Timestamp?;
+          final expiryStr = expiry != null
+              ? '${expiry.toDate().year}/${expiry.toDate().month}/${expiry.toDate().day}'
+              : '--';
+
+          return _CouponCard(
+            couponId:   doc.id,
+            title:      d['title']   as String? ?? '',
+            desc:       d['desc']    as String? ?? '',
+            expiryStr:  expiryStr,
+            couponCode: code,
+            icon:       icon,
+            color:      color,
+            isClaimed:  isClaimed,
+            isUsed:     isUsed,
+            isFull:     isFull,
+            usedCount:  usedCount,
+            maxUses:    maxUses,
+            onClaim:  () => _claimCoupon(doc.id, d),
+            onUse:    () => _useCoupon(context, doc.id, code, color),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _CouponCard extends StatefulWidget {
+  final String couponId, title, desc, expiryStr, couponCode;
+  final IconData icon;
+  final Color color;
+  final bool isClaimed, isUsed, isFull;
+  final int usedCount, maxUses;
+  final VoidCallback onClaim, onUse;
+  const _CouponCard({
+    required this.couponId, required this.title, required this.desc,
+    required this.expiryStr, required this.couponCode,
+    required this.icon, required this.color,
+    required this.isClaimed, required this.isUsed, required this.isFull,
+    required this.usedCount, required this.maxUses,
+    required this.onClaim, required this.onUse,
+  });
+  @override State<_CouponCard> createState() => _CouponCardState();
+}
+
+class _CouponCardState extends State<_CouponCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.color;
+    final dimmed = widget.isUsed || widget.isFull;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: dimmed ? AppColors.background : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: dimmed ? AppColors.divider : c.withValues(alpha: 0.35), width: 1.5),
+        boxShadow: dimmed ? [] : [
+          BoxShadow(color: c.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: (dimmed ? AppColors.textHint : c).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(widget.icon, color: dimmed ? AppColors.textHint : c, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(widget.title, style: TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w800,
+                  color: dimmed ? AppColors.textHint : AppColors.textPrimary,
+                  decoration: widget.isUsed ? TextDecoration.lineThrough : null,
+                )),
+                const SizedBox(height: 3),
+                Row(children: [
+                  Icon(Icons.access_time_rounded, size: 11, color: AppColors.textHint),
+                  const SizedBox(width: 3),
+                  Text('效期至 ${widget.expiryStr}',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                  const SizedBox(width: 8),
+                  Text('${widget.usedCount}/${widget.maxUses == 9999 ? "∞" : widget.maxUses}',
+                    style: TextStyle(fontSize: 10, color: AppColors.textHint.withValues(alpha: 0.7))),
+                ]),
+              ])),
+              // 狀態 chip
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: widget.isUsed ? AppColors.divider
+                      : widget.isFull ? AppColors.divider
+                      : widget.isClaimed ? c.withValues(alpha: 0.12)
+                      : c.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  widget.isUsed ? '已使用'
+                      : widget.isFull ? '已發完'
+                      : widget.isClaimed ? '已領取'
+                      : '未領取',
+                  style: TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w700,
+                    color: widget.isUsed || widget.isFull ? AppColors.textHint : c,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
+        if (_expanded && !widget.isUsed && !widget.isFull) ...[
+          Divider(height: 1, color: c.withValues(alpha: 0.15)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.desc,
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: widget.isClaimed ? widget.onUse : widget.onClaim,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: c, foregroundColor: Colors.white,
+                    elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: Text(widget.isClaimed ? '立即使用' : '領取優惠券',
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+// ── 舊的靜態假資料 class（保留給舊版相容，實際已不使用）──────
+class _CouponData {
+  final String title, desc, expiry;
+  final IconData icon;
+  final Color color;
+  final bool isUsed;
+  const _CouponData({
+    required this.title, required this.desc, required this.expiry,
+    required this.icon, required this.color, required this.isUsed,
+  });
       title: '嘉義市立博物館免費入場',
       desc: '憑 App 集章 3 個以上，免費參觀一次',
       expiry: '2026/12/31',

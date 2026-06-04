@@ -18,6 +18,8 @@ import '../models/dummy_data.dart';
 import '../widgets/common_widgets.dart';
 import '../services/trip_service.dart';
 import '../services/local_fav_service.dart';
+import '../services/spot_service.dart';
+import '../models/spot.dart';
 import '../theme/fabric_textures.dart';
 import 'calendar_screen.dart';
 import 'expense_screen.dart';
@@ -993,51 +995,62 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: ListView.builder(
-                  controller: scroll,
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                  itemCount: DummyData.spots.length,
-                  itemBuilder: (itemCtx, i) {
-                    final s = DummyData.spots[i];
-                    final already = _candidates.any((c) => c.spot.id == s.id);
-                    final iconData = s.category == 'restaurant'
-                        ? Icons.ramen_dining_rounded
-                        : s.category == 'youbike'
-                            ? Icons.pedal_bike_rounded
-                            : Icons.account_balance_rounded;
-                    final p = Theme.of(itemCtx).colorScheme.primary;
-                    final mist = Color.lerp(p, Colors.white, 0.88)!;
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: already ? mist : AppColors.surfaceWarm,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: already ? p.withValues(alpha: 0.3) : AppColors.divider),
-                      ),
-                      child: ListTile(
-                        leading: Icon(iconData, size: 24, color: AppColors.textSecondary),
-                        title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                        subtitle: Row(children: [
-                          const Icon(Icons.star_rounded, size: 11, color: AppColors.accentStraw),
-                          Text('  ${s.rating}  ·  ${s.address}',
-                            style: const TextStyle(fontSize: 11, color: AppColors.textHint),
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ]),
-                        trailing: Builder(builder: (bCtx) {
-                          final p = Theme.of(bCtx).colorScheme.primary;
-                          return already
-                            ? Icon(Icons.check_circle_rounded, color: p)
-                            : Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(color: p, borderRadius: BorderRadius.circular(10)),
-                                child: const Text('加入', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
-                              );
-                        }),
-                        onTap: already ? null : () {
-                          _addToCandidate(s);
-                          setState(() {});
-                        },
-                      ),
+                // 使用 FutureBuilder 讀取真實景點
+                child: FutureBuilder<List<Spot>>(
+                  future: SpotService.loadAllSpots(),
+                  builder: (futureCtx, snap) {
+                    if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                    final spots = snap.data!;
+                    return ListView.builder(
+                      controller: scroll,
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                      itemCount: spots.length,
+                      itemBuilder: (itemCtx, i) {
+                        final s = spots[i];
+                        final already = _candidates.any((c) => c.spot.id == s.id);
+                        final iconData = s.category == 'restaurant'
+                            ? Icons.ramen_dining_rounded
+                            : s.category == 'youbike'
+                                ? Icons.pedal_bike_rounded
+                                : Icons.account_balance_rounded;
+                        final p = Theme.of(itemCtx).colorScheme.primary;
+                        final mist = Color.lerp(p, Colors.white, 0.88)!;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: already ? mist : AppColors.surfaceWarm,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: already ? p.withValues(alpha: 0.3) : AppColors.divider),
+                          ),
+                          child: ListTile(
+                            leading: s.imageUrl.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Image.network(s.imageUrl, width: 44, height: 44, fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(iconData, size: 24, color: AppColors.textSecondary)),
+                                  )
+                                : Icon(iconData, size: 24, color: AppColors.textSecondary),
+                            title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                            subtitle: Row(children: [
+                              const Icon(Icons.star_rounded, size: 11, color: AppColors.accentStraw),
+                              Flexible(child: Text('  ${s.rating}  ·  ${s.address}',
+                                style: const TextStyle(fontSize: 11, color: AppColors.textHint),
+                                maxLines: 1, overflow: TextOverflow.ellipsis)),
+                            ]),
+                            trailing: already
+                              ? Icon(Icons.check_circle_rounded, color: p)
+                              : Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(color: p, borderRadius: BorderRadius.circular(10)),
+                                  child: const Text('加入', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                                ),
+                            onTap: already ? null : () {
+                              _addToCandidate(s);
+                              setState(() {});
+                            },
+                          ),
+                        );
+                      },
                     );
                   },
                 ),

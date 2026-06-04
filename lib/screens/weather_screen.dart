@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../theme/app_theme.dart';
-import '../services/rail_service.dart'; // 統一 Service
+import '../services/rail_service.dart';
 import '../theme/fabric_textures.dart';
+import '../config/app_config.dart';
 
 // Map weather icon key → (IconData, Color)
 (IconData, Color) _weatherIcon(String key) {
@@ -30,18 +33,82 @@ class _WeatherScreenState extends State<WeatherScreen>
 
   Future<List<Map<String, dynamic>>>? _cityWeatherFuture;
   Future<List<Map<String, dynamic>>>? _countyWeatherFuture;
+  Future<Map<String, dynamic>>? _extraFuture; // UV + 日出日落
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _cityWeatherFuture = _fetchWeather('Chiayi');
+    _cityWeatherFuture   = _fetchWeather('Chiayi');
     _countyWeatherFuture = _fetchWeather('ChiayiCounty');
+    _extraFuture         = _fetchExtraWeather();
   }
 
-  // 🌟 修正：直接呼叫 RailService，徹底解決 IP 不同步的問題
   Future<List<Map<String, dynamic>>> _fetchWeather(String cityType) async {
     return await RailService.getWeather(cityType);
+  }
+
+  /// OpenWeatherMap One Call API — UV 指數 + 日出日落
+  /// 需設定 OPENWEATHER_KEY 環境變數
+  Future<Map<String, dynamic>> _fetchExtraWeather() async {
+    final key = AppConfig.openWeatherKey;
+    if (key.isEmpty) {
+      // 尚未設定 API Key — 回傳空 map，UI 顯示佔位
+      return {};
+    }
+    try {
+      final url = 'https://api.openweathermap.org/data/3.0/onecall'
+          '?lat=${AppConfig.chiayiLat}&lon=${AppConfig.chiayiLon}'
+          '&appid=$key&units=metric'
+          '&exclude=minutely,hourly,daily,alerts';
+      final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        final d = jsonDecode(res.body) as Map<String, dynamic>;
+        final current = d['current'] as Map<String, dynamic>? ?? {};
+        final uvi     = (current['uvi'] as num?)?.toDouble() ?? 0.0;
+        final sunrise = current['sunrise'] as int? ?? 0;
+        final sunset  = current['sunset']  as int? ?? 0;
+        final humidity = (current['humidity'] as int?) ?? 0;
+        final feelsLike = (current['feels_like'] as num?)?.round() ?? 0;
+        String uviLabel;
+        String uviTip;
+        if      (uvi < 3)  { uviLabel = '${uvi.toStringAsFixed(1)} 低'; uviTip = '無需特別防護'; }
+        else if (uvi < 6)  { uviLabel = '${uvi.toStringAsFixed(1)} 中'; uviTip = '建議塗 SPF30+'; }
+        else if (uvi < 8)  { uviLabel = '${uvi.toStringAsFixed(1)} 高'; uviTip = '建議塗 SPF50+'; }
+        else if (uvi < 11) { uviLabel = '${uvi.toStringAsFixed(1)} 極高'; uviTip = '上午10點後避免外出'; }
+        else               { uviLabel = '${uvi.toStringAsFixed(1)} 危險'; uviTip = '避免日曬，全身防護'; }
+
+        String _fmt(int ts) {
+          final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+          return '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}';
+        }
+        final sunriseStr = sunrise > 0 ? _fmt(sunrise) : '--:--';
+        final sunsetStr  = sunset  > 0 ? _fmt(sunset)  : '--:--';
+        final daylightH  = sunrise > 0 && sunset > 0
+            ? ((sunset - sunrise) / 3600).round()
+            : 0;
+        String comfortLabel;
+        String comfortTip;
+        if      (humidity < 40) { comfortLabel = '乾燥'; comfortTip = '空氣乾燥，注意補水'; }
+        else if (humidity < 60) { comfortLabel = '舒適'; comfortTip = '濕度適中，體感良好'; }
+        else if (humidity < 80) { comfortLabel = '偏潮'; comfortTip = '相對濕度偏高，注意補水'; }
+        else                    { comfortLabel = '悶熱'; comfortTip = '高濕悶熱，建議待在室內'; }
+
+        return {
+          'uviLabel':    uviLabel,
+          'uviTip':      uviTip,
+          'sunrise':     sunriseStr,
+          'sunset':      sunsetStr,
+          'daylightH':   daylightH,
+          'comfort':     comfortLabel,
+          'comfortTip':  comfortTip,
+          'feelsLike':   feelsLike,
+        };
+      }
+    } catch (e) {
+      debugPrint('[WeatherExtra] $e');
+    }
+    return {};
   }
 
   @override
@@ -121,7 +188,7 @@ class _WeatherScreenState extends State<WeatherScreen>
     );
   }
 
-  Widget _buildWeatherTab(String name, String coord, List<Map<String, dynamic>> data) {
+  Widget _buildWeatherTab(String name, String coord, List<Map<String, dynamic>> data, {Map<String, dynamic>? extra}) {
     final today = data[0];
     final (todayIconData, todayIconColor) = _weatherIcon(today['icon'] as String);
     return ListView(
@@ -187,17 +254,36 @@ class _WeatherScreenState extends State<WeatherScreen>
           ),
         ),
         const SizedBox(height: 16),
-        Row(children: [
-          Expanded(child: _infoCard(Icons.wb_sunny_rounded, 'UV 指數', '8 高', '建議塗抹防曬 SPF50+', AppColors.accentTerra)),
-          const SizedBox(width: 12),
-          Expanded(child: _infoCard(Icons.sentiment_satisfied_rounded, '舒適度', '悶熱', '相對濕度偏高，注意補水', AppColors.accentSky)),
-        ]),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(child: _infoCard(Icons.wb_twilight_rounded, '日出日落', '05:15 / 18:45', '日照時間 13小時30分', AppColors.accentStraw)),
-          const SizedBox(width: 12),
-          Expanded(child: _infoCard(Icons.waves_rounded, '天氣警報', '無', '目前無特殊天氣警報', Theme.of(context).colorScheme.primary)),
-        ]),
+        FutureBuilder<Map<String, dynamic>>(
+          future: _extraFuture,
+          builder: (ctx, snap) {
+            final e = snap.data ?? {};
+            final hasData = e.isNotEmpty;
+            return Column(children: [
+              Row(children: [
+                Expanded(child: _infoCard(Icons.wb_sunny_rounded, 'UV 指數',
+                    hasData ? (e['uviLabel'] as String) : '--',
+                    hasData ? (e['uviTip'] as String) : AppConfig.openWeatherKey.isEmpty ? '設定 OPENWEATHER_KEY 後顯示' : '讀取中…',
+                    AppColors.accentTerra)),
+                const SizedBox(width: 12),
+                Expanded(child: _infoCard(Icons.sentiment_satisfied_rounded, '舒適度',
+                    hasData ? (e['comfort'] as String) : '--',
+                    hasData ? (e['comfortTip'] as String) : '---',
+                    AppColors.accentSky)),
+              ]),
+              const SizedBox(height: 12),
+              Row(children: [
+                Expanded(child: _infoCard(Icons.wb_twilight_rounded, '日出日落',
+                    hasData ? '${e['sunrise']} / ${e['sunset']}' : '--:-- / --:--',
+                    hasData ? '日照時間 ${e['daylightH']} 小時' : '---',
+                    AppColors.accentStraw)),
+                const SizedBox(width: 12),
+                Expanded(child: _infoCard(Icons.waves_rounded, '天氣警報', '無', '目前無特殊天氣警報',
+                    Theme.of(context).colorScheme.primary)),
+              ]),
+            ]);
+          },
+        ),
         const SizedBox(height: 40),
       ],
     );

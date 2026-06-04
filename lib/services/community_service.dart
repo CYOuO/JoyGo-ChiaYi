@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 // ── Firestore 路徑常數 ─────────────────────────────────────────
 // community_posts/{postId}
@@ -338,29 +339,56 @@ class CommunityService {
     final myRef     = _db.collection('users').doc(uid);
     final targetRef = _db.collection('users').doc(targetUserId);
     final followRef = myRef.collection('following').doc(targetUserId);
-    final snap = await followRef.get();
-    if (snap.exists) {
-      await followRef.delete();
-      // Remove from target's followers list and update counts
-      await targetRef.collection('followers').doc(uid).delete();
-      await targetRef.set({'followersCount': FieldValue.increment(-1)}, SetOptions(merge: true));
-      await myRef.set({'followingCount': FieldValue.increment(-1)}, SetOptions(merge: true));
+
+    try {
+      final snap = await followRef.get();
+      if (snap.exists) {
+        // ── 取消追蹤 ────────────────────────────────────────
+        await followRef.delete();
+
+        // 更新自己的 followingCount（自己的文件，安全規則允許）
+        try {
+          await myRef.set({'followingCount': FieldValue.increment(-1)}, SetOptions(merge: true));
+        } catch (_) {}
+
+        // 更新對方的 followersCount（對方文件，視安全規則而定）
+        try {
+          await targetRef.collection('followers').doc(uid).delete();
+          await targetRef.set({'followersCount': FieldValue.increment(-1)}, SetOptions(merge: true));
+        } catch (_) {}
+
+        return false;
+      } else {
+        // ── 追蹤 ───────────────────────────────────────────
+        final myDoc = await myRef.get();
+        final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '';
+
+        await followRef.set({
+          'userId': targetUserId,
+          'name': targetName,
+          'followedAt': FieldValue.serverTimestamp(),
+        });
+
+        // 更新自己的 followingCount（自己的文件，安全規則允許）
+        try {
+          await myRef.set({'followingCount': FieldValue.increment(1)}, SetOptions(merge: true));
+        } catch (_) {}
+
+        // 更新對方的 followersCount（對方文件，視安全規則而定）
+        try {
+          await targetRef.collection('followers').doc(uid).set({
+            'userId': uid,
+            'name': myName,
+            'followedAt': FieldValue.serverTimestamp(),
+          });
+          await targetRef.set({'followersCount': FieldValue.increment(1)}, SetOptions(merge: true));
+        } catch (_) {}
+
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[toggleFollow] error: $e');
       return false;
-    } else {
-      final myDoc = await myRef.get();
-      final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '';
-      await followRef.set({
-        'userId': targetUserId, 'name': targetName,
-        'followedAt': FieldValue.serverTimestamp(),
-      });
-      // Add to target's followers list and update counts
-      await targetRef.collection('followers').doc(uid).set({
-        'userId': uid, 'name': myName,
-        'followedAt': FieldValue.serverTimestamp(),
-      });
-      await targetRef.set({'followersCount': FieldValue.increment(1)}, SetOptions(merge: true));
-      await myRef.set({'followingCount': FieldValue.increment(1)}, SetOptions(merge: true));
-      return true;
     }
   }
 

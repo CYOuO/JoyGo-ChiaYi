@@ -1012,7 +1012,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 builder: (ctx, snap) {
                   final stats = snap.data ?? {'followers': 0, 'following': 0};
                   return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    _profileStat('追蹤者', '${(stats['followers'] ?? 0) + (followed ? 0 : 0)}'),
+                    _profileStat('追蹤者', '${stats['followers'] ?? 0}'),
                     Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
                     _profileStat('追蹤中', '${stats['following'] ?? 0}'),
                     Container(width: 1, height: 28, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 20)),
@@ -1025,16 +1025,23 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 width: double.infinity,
                 child: ElevatedButton.icon(
                   onPressed: () async {
-                    final nowFollowed = await CommunityService.toggleFollow(
-                        dummyUserId, trip.creatorName);
+                    // 樂觀更新：先改 UI，再呼叫 API
+                    final wasFollowed = _followedUsers.containsKey(dummyUserId);
                     setState(() {
-                      if (nowFollowed) {
-                        _followedUsers[dummyUserId] = trip.creatorName;
-                      } else {
-                        _followedUsers.remove(dummyUserId);
-                      }
+                      if (wasFollowed) _followedUsers.remove(dummyUserId);
+                      else _followedUsers[dummyUserId] = trip.creatorName;
                     });
                     setLocal(() {});
+                    try {
+                      await CommunityService.toggleFollow(dummyUserId, trip.creatorName);
+                    } catch (_) {
+                      // 失敗回滾
+                      setState(() {
+                        if (wasFollowed) _followedUsers[dummyUserId] = trip.creatorName;
+                        else _followedUsers.remove(dummyUserId);
+                      });
+                      setLocal(() {});
+                    }
                   },
                   icon: Icon(followed ? Icons.person_remove_outlined : Icons.person_add_outlined, size: 18),
                   label: Text(followed ? '取消追蹤' : '追蹤'),
@@ -1096,16 +1103,28 @@ class _CommunityScreenState extends State<CommunityScreen> {
             const SizedBox(height: 16),
             SizedBox(width: double.infinity, child: ElevatedButton.icon(
               onPressed: () async {
-                final now = await CommunityService.toggleFollow(authorId, authorName);
+                // 先樂觀更新 UI，再呼叫 API
+                final isCurrentlyFollowed = _followedUsers.containsKey(authorId);
                 setState(() {
-                  if (now) _followedUsers[authorId] = authorName;
-                  else _followedUsers.remove(authorId);
+                  if (isCurrentlyFollowed) _followedUsers.remove(authorId);
+                  else _followedUsers[authorId] = authorName;
                 });
                 setLocal(() {});
+                try {
+                  await CommunityService.toggleFollow(authorId, authorName);
+                } catch (e) {
+                  // 失敗時回滾 UI
+                  setState(() {
+                    if (isCurrentlyFollowed) _followedUsers[authorId] = authorName;
+                    else _followedUsers.remove(authorId);
+                  });
+                  setLocal(() {});
+                  return;
+                }
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(now ? '已追蹤 $authorName' : '已取消追蹤'),
+                  content: Text(!isCurrentlyFollowed ? '已追蹤 $authorName' : '已取消追蹤'),
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: now ? primary : AppColors.textSecondary,
+                  backgroundColor: !isCurrentlyFollowed ? primary : AppColors.textSecondary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ));
               },
@@ -3041,13 +3060,20 @@ class _UserProfileSheetState extends State<_UserProfileSheet> {
         else
           SizedBox(width: double.infinity, child: ElevatedButton.icon(
             onPressed: () async {
-              final now = await CommunityService.toggleFollow(widget.authorId, widget.authorName);
-              if (mounted) setState(() => _followed = now);
+              // 樂觀更新
+              final wasFollowed = _followed;
+              if (mounted) setState(() => _followed = !wasFollowed);
+              try {
+                await CommunityService.toggleFollow(widget.authorId, widget.authorName);
+              } catch (_) {
+                if (mounted) setState(() => _followed = wasFollowed);
+                return;
+              }
               if (mounted && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(now ? '已追蹤 ${widget.authorName}' : '已取消追蹤'),
+                  content: Text(!wasFollowed ? '已追蹤 ${widget.authorName}' : '已取消追蹤'),
                   behavior: SnackBarBehavior.floating,
-                  backgroundColor: now ? p : AppColors.textSecondary,
+                  backgroundColor: !wasFollowed ? p : AppColors.textSecondary,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
               }
             },

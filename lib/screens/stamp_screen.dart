@@ -1,5 +1,6 @@
 ﻿import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +48,10 @@ class _StampScreenState extends State<StampScreen>
   Position? _stampPos;
   final Map<String, DateTime> _lastCheckinTime = {};
 
+  // 打卡照片牆
+  List<String> _photoPaths = [];
+  bool _photosLoading = true;
+
   Offset _cameraFabOffset = const Offset(16, 16);
 
   static const _kCheckinRadius = 100.0;
@@ -60,10 +65,16 @@ class _StampScreenState extends State<StampScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     _loadVisited();
     _loadRealSpots();
     _startLocationWatch();
+    _loadPhotos();
+  }
+
+  Future<void> _loadPhotos() async {
+    final paths = await CameraScreen.getSavedPhotoPaths();
+    if (mounted) setState(() { _photoPaths = paths; _photosLoading = false; });
   }
 
   Future<void> _loadVisited() async {
@@ -200,6 +211,7 @@ class _StampScreenState extends State<StampScreen>
           indicatorColor: primary,
           tabs: const [
             Tab(text: '景點印章'),
+            Tab(text: '打卡照片'),
             Tab(text: '成就徽章'),
             Tab(text: '排行榜'),
             Tab(text: '小地圖'),
@@ -212,6 +224,7 @@ class _StampScreenState extends State<StampScreen>
             controller: _tabController,
             children: [
               _buildStampTab(),
+              _buildPhotoWallTab(),
               _buildAchievementTab(),
               _buildLeaderboardTab(),
               _buildMiniMapTab(),
@@ -254,6 +267,109 @@ class _StampScreenState extends State<StampScreen>
           ),
         ]);
       }),
+    );
+  }
+
+  // ── 打卡照片牆 ──────────────────────────────────────────────
+  Widget _buildPhotoWallTab() {
+    final primary = Theme.of(context).colorScheme.primary;
+    if (_photosLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_photoPaths.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 80, height: 80,
+            decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), shape: BoxShape.circle),
+            child: Icon(Icons.camera_alt_rounded, size: 38, color: primary.withValues(alpha: 0.5)),
+          ),
+          const SizedBox(height: 16),
+          const Text('還沒有打卡照片', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          const SizedBox(height: 6),
+          const Text('拍下你的探索瞬間\n儲存後就會出現在這裡！',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.6)),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
+                .then((_) => _loadPhotos()),
+            icon: const Icon(Icons.camera_alt_rounded, size: 18),
+            label: const Text('開啟相機'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primary, foregroundColor: Colors.white,
+              elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    return Column(children: [
+      // Header
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Row(children: [
+          Text('共 ${_photoPaths.length} 張照片',
+            style: TextStyle(fontSize: 13, color: primary, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
+                .then((_) => _loadPhotos()),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.add_a_photo_rounded, size: 14, color: primary),
+                const SizedBox(width: 4),
+                Text('拍照', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
+              ]),
+            ),
+          ),
+        ]),
+      ),
+      Expanded(
+        child: GridView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4,
+          ),
+          itemCount: _photoPaths.length,
+          itemBuilder: (ctx, i) {
+            final path = _photoPaths[i];
+            final file = File(path);
+            return GestureDetector(
+              onTap: () => _showPhotoDetail(ctx, path),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: file.existsSync()
+                    ? Image.file(file, fit: BoxFit.cover)
+                    : Container(
+                        color: primary.withValues(alpha: 0.08),
+                        child: Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 24),
+                      ),
+              ),
+            );
+          },
+        ),
+      ),
+    ]);
+  }
+
+  void _showPhotoDetail(BuildContext ctx, String path) {
+    final file = File(path);
+    if (!file.existsSync()) return;
+    showDialog(
+      context: ctx,
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.file(file, fit: BoxFit.contain),
+        ),
+      ),
     );
   }
 

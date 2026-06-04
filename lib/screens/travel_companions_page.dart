@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import '../theme/app_theme.dart';
 import '../services/trip_service.dart';
+import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
 
 IconData _tripIconFromKey(String key) {
   switch (key) {
@@ -47,7 +48,7 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
             'name':     name,
             'email':    email,
             'uid':      uid ?? '',
-            'photoUrl': photoUrl ?? '',
+            'photoURL': photoUrl ?? '',   // 統一用大寫 URL
             'addedBy':  _uid ?? '',
             'addedAt':  FieldValue.serverTimestamp(),
           });
@@ -98,16 +99,11 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (trips.isEmpty) {
-                  return Center(child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.map_rounded, size: 48, color: AppColors.textHint),
-                      const SizedBox(height: 12),
-                      const Text('還沒有任何行程', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 6),
-                      Text('先在「行程管理」建立行程', style: TextStyle(color: AppColors.textHint)),
-                    ],
-                  ));
+                  return IllustratedEmptyState(
+                    scene: EmptyScene.companion,
+                    title: '還沒有任何行程',
+                    body: '先在「行程管理」建立行程\n再來這裡新增旅伴一起出發！',
+                  );
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),
@@ -197,12 +193,15 @@ class _TripCompanionCard extends StatelessWidget {
             }
             return Column(
               children: docs.map((doc) {
-                final d = doc.data() as Map<String, dynamic>;
-                final name     = d['name']  as String? ?? '旅伴';
-                final email    = d['email'] as String? ?? '';
+                // 防禦性資料取出，避免 null / type cast 造成 crash
+                final rawData = doc.data();
+                if (rawData == null) return const SizedBox.shrink();
+                final d = Map<String, dynamic>.from(rawData as Map);
+                final name     = (d['name']  ?? '旅伴').toString();
+                final email    = (d['email'] ?? '').toString();
                 // 相容新（photoURL）舊（photoUrl）欄位名稱
-                final photoUrl = (d['photoURL'] ?? d['photoUrl'] ?? '') as String;
-                final isReal   = (d['uid'] as String? ?? '').isNotEmpty;
+                final photoUrl = ((d['photoURL'] ?? d['photoUrl']) ?? '').toString();
+                final isReal   = (d['uid'] ?? '').toString().isNotEmpty;
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
                   leading: CircleAvatar(

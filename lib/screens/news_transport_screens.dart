@@ -73,8 +73,10 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   List<Map<String, dynamic>>? _traTrains;
   bool _traLoading = false;
   String? _traError, _traUpdateTime;
-  static const _kTraPerPage = 4;
-  static const _kThsrPerPage = 4;
+  static const _kTraPerPage  = 4;
+  static const _kThsrPerPage = 7;
+  int _traFlipSeed  = 0;
+  int _thsrFlipSeed = 0;
 
   // Alishan
   List<Map<String, dynamic>>? _aliDocs;
@@ -173,8 +175,18 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) { if (mounted) setState(() => _ybLocating = false); return; }
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _ybLocating = false); return;
+      }
+      // 1. 先用上次已知位置快速顯示（幾乎瞬間）
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted) {
+        setState(() { _ybPosition = last; _ybLocating = false; });
+      }
+      // 2. 背景取精確位置（low accuracy = 更快）
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.low,
+      );
       if (mounted) setState(() { _ybPosition = pos; _ybLocating = false; });
     } catch (_) { if (mounted) setState(() => _ybLocating = false); }
   }
@@ -941,18 +953,22 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         // ── 記事本書頁翻頁（page_flip 套件）────────────────────────
         Expanded(
           child: PageFlipWidget(
-            key: ValueKey('${_traO}_${_traD}_${trains.length}'),
-            backgroundColor: const Color(0xFFF7F7F9),   // 近白淡灰紙張
-            lastPage: Container(
-              color: const Color(0xFFFDF9F0),
-              child: Stack(children: [
-                const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
-                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.train_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
-                  const SizedBox(height: 10),
-                  const Text('已無更多班次', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
-                ])),
-              ]),
+            key: ValueKey('${_traO}_${_traD}_${trains.length}_$_traFlipSeed'),
+            backgroundColor: const Color(0xFFF7F7F9),
+            lastPage: GestureDetector(
+              onTap: () => setState(() => _traFlipSeed++),
+              child: Container(
+                color: const Color(0xFFFDF9F0),
+                child: Stack(children: [
+                  const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                  Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.loop_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.5)),
+                    const SizedBox(height: 10),
+                    Text('點此回到第一頁',
+                        style: TextStyle(color: AppColors.textHint.withValues(alpha: 0.7), fontSize: 13)),
+                  ])),
+                ]),
+              ),
             ),
             children: List.generate(totalPages, (pageIdx) {
               final pageTrains = trains.skip(pageIdx * _kTraPerPage).take(_kTraPerPage).toList();
@@ -1070,18 +1086,22 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       else ...[
         Expanded(
           child: PageFlipWidget(
-            key: ValueKey('${_thsrO}_${_thsrD}_${trains.length}'),
+            key: ValueKey('${_thsrO}_${_thsrD}_${trains.length}_$_thsrFlipSeed'),
             backgroundColor: const Color(0xFFF7F7F9),
-            lastPage: Container(
-              color: const Color(0xFFFDF9F0),
-              child: Stack(children: [
-                const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
-                Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.directions_railway_filled_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.4)),
-                  const SizedBox(height: 10),
-                  const Text('已無更多班次', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
-                ])),
-              ]),
+            lastPage: GestureDetector(
+              onTap: () => setState(() => _thsrFlipSeed++),
+              child: Container(
+                color: const Color(0xFFFDF9F0),
+                child: Stack(children: [
+                  const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                  Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.loop_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.5)),
+                    const SizedBox(height: 10),
+                    Text('點此回到第一頁',
+                        style: TextStyle(color: AppColors.textHint.withValues(alpha: 0.7), fontSize: 13)),
+                  ])),
+                ]),
+              ),
             ),
             children: List.generate(totalPages, (pageIdx) {
               final pageTrains = trains.skip(pageIdx * _kThsrPerPage).take(_kThsrPerPage).toList();

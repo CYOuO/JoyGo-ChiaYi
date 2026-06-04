@@ -1025,7 +1025,7 @@ class StampGridSkeleton extends StatelessWidget {
 //  ② IllustratedEmptyState — 插畫空頁面
 // ═══════════════════════════════════════════════════════════
 
-enum EmptyScene { trip, expense, notification, saved, community, map }
+enum EmptyScene { trip, expense, notification, saved, community, map, companion, stamp, calendar, camera }
 
 class IllustratedEmptyState extends StatefulWidget {
   final EmptyScene scene;
@@ -1102,12 +1102,16 @@ class _EmptyScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     switch (scene) {
-      case EmptyScene.trip:      _paintTrain(canvas, size); break;
-      case EmptyScene.expense:   _paintPiggyBank(canvas, size); break;
+      case EmptyScene.trip:         _paintTrain(canvas, size); break;
+      case EmptyScene.expense:      _paintPiggyBank(canvas, size); break;
       case EmptyScene.notification: _paintBell(canvas, size); break;
-      case EmptyScene.saved:     _paintHeart(canvas, size); break;
-      case EmptyScene.community: _paintBubbles(canvas, size); break;
-      case EmptyScene.map:       _paintCompass(canvas, size); break;
+      case EmptyScene.saved:        _paintHeart(canvas, size); break;
+      case EmptyScene.community:    _paintBubbles(canvas, size); break;
+      case EmptyScene.map:          _paintCompass(canvas, size); break;
+      case EmptyScene.companion:    _paintCompanion(canvas, size); break;
+      case EmptyScene.stamp:        _paintStamp(canvas, size); break;
+      case EmptyScene.calendar:     _paintCalendar(canvas, size); break;
+      case EmptyScene.camera:       _paintCamera(canvas, size); break;
     }
   }
 
@@ -1427,6 +1431,163 @@ class _EmptyScenePainter extends CustomPainter {
 
   double cos(double radians) => math.cos(radians);
   double sin(double radians) => math.sin(radians);
+
+  // ── Companion ───────────────────────────────────────────────
+  void _paintCompanion(Canvas canvas, Size s) {
+    final c = color;
+    final fill   = Paint()..color = c.withValues(alpha: 0.12)..style = PaintingStyle.fill;
+    final stroke = Paint()..color = c.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 2.2..strokeCap = StrokeCap.round;
+    // 兩個人物：小的在後，大的在前
+    _drawPerson(canvas, s, Offset(s.width * 0.62, s.height * 0.32), 22, fill, stroke);
+    _drawPerson(canvas, s, Offset(s.width * 0.38, s.height * 0.28), 28, fill, stroke);
+    // 地面線
+    canvas.drawLine(Offset(s.width * 0.1, s.height * 0.8), Offset(s.width * 0.9, s.height * 0.8),
+        Paint()..color = c.withValues(alpha: 0.2)..strokeWidth = 2.5..strokeCap = StrokeCap.round);
+    // + 號按鈕提示
+    final cx = s.width * 0.72; final cy = s.height * 0.65;
+    canvas.drawCircle(Offset(cx, cy), 14,
+        Paint()..color = c.withValues(alpha: 0.15)..style = PaintingStyle.fill);
+    canvas.drawCircle(Offset(cx, cy), 14,
+        Paint()..color = c.withValues(alpha: 0.5)..style = PaintingStyle.stroke..strokeWidth = 1.5);
+    canvas.drawLine(Offset(cx - 7, cy), Offset(cx + 7, cy),
+        Paint()..color = c.withValues(alpha: 0.7)..strokeWidth = 2..strokeCap = StrokeCap.round);
+    canvas.drawLine(Offset(cx, cy - 7), Offset(cx, cy + 7),
+        Paint()..color = c.withValues(alpha: 0.7)..strokeWidth = 2..strokeCap = StrokeCap.round);
+  }
+
+  void _drawPerson(Canvas canvas, Size s, Offset center, double r, Paint fill, Paint stroke) {
+    // 頭
+    canvas.drawCircle(center, r * 0.45, fill);
+    canvas.drawCircle(center, r * 0.45, stroke..strokeWidth = 2.0);
+    // 身體
+    final bodyTop = Offset(center.dx, center.dy + r * 0.5);
+    final bodyBot = Offset(center.dx, center.dy + r * 1.6);
+    canvas.drawLine(bodyTop, bodyBot, stroke..strokeWidth = 2.2);
+    // 手臂
+    canvas.drawLine(Offset(center.dx - r * 0.6, center.dy + r * 0.8),
+        Offset(center.dx + r * 0.6, center.dy + r * 0.8), stroke..strokeWidth = 2.0);
+    // 腳
+    canvas.drawLine(bodyBot, Offset(center.dx - r * 0.4, center.dy + r * 2.3), stroke..strokeWidth = 2.0);
+    canvas.drawLine(bodyBot, Offset(center.dx + r * 0.4, center.dy + r * 2.3), stroke..strokeWidth = 2.0);
+  }
+
+  // ── Stamp ────────────────────────────────────────────────────
+  void _paintStamp(Canvas canvas, Size s) {
+    final c = color;
+    final fill   = Paint()..color = c.withValues(alpha: 0.12)..style = PaintingStyle.fill;
+    final stroke = Paint()..color = c.withValues(alpha: 0.55)..style = PaintingStyle.stroke..strokeWidth = 2.0..strokeCap = StrokeCap.round;
+    // 3張印章卡片（疊放）
+    for (int i = 2; i >= 0; i--) {
+      final off = i * 6.0;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(s.width * 0.15 + off, s.height * 0.2 + off, s.width * 0.7, s.height * 0.5),
+        const Radius.circular(10));
+      canvas.drawRRect(rect, i == 0 ? fill : (Paint()..color = c.withValues(alpha: 0.06)..style = PaintingStyle.fill));
+      canvas.drawRRect(rect, stroke..strokeWidth = i == 0 ? 2.0 : 1.2);
+    }
+    // 星形印章
+    _drawStampStar(canvas, Offset(s.width * 0.5, s.height * 0.44), 22, c);
+    // 底部圓點
+    for (int i = 0; i < 5; i++) {
+      canvas.drawCircle(Offset(s.width * (0.2 + i * 0.15), s.height * 0.82), 5,
+          i < 3 ? (Paint()..color = c..style = PaintingStyle.fill)
+                : (Paint()..color = c.withValues(alpha: 0.2)..style = PaintingStyle.fill));
+    }
+  }
+
+  void _drawStampStar(Canvas canvas, Offset center, double r, Color c) {
+    final path = Path();
+    for (int i = 0; i < 5; i++) {
+      final angle = -math.pi / 2 + i * (2 * math.pi / 5);
+      final outerPt = Offset(center.dx + r * cos(angle), center.dy + r * sin(angle));
+      final innerAngle = angle + math.pi / 5;
+      final innerPt = Offset(center.dx + r * 0.4 * cos(innerAngle), center.dy + r * 0.4 * sin(innerAngle));
+      if (i == 0) { path.moveTo(outerPt.dx, outerPt.dy); }
+      else { path.lineTo(outerPt.dx, outerPt.dy); }
+      path.lineTo(innerPt.dx, innerPt.dy);
+    }
+    path.close();
+    canvas.drawPath(path, Paint()..color = c.withValues(alpha: 0.7)..style = PaintingStyle.fill);
+    canvas.drawPath(path, Paint()..color = c..style = PaintingStyle.stroke..strokeWidth = 1.5);
+  }
+
+  // ── Calendar ────────────────────────────────────────────────
+  void _paintCalendar(Canvas canvas, Size s) {
+    final c = color;
+    final fill   = Paint()..color = c.withValues(alpha: 0.12)..style = PaintingStyle.fill;
+    final stroke = Paint()..color = c.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 2.0..strokeCap = StrokeCap.round;
+    // 月曆主體
+    final calRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.12, s.height * 0.18, s.width * 0.76, s.height * 0.62),
+      const Radius.circular(12));
+    canvas.drawRRect(calRect, fill);
+    canvas.drawRRect(calRect, stroke);
+    // 頂部彩色 header
+    final headerRect = RRect.fromRectAndCorners(
+      Rect.fromLTWH(s.width * 0.12, s.height * 0.18, s.width * 0.76, s.height * 0.14),
+      topLeft: const Radius.circular(12), topRight: const Radius.circular(12));
+    canvas.drawRRect(headerRect, Paint()..color = c.withValues(alpha: 0.4)..style = PaintingStyle.fill);
+    // 格子線
+    for (int row = 1; row <= 4; row++) {
+      final y = s.height * (0.18 + 0.14 + row * 0.12);
+      canvas.drawLine(Offset(s.width * 0.12, y), Offset(s.width * 0.88, y), Paint()..color = c.withValues(alpha: 0.15)..strokeWidth = 1);
+    }
+    for (int col = 1; col <= 6; col++) {
+      final x = s.width * (0.12 + col * (0.76 / 7));
+      canvas.drawLine(Offset(x, s.height * 0.32), Offset(x, s.height * 0.80), Paint()..color = c.withValues(alpha: 0.10)..strokeWidth = 1);
+    }
+    // 幾個日期圓點
+    final dotPositions = [
+      Offset(s.width * 0.32, s.height * 0.48),
+      Offset(s.width * 0.50, s.height * 0.48),
+      Offset(s.width * 0.50, s.height * 0.60),
+    ];
+    for (int i = 0; i < dotPositions.length; i++) {
+      canvas.drawCircle(dotPositions[i], 7, Paint()..color = c.withValues(alpha: i == 1 ? 0.9 : 0.3)..style = PaintingStyle.fill);
+    }
+    // 掛鉤
+    for (final x in [s.width * 0.3, s.width * 0.7]) {
+      canvas.drawLine(Offset(x, s.height * 0.12), Offset(x, s.height * 0.24), stroke..strokeWidth = 3..strokeCap = StrokeCap.round);
+    }
+  }
+
+  // ── Camera ──────────────────────────────────────────────────
+  void _paintCamera(Canvas canvas, Size s) {
+    final c = color;
+    final fill   = Paint()..color = c.withValues(alpha: 0.12)..style = PaintingStyle.fill;
+    final stroke = Paint()..color = c.withValues(alpha: 0.6)..style = PaintingStyle.stroke..strokeWidth = 2.2..strokeCap = StrokeCap.round;
+    // 相機主體
+    final bodyRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.15, s.height * 0.32, s.width * 0.7, s.height * 0.42),
+      const Radius.circular(12));
+    canvas.drawRRect(bodyRect, fill);
+    canvas.drawRRect(bodyRect, stroke);
+    // 頂部把手
+    final bump = Path()
+      ..moveTo(s.width * 0.34, s.height * 0.32)
+      ..lineTo(s.width * 0.34, s.height * 0.22)
+      ..lineTo(s.width * 0.54, s.height * 0.22)
+      ..lineTo(s.width * 0.54, s.height * 0.32);
+    canvas.drawPath(bump, fill);
+    canvas.drawPath(bump, stroke..strokeWidth = 2.0);
+    // 鏡頭外圈
+    canvas.drawCircle(Offset(s.width * 0.5, s.height * 0.53), 18,
+        Paint()..color = c.withValues(alpha: 0.2)..style = PaintingStyle.fill);
+    canvas.drawCircle(Offset(s.width * 0.5, s.height * 0.53), 18, stroke..strokeWidth = 2.5);
+    // 鏡頭內圈
+    canvas.drawCircle(Offset(s.width * 0.5, s.height * 0.53), 10,
+        Paint()..color = c.withValues(alpha: 0.35)..style = PaintingStyle.fill);
+    // 閃光燈小點
+    canvas.drawCircle(Offset(s.width * 0.26, s.height * 0.40), 4,
+        Paint()..color = c.withValues(alpha: 0.5)..style = PaintingStyle.fill);
+    // 照片飄出效果（右上角）
+    final photoRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(s.width * 0.62, s.height * 0.18, s.width * 0.24, s.height * 0.18),
+      const Radius.circular(4));
+    canvas.drawRRect(photoRect,
+        Paint()..color = c.withValues(alpha: 0.15)..style = PaintingStyle.fill);
+    canvas.drawRRect(photoRect, stroke..strokeWidth = 1.5);
+  }
 
   @override bool shouldRepaint(_EmptyScenePainter old) => old.color != color || old.scene != scene;
 }

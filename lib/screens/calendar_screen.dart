@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
 import '../theme/fabric_textures.dart';
+import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
 
 // ═══════════════════════════════════════════════════════════
 //  Event model  (only 政府活動 + 個人行程; no govNews / no personal)
@@ -497,12 +498,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return NotebookBackground(
       lineColor: primary.withValues(alpha: 0.08),
       child: events.isEmpty
-          ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              DoodleHeart(color: primary.withValues(alpha: 0.20), size: 26),
-              const SizedBox(height: 8),
-              Text(l10n.calNoEvent,
-                  style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
-            ]))
+          ? IllustratedEmptyState(
+              scene: EmptyScene.calendar,
+              title: l10n.calNoEvent,
+              body: '點右下角 + 新增你的行程\n或等待政府活動資料載入',
+              color: primary,
+            )
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
               itemCount: events.length,

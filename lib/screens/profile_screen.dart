@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -180,7 +182,7 @@ String _memberTitle(DateTime? createdAt) {
 
 String _formatJoinDate(DateTime? createdAt) {
   if (createdAt == null) return '加入中…';
-  return '加入時間：${createdAt.year} 年 ${createdAt.month} 月';
+  return '加入：${createdAt.year} 年 ${createdAt.month} 月 ${createdAt.day} 日';
 }
 
 // ── 旅人會員卡 ──────────────────────────────────────────────
@@ -228,18 +230,71 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false, D
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
-        child: Text(isGuest ? '立即登入' : '查看權益'),
+        child: Text(isGuest ? '立即登入' : '旅行統計'),
       ),
     ]),
   );
 }
 
 void _showBenefitsDialog(BuildContext context, Color primary) {
+  // 旅行統計：從 SharedPreferences + Firestore 取資料
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (_) => Container(
+    builder: (_) => _TravelStatsSheet(primary: primary),
+  );
+}
+
+class _TravelStatsSheet extends StatefulWidget {
+  final Color primary;
+  const _TravelStatsSheet({required this.primary});
+  @override State<_TravelStatsSheet> createState() => _TravelStatsSheetState();
+}
+
+class _TravelStatsSheetState extends State<_TravelStatsSheet> {
+  int _stamps = 0, _trips = 0, _streak = 0, _saved = 0;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      // 打卡數：從 SharedPreferences
+      final raw = prefs.getString('stamp_visited_v1');
+      int stamps = 0;
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        stamps = decoded.values.where((v) => (v as int) > 0).length;
+      }
+      final streak = prefs.getInt('stamp_streak_v1') ?? 0;
+
+      // 行程數 + 收藏數：從 Firestore
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      int trips = 0, saved = 0;
+      if (uid != null) {
+        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        final d = doc.data() ?? {};
+        trips = (d['tripCount'] as num?)?.toInt() ?? 0;
+        saved = (d['savedCount'] as num?)?.toInt() ?? 0;
+      }
+      if (mounted) setState(() {
+        _stamps = stamps; _trips = trips; _streak = streak; _saved = saved; _loaded = true;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loaded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.primary;
+    return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 40),
       decoration: const BoxDecoration(
         color: AppColors.surface,
@@ -251,34 +306,51 @@ void _showBenefitsDialog(BuildContext context, Color primary) {
           decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
         Row(children: [
           Container(width: 40, height: 40,
-            decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
-            child: Icon(Icons.card_membership_rounded, color: primary, size: 22)),
+            decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+            child: Icon(Icons.bar_chart_rounded, color: p, size: 22)),
           const SizedBox(width: 12),
-          const Text('旅人會員權益', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          const Text('旅行統計', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
         ]),
         const SizedBox(height: 20),
-        ...[
-          (Icons.map_rounded, '無限行程管理', '建立、編輯無限個旅行行程'),
-          (Icons.emoji_events_rounded, '集章成就系統', '探索嘉義各景點集滿成就徽章'),
-          (Icons.people_rounded, '旅伴邀請功能', '加入旅伴共同規劃行程'),
-          (Icons.bookmark_rounded, '景點收藏同步', '收藏景點雲端同步跨裝置'),
-          (Icons.forum_rounded, '社群發文功能', '分享旅遊心得與旅友交流'),
-          (Icons.notifications_rounded, '即時交通提醒', '設定公車到站自訂通知'),
-        ].map((item) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(children: [
-            Container(width: 36, height: 36,
-              decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-              child: Icon(item.$1, color: primary, size: 18)),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(item.$2, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-              Text(item.$3, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-            ])),
-            Icon(Icons.check_circle_rounded, color: primary, size: 18),
+        if (!_loaded)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: CircularProgressIndicator(color: p, strokeWidth: 2))
+        else
+          Row(children: [
+            _statTile(p, Icons.approval_rounded, '$_stamps', '打卡景點'),
+            const SizedBox(width: 8),
+            _statTile(p, Icons.local_fire_department_rounded, '$_streak', '連續打卡'),
+            const SizedBox(width: 8),
+            _statTile(p, Icons.map_rounded, '$_trips', '行程數'),
+            const SizedBox(width: 8),
+            _statTile(p, Icons.bookmark_rounded, '$_saved', '收藏數'),
           ]),
-        )),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
+        // 激勵文字
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(color: p.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12)),
+          child: Text(
+            _stamps >= 10 ? '你已打卡 $_stamps 個景點，是資深探索者！🌟'
+              : _stamps >= 5 ? '繼續探索，還有 ${10 - _stamps} 個景點等你！✨'
+              : '開始你的第一次打卡，探索嘉義的美！🗺️',
+            style: TextStyle(fontSize: 12, color: p, fontWeight: FontWeight.w600, height: 1.5),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Widget _statTile(Color p, IconData icon, String val, String label) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(color: p.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(14)),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, color: p, size: 20),
+        const SizedBox(height: 6),
+        Text(val, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: p)),
+        Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
       ]),
     ),
   );
@@ -648,6 +720,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
 
   Future<void> _loadCounts() async {
     try {
+      // Firestore：行程數 + 收藏數
       final doc = await FirebaseFirestore.instance
           .collection('users').doc(widget.user.uid).get();
       final d = doc.data() ?? {};
@@ -655,8 +728,15 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
       setState(() {
         _tripCount  = (d['tripCount']  as num?)?.toInt() ?? 0;
         _savedCount = (d['savedCount'] as num?)?.toInt() ?? 0;
-        _stampCount = (d['stampCount'] as num?)?.toInt() ?? 0;
       });
+      // SharedPreferences：打卡數（stamp data 存在本地）
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('stamp_visited_v1');
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        final count = decoded.values.where((v) => (v as int) > 0).length;
+        if (mounted) setState(() => _stampCount = count);
+      }
     } catch (_) {}
   }
 

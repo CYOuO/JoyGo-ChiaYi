@@ -10,10 +10,18 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
+
+  static const kPhotoPathsKey = 'stamp_photo_paths_v1';
+
+  static Future<List<String>> getSavedPhotoPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getStringList(kPhotoPathsKey) ?? [];
+  }
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -893,7 +901,17 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  // ── Save to gallery ────────────────────────────────────────
+  // ── Save to gallery + record path for photo wall ───────────
+  static Future<void> recordPhotoPath(String path) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final paths = prefs.getStringList(CameraScreen.kPhotoPathsKey) ?? [];
+      paths.insert(0, path);
+      if (paths.length > 100) paths.removeLast();
+      await prefs.setStringList(CameraScreen.kPhotoPathsKey, paths);
+    } catch (_) {}
+  }
+
   Future<void> _saveWithFrame(BuildContext ctx) async {
     final bytes = await _captureFramedImage();
     if (bytes == null) {
@@ -903,8 +921,17 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       final hasAccess = await Gal.hasAccess();
       if (!hasAccess) await Gal.requestAccess();
-      await Gal.putImageBytes(bytes,
-          name: '探索諸羅_${DateTime.now().millisecondsSinceEpoch}');
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      await Gal.putImageBytes(bytes, name: '探索諸羅_$ts');
+      // 同時儲存到 app 文件目錄供照片牆使用
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final stampsDir = Directory('${dir.path}/stamp_photos');
+        if (!stampsDir.existsSync()) stampsDir.createSync(recursive: true);
+        final file = File('${stampsDir.path}/$ts.jpg');
+        await file.writeAsBytes(bytes);
+        await recordPhotoPath(file.path);
+      } catch (_) {}
       if (mounted) {
         Navigator.pop(ctx);
         _showSnack('已儲存到相簿！');

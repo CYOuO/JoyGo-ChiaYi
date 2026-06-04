@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui_canvas;
 import 'package:flutter/material.dart';
 import 'package:animated_digit/animated_digit.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -761,27 +762,49 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                   return _ybDist(s) <= 1500;
                 }).toList();
                 final markers = [
+                  // 使用者位置
                   Marker(point: center, width: 26, height: 26,
                     child: Stack(alignment: Alignment.center, children: [
                       Container(width: 26, height: 26, decoration: BoxDecoration(color: primary.withValues(alpha: 0.20), shape: BoxShape.circle)),
                       Container(width: 14, height: 14, decoration: BoxDecoration(color: primary, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2.5))),
                     ])),
-                  ...nearby.map((s) => Marker(
-                    point: LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()),
-                    width: 16, height: 16,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 3, offset: const Offset(0, 1))],
-                      ),
-                    ),
-                  )),
+                  // YouBike 站點 — 標籤卡片式標記
+                  ...nearby.map((s) {
+                    var name = (s['station_name'] ?? '').toString()
+                        .replaceAll(RegExp(r'YouBike\d+\.0_'), '');
+                    if (name.length > 8) name = '${name.substring(0, 8)}…';
+                    return Marker(
+                      point: LatLng((s['lat'] as num).toDouble(), (s['lng'] as num).toDouble()),
+                      width: 82, height: 42,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(
+                          height: 30,
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: primary,
+                            borderRadius: BorderRadius.circular(8),
+                            boxShadow: [BoxShadow(color: primary.withValues(alpha: 0.35), blurRadius: 4, offset: const Offset(0, 2))],
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.directions_bike_rounded, color: Colors.white, size: 12),
+                            const SizedBox(width: 3),
+                            Flexible(child: Text(name,
+                                style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700),
+                                overflow: TextOverflow.ellipsis, maxLines: 1)),
+                          ]),
+                        ),
+                        // 下箭頭
+                        CustomPaint(
+                          size: const Size(10, 5),
+                          painter: _TrianglePainter(color: primary),
+                        ),
+                      ]),
+                    );
+                  }),
                 ];
                 return FlutterMap(
                   key: ValueKey('${_ybPosition!.latitude},${_ybPosition!.longitude}'),
-                  options: MapOptions(initialCenter: center, initialZoom: 16.5),
+                  options: MapOptions(initialCenter: center, initialZoom: 17.0),
                   children: [
                     TileLayer(
                       urlTemplate: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
@@ -2155,6 +2178,22 @@ class _PerforatedEdgePainter extends CustomPainter {
   }
 
   @override bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// YouBike 站點標記下方小三角箭頭
+class _TrianglePainter extends CustomPainter {
+  final Color color;
+  const _TrianglePainter({required this.color});
+  @override
+  void paint(Canvas canvas, Size size) {
+    final path = ui_canvas.Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.fill);
+  }
+  @override bool shouldRepaint(covariant _TrianglePainter old) => old.color != color;
 }
 
 /// 畫橫線 + 左側紅色邊距線的 Painter

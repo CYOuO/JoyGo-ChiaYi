@@ -739,12 +739,14 @@ class _AddEventSheetState extends State<_AddEventSheet> {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
         decoration: const BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Center(child: Container(width: 36, height: 4,
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
@@ -898,6 +900,7 @@ class _AddEventSheetState extends State<_AddEventSheet> {
             ),
           ),
         ]),
+        ),  // SingleChildScrollView
       ),
     );
   }

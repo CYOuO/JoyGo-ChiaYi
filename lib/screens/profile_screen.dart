@@ -265,7 +265,7 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
   Future<void> _load() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      // 打卡數：從 SharedPreferences
+      // 打卡數 + 連續打卡：從 SharedPreferences
       final raw = prefs.getString('stamp_visited_v1');
       int stamps = 0;
       if (raw != null && raw.isNotEmpty) {
@@ -274,15 +274,20 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
       }
       final streak = prefs.getInt('stamp_streak_v1') ?? 0;
 
-      // 行程數 + 收藏數：從 Firestore
-      final uid = FirebaseAuth.instance.currentUser?.uid;
+      // 行程數：從 Firestore trips 集合直接計算（準確）
       int trips = 0, saved = 0;
+      final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
-        final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-        final d = doc.data() ?? {};
-        trips = (d['tripCount'] as num?)?.toInt() ?? 0;
-        saved = (d['savedCount'] as num?)?.toInt() ?? 0;
+        final tripsSnap = await FirebaseFirestore.instance
+            .collection('trips')
+            .where('uid', isEqualTo: uid)
+            .get();
+        trips = tripsSnap.docs.length;
       }
+      // 收藏景點數：從 LocalFavService（本地 SharedPreferences）
+      final savedSpots = await LocalFavService.getSavedSpotsData();
+      saved = savedSpots.length;
+
       if (mounted) setState(() {
         _stamps = stamps; _trips = trips; _streak = streak; _saved = saved; _loaded = true;
       });
@@ -360,15 +365,18 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
 Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}) {
   // 四種顏色各異：綠、暖橘、藍、粉紅
   final tiles = [
+    // tab 1 = 打卡照片
     (Icons.photo_camera_outlined, '打卡照片', const Color(0xFFE6F0E6),
-      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 1)))),
+    // tab 2 = 成就徽章
     (Icons.emoji_events_outlined, '成就徽章', const Color(0xFFF5EFE6),
-      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 2)))),
+    // tab 4 = 小地圖（我的足跡）
     (Icons.map_outlined, '我的足跡', const Color(0xFFE8EFF8),
-      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen()))),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 4)))),
+    // 收藏景點 → 本地收藏頁
     (Icons.bookmark_border_rounded, '收藏景點', const Color(0xFFF8EAF0),
-      () => Navigator.push(context, MaterialPageRoute(
-        builder: (_) => const _SavedSpotsShortcut()))),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _GuestSavedSpotsPage()))),
   ];
 
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -859,7 +867,8 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                     _menuDivider(),
                     _menuItem(context, icon: Icons.local_offer_outlined,
                       iconColor: const Color(0xFFFF9800), title: '優惠券',
-                      onTap: () => _showComingSoon(context, '優惠券')),
+                      onTap: () => Navigator.push(context,
+                          MaterialPageRoute(builder: (_) => const CouponsScreen()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.people_outline_rounded,
                       iconColor: const Color(0xFF2196F3), title: '旅伴管理',
@@ -1217,4 +1226,202 @@ class _GuestSavedSpotsPageState extends State<_GuestSavedSpotsPage> {
     color: primary.withValues(alpha: 0.08),
     child: Icon(Icons.place_rounded, size: 30, color: primary.withValues(alpha: 0.4)),
   );
+}
+
+// ════════════════════════════════════════════════════════════
+//  優惠券頁面
+// ════════════════════════════════════════════════════════════
+class CouponsScreen extends StatelessWidget {
+  const CouponsScreen({super.key});
+
+  static const _kCoupons = [
+    _CouponData(
+      title: '嘉義市立博物館免費入場',
+      desc: '憑 App 集章 3 個以上，免費參觀一次',
+      expiry: '2026/12/31',
+      icon: Icons.account_balance_rounded,
+      color: Color(0xFF5B7CE8),
+      isUsed: false,
+    ),
+    _CouponData(
+      title: '阿里山森鐵 9 折優惠',
+      desc: '搭乘阿里山森林鐵路享 9 折折扣',
+      expiry: '2026/09/30',
+      icon: Icons.landscape_rounded,
+      color: Color(0xFF5B8A5F),
+      isUsed: false,
+    ),
+    _CouponData(
+      title: '文化路夜市美食導覽',
+      desc: '免費參加每週六文化路美食導覽行程',
+      expiry: '2026/08/31',
+      icon: Icons.restaurant_rounded,
+      color: Color(0xFFC4856A),
+      isUsed: true,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('優惠券', style: TextStyle(fontWeight: FontWeight.w800)),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // 提示卡片
+          Container(
+            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primary.withValues(alpha: 0.12), primary.withValues(alpha: 0.05)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(children: [
+              Icon(Icons.local_fire_department_rounded, color: primary, size: 24),
+              const SizedBox(width: 10),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('持續探索，解鎖更多優惠！',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
+                const SizedBox(height: 2),
+                const Text('集章打卡即可獲得景點周邊專屬折扣',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+              ])),
+            ]),
+          ),
+          ..._kCoupons.map((c) => _CouponCard(coupon: c, primary: primary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CouponData {
+  final String title, desc, expiry;
+  final IconData icon;
+  final Color color;
+  final bool isUsed;
+  const _CouponData({
+    required this.title, required this.desc, required this.expiry,
+    required this.icon, required this.color, required this.isUsed,
+  });
+}
+
+class _CouponCard extends StatefulWidget {
+  final _CouponData coupon;
+  final Color primary;
+  const _CouponCard({required this.coupon, required this.primary});
+  @override State<_CouponCard> createState() => _CouponCardState();
+}
+class _CouponCardState extends State<_CouponCard> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.coupon;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: c.isUsed ? AppColors.background : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.isUsed ? AppColors.divider : c.color.withValues(alpha: 0.3), width: 1.5),
+        boxShadow: c.isUsed ? [] : [
+          BoxShadow(color: c.color.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(children: [
+        InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(children: [
+              // 圖示
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: (c.isUsed ? AppColors.textHint : c.color).withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(c.icon, color: c.isUsed ? AppColors.textHint : c.color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(c.title,
+                  style: TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800,
+                    color: c.isUsed ? AppColors.textHint : AppColors.textPrimary,
+                    decoration: c.isUsed ? TextDecoration.lineThrough : null,
+                  )),
+                const SizedBox(height: 3),
+                Row(children: [
+                  Icon(Icons.access_time_rounded, size: 11, color: AppColors.textHint),
+                  const SizedBox(width: 3),
+                  Text('效期至 ${c.expiry}',
+                    style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                ]),
+              ])),
+              // 狀態
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: c.isUsed
+                      ? AppColors.divider
+                      : c.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  c.isUsed ? '已使用' : '未使用',
+                  style: TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w700,
+                    color: c.isUsed ? AppColors.textHint : c.color,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
+        if (_expanded && !c.isUsed) ...[
+          Divider(height: 1, color: c.color.withValues(alpha: 0.15)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(c.desc,
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: const Text('優惠碼已複製！至現場出示即可使用'),
+                      backgroundColor: c.color,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ));
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: c.color, foregroundColor: Colors.white,
+                    elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('立即使用', style: TextStyle(fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ]),
+    );
+  }
 }

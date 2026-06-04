@@ -18,7 +18,8 @@ import '../services/spot_service.dart';
 import 'camera_screen.dart';
 
 class StampScreen extends StatefulWidget {
-  const StampScreen({super.key});
+  final int initialTab;
+  const StampScreen({super.key, this.initialTab = 0});
 
   @override
   State<StampScreen> createState() => _StampScreenState();
@@ -65,16 +66,30 @@ class _StampScreenState extends State<StampScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(
+      length: 5, vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 4),
+    );
     _loadVisited();
     _loadRealSpots();
     _startLocationWatch();
     _loadPhotos();
+    _initLastKnownPosition();
   }
 
   Future<void> _loadPhotos() async {
     final paths = await CameraScreen.getSavedPhotoPaths();
     if (mounted) setState(() { _photoPaths = paths; _photosLoading = false; });
+  }
+
+  // 快速顯示上次已知位置給地圖用
+  Future<void> _initLastKnownPosition() async {
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted) setState(() => _stampPos = last);
+    } catch (_) {}
   }
 
   Future<void> _loadVisited() async {
@@ -1166,10 +1181,10 @@ class _StampScreenState extends State<StampScreen>
                         ),
                       ),
                       children: [
-                        // CartoDB Voyager — 清新自然風格
+                        // CartoDB Light — 淡白清爽風格（與 YouBike/公車地圖一致）
                         TileLayer(
                           urlTemplate:
-                              'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+                              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
                           userAgentPackageName:
                               'com.chiayicity.explore_chiayi',
                           maxZoom: 19,

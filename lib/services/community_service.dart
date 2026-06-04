@@ -209,6 +209,24 @@ class CommunityService {
         likedRef.set({'likedAt': FieldValue.serverTimestamp()}),
         postRef.update({'likeCount': FieldValue.increment(1)}),
       ]);
+      // 通知貼文作者
+      try {
+        final postSnap = await postRef.get();
+        final authorId = postSnap.data()?['authorId'] as String?;
+        if (authorId != null && authorId != uid) {
+          final myDoc = await _db.collection('users').doc(uid).get();
+          final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '某人';
+          await _db.collection('users').doc(authorId).collection('notifications').add({
+            'title': '$myName 對你的貼文按讚了',
+            'body':  postSnap.data()?['title'] ?? '點擊查看貼文',
+            'type':  'social',
+            'isRead': false,
+            'fromUid': uid,
+            'postId':  postId,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (_) {}
       return true;
     }
   }
@@ -382,6 +400,18 @@ class CommunityService {
             'followedAt': FieldValue.serverTimestamp(),
           });
           await targetRef.set({'followersCount': FieldValue.increment(1)}, SetOptions(merge: true));
+        } catch (_) {}
+
+        // 寫追蹤通知給對方
+        try {
+          await targetRef.collection('notifications').add({
+            'title': '$myName 開始追蹤你',
+            'body':  '點擊查看 $myName 的個人頁面',
+            'type':  'follow',
+            'isRead': false,
+            'fromUid': uid,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
         } catch (_) {}
 
         return true;

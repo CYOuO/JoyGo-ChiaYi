@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/app_settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
@@ -168,10 +169,35 @@ class _NotificationSettings extends StatefulWidget {
 }
 
 class _NotificationSettingsState extends State<_NotificationSettings> {
-  bool _pushEnabled     = true;
-  bool _newsEnabled     = true;
+  bool _pushEnabled      = true;
+  bool _newsEnabled      = true;
   bool _communityEnabled = false;
-  bool _tripEnabled     = true;
+  bool _tripEnabled      = true;
+  bool _loaded           = false;
+
+  static const _kPrefix = 'notif_setting_';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPrefs();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() {
+      _pushEnabled      = prefs.getBool('${_kPrefix}push')      ?? true;
+      _newsEnabled      = prefs.getBool('${_kPrefix}news')      ?? true;
+      _communityEnabled = prefs.getBool('${_kPrefix}community') ?? false;
+      _tripEnabled      = prefs.getBool('${_kPrefix}trip')      ?? true;
+      _loaded           = true;
+    });
+  }
+
+  Future<void> _setpref(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('${_kPrefix}$key', value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -185,16 +211,16 @@ class _NotificationSettingsState extends State<_NotificationSettings> {
         padding: EdgeInsets.zero,
         child: Column(children: [
           _notifTile('推播通知', '接收 App 所有通知', Icons.notifications_active_rounded,
-              _pushEnabled, primary, (v) => setState(() => _pushEnabled = v)),
+              _pushEnabled, primary, (v) { setState(() => _pushEnabled = v); _setpref('push', v); }),
           const Divider(height: 1, indent: 54),
           _notifTile('最新消息', '嘉義市政府新聞與活動', Icons.newspaper_rounded,
-              _newsEnabled, primary, (v) => setState(() => _newsEnabled = v)),
+              _newsEnabled, primary, (v) { setState(() => _newsEnabled = v); _setpref('news', v); }),
           const Divider(height: 1, indent: 54),
           _notifTile('社群互動', '按讚、留言、追蹤通知', Icons.people_rounded,
-              _communityEnabled, primary, (v) => setState(() => _communityEnabled = v)),
+              _communityEnabled, primary, (v) { setState(() => _communityEnabled = v); _setpref('community', v); }),
           const Divider(height: 1, indent: 54),
           _notifTile('行程提醒', '出發前一天自動提醒', Icons.calendar_today_rounded,
-              _tripEnabled, primary, (v) => setState(() => _tripEnabled = v)),
+              _tripEnabled, primary, (v) { setState(() => _tripEnabled = v); _setpref('trip', v); }),
         ]),
       ),
     );

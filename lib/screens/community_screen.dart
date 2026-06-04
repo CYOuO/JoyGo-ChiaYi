@@ -560,7 +560,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text('${post.likeCount + (liked ? 0 : 0)}',
+                          Text('${post.likeCount + (liked ? 1 : 0)}',
                             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                         ]),
                       ),
@@ -1874,9 +1874,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: Row(children: [
-              _appBarAction(Icons.share_outlined, () {}),
+              _appBarAction(Icons.share_outlined, () {
+                Share.share('${widget.trip.creatorName} 的行程：${widget.trip.title}\n\n探索諸羅 App 上查看更多嘉義旅遊分享！');
+              }),
               const SizedBox(width: 8),
-              _appBarAction(Icons.bookmark_border_rounded, () {}),
+              _appBarAction(Icons.bookmark_border_rounded, () {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: const Text('這是社群分享行程，可截圖收藏'),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ));
+              }),
             ]),
           ),
         ],

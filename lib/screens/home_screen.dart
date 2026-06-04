@@ -8,6 +8,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:hugeicons/hugeicons.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -165,7 +166,7 @@ class _WaveLinePainter extends CustomPainter {
 class _HomeScreenState extends State<HomeScreen> {
   final PageController _bannerController = PageController();
   int _currentBanner = 0;
-  int _unreadCount   = 3;
+  int _unreadCount   = 0;
   Timer? _autoScrollTimer;
 
   List<_GovItem> _newsItems = [];
@@ -204,8 +205,22 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchNews();
     _fetchRestaurants();
     _fetchNearbySpots();
-    _fetchHomeLiveWeather(); // 🌟 觸發獲取頂部天氣
+    _fetchHomeLiveWeather();
     _fetchHomeTransport();
+    _listenUnreadNotifs();
+  }
+
+  void _listenUnreadNotifs() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _unreadCount = 0); return; }
+    FirebaseFirestore.instance
+        .collection('users').doc(uid)
+        .collection('notifications')
+        .where('isRead', isEqualTo: false)
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _unreadCount = snap.docs.length);
+    });
   }
 
   // 🌟 新增：實時調用 Service 獲取今日天氣快照

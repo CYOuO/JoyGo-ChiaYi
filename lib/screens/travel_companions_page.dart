@@ -198,9 +198,10 @@ class _TripCompanionCard extends StatelessWidget {
             return Column(
               children: docs.map((doc) {
                 final d = doc.data() as Map<String, dynamic>;
-                final name     = d['name']     as String? ?? '旅伴';
-                final email    = d['email']    as String? ?? '';
-                final photoUrl = d['photoUrl'] as String? ?? '';
+                final name     = d['name']  as String? ?? '旅伴';
+                final email    = d['email'] as String? ?? '';
+                // 相容新（photoURL）舊（photoUrl）欄位名稱
+                final photoUrl = (d['photoURL'] ?? d['photoUrl'] ?? '') as String;
                 final isReal   = (d['uid'] as String? ?? '').isNotEmpty;
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -307,7 +308,8 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
     final name = user?['nickname'] ?? user?['displayName'] ?? user?['name'] ?? _nameCtrl.text.trim();
     final email = user?['email'] ?? user?['emailAddress'] ?? _emailCtrl.text.trim();
     final uid = user?['uid'] as String?;
-    final photo = user?['photoURL'] as String?;
+    // 相容新（photoURL）舊（photoUrl）欄位名稱
+    final photo = (user?['photoURL'] ?? user?['photoUrl'] ?? '') as String;
     await widget.onAdd(name.toString(), email.toString(), uid, photo);
     if (mounted) Navigator.pop(context);
   }
@@ -409,7 +411,6 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
               Expanded(child: OutlinedButton.icon(
                 onPressed: () {
                   final email = _emailCtrl.text.trim();
-                  final name = _nameCtrl.text.trim().isNotEmpty ? _nameCtrl.text.trim() : email;
                   Share.share('邀請你加入我們的行程！下載「探索諸羅」App 並用此 Email 註冊：$email');
                 },
                 icon: const Icon(Icons.send_rounded, size: 16),
@@ -445,9 +446,9 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
                 CircleAvatar(
                   radius: 22,
                   backgroundColor: p.withValues(alpha: 0.12),
-                  backgroundImage: (found['photoURL'] as String? ?? '').isNotEmpty
-                      ? NetworkImage(found['photoURL'] as String) : null,
-                  child: (found['photoURL'] as String? ?? '').isEmpty
+                  backgroundImage: ((found['photoURL'] ?? found['photoUrl'] ?? '') as String).isNotEmpty
+                      ? NetworkImage((found['photoURL'] ?? found['photoUrl'] ?? '') as String) : null,
+                  child: ((found['photoURL'] ?? found['photoUrl'] ?? '') as String).isEmpty
                       ? Icon(Icons.person_rounded, color: p, size: 22) : null,
                 ),
                 const SizedBox(width: 12),

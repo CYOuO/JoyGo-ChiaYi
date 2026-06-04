@@ -113,14 +113,17 @@ class _LoginPageState extends State<LoginPage>
       );
       final userCred = await fb_auth.FirebaseAuth.instance.signInWithCredential(credential);
 
-      final uid = userCred.user!.uid;
+      final uid  = userCred.user!.uid;
+      final user = userCred.user!;
       final docRef = FirebaseFirestore.instance.collection('users').doc(uid);
-      final doc = await docRef.get();
+      final doc    = await docRef.get();
+
       if (!doc.exists) {
+        // 第一次登入：建立完整文件
         await docRef.set({
-          'email':                userCred.user!.email ?? '',
-          'nickname':             userCred.user!.displayName ?? '使用者',
-          'photoUrl':             userCred.user!.photoURL,
+          'email':                user.email ?? '',
+          'nickname':             user.displayName ?? '使用者',
+          'photoURL':             user.photoURL ?? '',
           'bio':                  '',
           'createdAt':            FieldValue.serverTimestamp(),
           'following':            [],
@@ -134,7 +137,16 @@ class _LoginPageState extends State<LoginPage>
           'language':             'zh',
           'postCount':            0,
           'likeCount':            0,
+          'followersCount':       0,
+          'followingCount':       0,
         });
+      } else {
+        // 舊帳號：補寫 email / photoURL / nickname（確保搜尋得到）
+        await docRef.set({
+          'email':    user.email ?? '',
+          'photoURL': user.photoURL ?? '',
+          'nickname': doc.data()?['nickname'] ?? user.displayName ?? '使用者',
+        }, SetOptions(merge: true));
       }
 
       if (!mounted) return;
@@ -169,7 +181,7 @@ class _LoginPageState extends State<LoginPage>
           .collection('users').doc(cred.user!.uid).set({
         'email':                email,
         'nickname':             nickname,
-        'photoUrl':             null,
+        'photoURL':             '',
         'bio':                  '',
         'createdAt':            FieldValue.serverTimestamp(),
         'following':            [],
@@ -183,6 +195,8 @@ class _LoginPageState extends State<LoginPage>
         'language':             'zh',
         'postCount':            0,
         'likeCount':            0,
+        'followersCount':       0,
+        'followingCount':       0,
       });
       if (!mounted) return;
       Navigator.of(context).pop(true);

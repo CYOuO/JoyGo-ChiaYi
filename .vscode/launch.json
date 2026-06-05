@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "chiayicity (dev)",
+      "request": "launch",
+      "type": "dart",
+      "args": ["--dart-define-from-file=local.env.json"]
+    }
+  ]
+}

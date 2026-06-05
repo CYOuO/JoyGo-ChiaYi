@@ -4,9 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
-import '../widgets/common_widgets.dart' show NewsCardSkeleton;
+import '../providers/app_settings_provider.dart';
+import '../widgets/common_widgets.dart' show NewsCardSkeleton, TranslatedText;
+import '../services/translation_service.dart';
 import '../utils/html_utils.dart';
 import '../utils/dept_style.dart';
 
@@ -73,22 +76,24 @@ class _NewsScreenState extends State<NewsScreen> with SingleTickerProviderStateM
 
   Widget _buildList(List<_RealNewsItem> items, Color primary) {
     if (_loading) return ListView.separated(padding: const EdgeInsets.all(16), itemCount: 5, separatorBuilder: (_, __) => const SizedBox(height: 10), itemBuilder: (_, __) => const NewsCardSkeleton());
-    if (_hasError) return Center(child: ElevatedButton(onPressed: _fetch, child: const Text('重試')));
-    if (items.isEmpty) return const Center(child: Text('目前無相關消息'));
+    final l10n = context.read<AppSettingsProvider>().l10n;
+    if (_hasError) return Center(child: ElevatedButton(onPressed: _fetch, child: Text(l10n.retry)));
+    if (items.isEmpty) return Center(child: Text(l10n.newsNoItems, style: const TextStyle(color: AppColors.textHint)));
     return ListView.separated(padding: const EdgeInsets.all(16), itemCount: items.length, separatorBuilder: (_, __) => const SizedBox(height: 10), itemBuilder: (_, i) => _RealNewsCard(item: items[i]));
   }
 
   @override Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n    = context.watch<AppSettingsProvider>().l10n;
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface, elevation: 0,
         title: Builder(builder: (bCtx) {
           final p = Theme.of(bCtx).colorScheme.primary;
-          return Row(mainAxisSize: MainAxisSize.min, children: [DoodleHeart(color: p.withValues(alpha: 0.55), size: 10), const SizedBox(width: 6), const Text('最新消息', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)), const SizedBox(width: 6), DoodleLightning(color: p.withValues(alpha: 0.55), size: 10)]);
+          return Row(mainAxisSize: MainAxisSize.min, children: [DoodleHeart(color: p.withValues(alpha: 0.55), size: 10), const SizedBox(width: 6), Text(l10n.homeLatestNews, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)), const SizedBox(width: 6), DoodleLightning(color: p.withValues(alpha: 0.55), size: 10)]);
         }),
-        bottom: TabBar(controller: _tabCtrl, labelColor: primary, indicatorColor: primary, tabs: const [Tab(text: '全部'), Tab(text: '活動'), Tab(text: '新聞')]),
+        bottom: TabBar(controller: _tabCtrl, labelColor: primary, indicatorColor: primary, tabs: [Tab(text: l10n.newsTabAll), Tab(text: l10n.newsTabEvent), Tab(text: l10n.newsTabNews)]),
       ),
       body: TabBarView(controller: _tabCtrl, children: [_buildList(_allItems, primary), _buildList(_eventItems, primary), _buildList(_newsItems, primary)]),
     );
@@ -98,31 +103,36 @@ class _NewsScreenState extends State<NewsScreen> with SingleTickerProviderStateM
 class _RealNewsCard extends StatelessWidget {
   final _RealNewsItem item; const _RealNewsCard({required this.item});
   void _showDetail(BuildContext context) {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     final (c, _) = deptColorIcon(item.location, item.isEvent);
     final hasImage = item.imageUrl != null && item.imageUrl!.isNotEmpty;
     final dateRange = item.isEvent && (item.endDate?.isNotEmpty ?? false) ? '${item.date} ～ ${item.endDate}' : item.date;
     final cleanedSummary = cleanHtml(item.summary);
+    final typeLabel = item.isEvent ? l10n.newsTabEvent : l10n.newsTabNews;
     showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => DraggableScrollableSheet(initialChildSize: 0.75, maxChildSize: 0.95, builder: (ctx, scroll) => Container(decoration: const BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(24))), child: ListView(controller: scroll, padding: EdgeInsets.zero, children: [
       Padding(padding: const EdgeInsets.only(top: 12, bottom: 0), child: Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2))))),
       if (hasImage) Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 0), child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.network(item.imageUrl!, height: 200, width: double.infinity, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const SizedBox.shrink()))),
       Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Row(children: [Icon(item.isEvent ? Icons.celebration_rounded : Icons.article_rounded, size: 13, color: c), const SizedBox(width: 4), Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700))])), const Spacer(), if (dateRange.isNotEmpty) Text(dateRange, style: const TextStyle(color: AppColors.textHint, fontSize: 12))]),
-        const SizedBox(height: 12), Text(item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.4)),
+        Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Row(children: [Icon(item.isEvent ? Icons.celebration_rounded : Icons.article_rounded, size: 13, color: c), const SizedBox(width: 4), Text(typeLabel, style: TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700))])), const Spacer(), if (dateRange.isNotEmpty) Text(dateRange, style: const TextStyle(color: AppColors.textHint, fontSize: 12))]),
+        const SizedBox(height: 12),
+        TranslatedText(text: item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.4), domain: TranslationDomain.news),
         if (item.location != null && item.location!.isNotEmpty) ...[const SizedBox(height: 8), Row(children: [const Icon(Icons.business_rounded, size: 13, color: AppColors.textHint), const SizedBox(width: 4), Expanded(child: Text(item.location!, style: const TextStyle(color: AppColors.textHint, fontSize: 12)))])],
         const SizedBox(height: 16),
-        if (cleanedSummary.isNotEmpty) ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), SelectableText(cleanedSummary, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.85))]
-        else ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), Text(item.isEvent ? '詳細活動資訊請點擊下方連結查看。' : '詳細新聞內容請點擊下方連結查看。', style: const TextStyle(fontSize: 15, color: AppColors.textHint, height: 1.85))],
-        if (item.url != null && item.url!.isNotEmpty) ...[const SizedBox(height: 20), Row(children: [Expanded(child: ElevatedButton.icon(onPressed: () async { final uri = Uri.tryParse(item.url!); if (uri != null && await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.open_in_new_rounded, size: 16), label: const Text('開啟連結'))), const SizedBox(width: 10), OutlinedButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: item.url!)); }, icon: const Icon(Icons.copy, size: 16), label: const Text('複製'))])]
+        if (cleanedSummary.isNotEmpty) ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), TranslatedText(text: cleanedSummary, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.85), domain: TranslationDomain.news)]
+        else ...[const Divider(height: 1, color: AppColors.divider), const SizedBox(height: 16), Text(item.isEvent ? l10n.newsEventDetail : l10n.newsArticleDetail, style: const TextStyle(fontSize: 15, color: AppColors.textHint, height: 1.85))],
+        if (item.url != null && item.url!.isNotEmpty) ...[const SizedBox(height: 20), Row(children: [Expanded(child: ElevatedButton.icon(onPressed: () async { final uri = Uri.tryParse(item.url!); if (uri != null && await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication); }, icon: const Icon(Icons.open_in_new_rounded, size: 16), label: Text(l10n.newsOpenLink))), const SizedBox(width: 10), OutlinedButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: item.url!)); }, icon: const Icon(Icons.copy, size: 16), label: Text(l10n.newsCopyLink))])]
       ]))
     ]))));
   }
 
   @override Widget build(BuildContext context) {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     final (c, iconData) = deptColorIcon(item.location, item.isEvent);
+    final typeLabel = item.isEvent ? l10n.newsTabEvent : l10n.newsTabNews;
     return GestureDetector(onTap: () => _showDetail(context), child: StitchedBox(color: Color.lerp(c, Colors.white, 0.93)!, stitchColor: c.withValues(alpha: 0.35), radius: 16, inset: 4, dashWidth: 4, dashGap: 3, padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(iconData, size: 10, color: c), const SizedBox(width: 3), Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700))])), const Spacer(), Text(item.date, style: const TextStyle(fontSize: 10, color: AppColors.textHint))]),
+      Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3), decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(iconData, size: 10, color: c), const SizedBox(width: 3), Text(typeLabel, style: TextStyle(color: c, fontSize: 10, fontWeight: FontWeight.w700))])), const Spacer(), Text(item.date, style: const TextStyle(fontSize: 10, color: AppColors.textHint))]),
       const SizedBox(height: 8),
-      Text(item.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis),
+      TranslatedText(text: item.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary, height: 1.4), maxLines: 2, overflow: TextOverflow.ellipsis, domain: TranslationDomain.news),
       if ((item.location ?? '').isNotEmpty) ...[const SizedBox(height: 4), Text(item.location!, style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.7)), maxLines: 1, overflow: TextOverflow.ellipsis)],
     ])));
   }

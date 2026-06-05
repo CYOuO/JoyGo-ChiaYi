@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/app_settings_provider.dart';
 import '../services/rail_service.dart';
 import '../theme/fabric_textures.dart';
 
@@ -62,7 +64,7 @@ class _WeatherScreenState extends State<WeatherScreen>
           return Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.cloud_rounded, size: 18, color: p),
             const SizedBox(width: 6),
-            const Text('嘉義天氣', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+            Text(context.watch<AppSettingsProvider>().l10n.weatherTitle, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
             const SizedBox(width: 6),
             DoodleHeart(color: p.withValues(alpha: 0.50), size: 10),
           ]);
@@ -101,7 +103,7 @@ class _WeatherScreenState extends State<WeatherScreen>
               children: [
                 const Icon(Icons.cloud_off_rounded, size: 48, color: AppColors.textHint),
                 const SizedBox(height: 12),
-                const Text('無法取得天氣資料，請稍後重試', style: TextStyle(color: AppColors.textHint)),
+                Text(context.read<AppSettingsProvider>().l10n.weatherLoadFail, style: const TextStyle(color: AppColors.textHint)),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
                   onPressed: () {
@@ -111,7 +113,7 @@ class _WeatherScreenState extends State<WeatherScreen>
                     });
                   },
                   icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text('重新整理'),
+                  label: Text(context.read<AppSettingsProvider>().l10n.weatherRefresh),
                 )
               ],
             ),
@@ -180,7 +182,7 @@ class _WeatherScreenState extends State<WeatherScreen>
               Row(children: [
                 Icon(Icons.calendar_today_rounded, size: 15, color: Theme.of(context).colorScheme.primary),
                 const SizedBox(width: 6),
-                const Text('7 天天氣預報', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
+                Text(context.read<AppSettingsProvider>().l10n.weather7Day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
               ]),
               const SizedBox(height: 14),
               ...data.asMap().entries.map((e) => _forecastRow(e.key, e.value)),

@@ -17,7 +17,7 @@ import '../theme/fabric_textures.dart';
 import '../services/static_data_cache.dart';
 import 'settings_screen.dart';
 import 'expense_screen.dart';
-import '../widgets/common_widgets.dart' show SectionHeader, SpotRatingSection, TapFeedback, WashiTapeDivider, PolaroidCard;
+// TranslatedText imported below with translation_service
 import '../widgets/spot_save_button.dart';
 import 'search_screen.dart';
 import 'notifications_screen.dart';
@@ -30,6 +30,10 @@ import '../services/rail_service.dart'; // 🌟 引入統一的 Service
 import '../utils/html_utils.dart';
 import '../utils/dept_style.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
+import '../providers/app_settings_provider.dart';
+import '../widgets/common_widgets.dart' show SectionHeader, SpotRatingSection, TapFeedback, WashiTapeDivider, PolaroidCard, TranslatedText;
+import '../services/translation_service.dart';
 
 
 Map<String, dynamic> _govItemToJson(_GovItem n) => {
@@ -305,8 +309,9 @@ class _HomeScreenState extends State<HomeScreen> {
   static const _kSpotRadius       = 8000.0;  // 8km
   static const _kMinResults       = 4;       // 至少顯示幾筆（不足時不過濾）
 
-  String get _restaurantSectionTitle => _myPos != null ? '附近雞肉飯' : '精選雞肉飯';
-  String get _spotSectionTitle       => _myPos != null ? '附近景點'   : '精選景點';
+  AppL10n get _l10n => context.read<AppSettingsProvider>().l10n;
+  String get _restaurantSectionTitle => _myPos != null ? _l10n.homeNearbyTurkeyRice : _l10n.homeFeaturedTurkeyRice;
+  String get _spotSectionTitle       => _myPos != null ? _l10n.homeNearbySpots      : _l10n.homeHotFood;
 
   void _sortRestaurantsByProximity() {
     if (_myPos == null) return;
@@ -721,7 +726,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       child: Row(children: [
                                         HugeIcon(icon: HugeIcons.strokeRoundedSearch01, color: Colors.white.withValues(alpha: 0.85), size: 18),
                                         const SizedBox(width: 10),
-                                        Text('搜尋景點、美食、活動…', style: TextStyle(color: Colors.white.withValues(alpha: 0.80), fontSize: 14, fontWeight: FontWeight.w500)),
+                                        Text(context.watch<AppSettingsProvider>().l10n.homeSearchHint, style: TextStyle(color: Colors.white.withValues(alpha: 0.80), fontSize: 14, fontWeight: FontWeight.w500)),
                                       ]),
                                     ),
                                   ),
@@ -782,15 +787,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildQuickAccessGrid() {
+    final l10n = context.watch<AppSettingsProvider>().l10n;
     final items = [
-      _QuickItem(HugeIcons.strokeRoundedLocation06, '地圖探索', const Color(0xFFE6F0E6), () => widget.onSwitchTab?.call(2)),
-      _QuickItem(HugeIcons.strokeRoundedCalendar03, '行程管理', const Color(0xFFF5EFE6), () => widget.onSwitchTab?.call(1)),
-      _QuickItem(HugeIcons.strokeRoundedWallet01, '旅遊分帳', const Color(0xFFEDF5ED), () => Navigator.push(context, _goRoute(const ExpenseScreen()))),
-      _QuickItem(HugeIcons.strokeRoundedUserGroup, '旅遊社群', const Color(0xFFEBEFF2), () => widget.onSwitchTab?.call(3)),
-      _QuickItem(HugeIcons.strokeRoundedTicket01, '活動行事曆', const Color(0xFFF0EBF5), () => widget.onGoToTripCalendar?.call()),
-      _QuickItem(HugeIcons.strokeRoundedBus01, '交通動態', const Color(0xFFE8F0F5), () => Navigator.push(context, _goRoute(TransportScreen(onSwitchTab: (idx) => widget.onSwitchTab?.call(idx == 1 ? 2 : idx))))),
-      _QuickItem(HugeIcons.strokeRoundedStar, '集章成就', const Color(0xFFF5F0E8), () => widget.onSwitchTab?.call(4)),
-      _QuickItem(HugeIcons.strokeRoundedCamera01, '打卡相機', const Color(0xFFF0EDF5), () => Navigator.push(context, _goRoute(const CameraScreen()))),
+      _QuickItem(HugeIcons.strokeRoundedLocation06, l10n.homeMapExplore,   const Color(0xFFE6F0E6), () => widget.onSwitchTab?.call(2)),
+      _QuickItem(HugeIcons.strokeRoundedCalendar03, l10n.homeTripPlan,     const Color(0xFFF5EFE6), () => widget.onSwitchTab?.call(1)),
+      _QuickItem(HugeIcons.strokeRoundedWallet01,   l10n.homeExpenseSplit, const Color(0xFFEDF5ED), () => Navigator.push(context, _goRoute(const ExpenseScreen()))),
+      _QuickItem(HugeIcons.strokeRoundedUserGroup,  l10n.homeCommunityNav, const Color(0xFFEBEFF2), () => widget.onSwitchTab?.call(3)),
+      _QuickItem(HugeIcons.strokeRoundedTicket01,   l10n.homeEventCal,     const Color(0xFFF0EBF5), () => widget.onGoToTripCalendar?.call()),
+      _QuickItem(HugeIcons.strokeRoundedBus01,      l10n.homeTransport,    const Color(0xFFE8F0F5), () => Navigator.push(context, _goRoute(TransportScreen(onSwitchTab: (idx) => widget.onSwitchTab?.call(idx == 1 ? 2 : idx))))),
+      _QuickItem(HugeIcons.strokeRoundedStar,       l10n.homeStamps,       const Color(0xFFF5F0E8), () => widget.onSwitchTab?.call(4)),
+      _QuickItem(HugeIcons.strokeRoundedCamera01,   l10n.homeCamera,       const Color(0xFFF0EDF5), () => Navigator.push(context, _goRoute(const CameraScreen()))),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -800,7 +806,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: '快速導覽')),
+            Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: l10n.homeQuickNav)),
             _quickRow(items.sublist(0, 4), baseIndex: 0),
             const SizedBox(height: 10),
             _quickRow(items.sublist(4, 8), baseIndex: 4),
@@ -819,7 +825,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: '交通動態', actionText: '更多', onAction: () => Navigator.push(context, _goRoute(const TransportScreen())))),
+            Padding(padding: const EdgeInsets.only(left: 2, bottom: 14), child: SectionHeader(title: context.watch<AppSettingsProvider>().l10n.homeTransport, actionText: context.watch<AppSettingsProvider>().l10n.more, onAction: () => Navigator.push(context, _goRoute(const TransportScreen())))),
             Row(
               children: [
                 Expanded(child: _transportCard(Icons.directions_bus_rounded, '中山幹線', _busLine, _busInfo, const Color(0xFFC4856A), 0)),
@@ -849,7 +855,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 4),
           Text(info, style: const TextStyle(fontSize: 11, color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
           const SizedBox(height: 4),
-          Text('點此查看 ›', style: TextStyle(fontSize: 9, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w600)),
+          Text(context.read<AppSettingsProvider>().l10n.homeViewMore, style: TextStyle(fontSize: 9, color: color.withValues(alpha: 0.7), fontWeight: FontWeight.w600)),
         ]),
       ),
     );
@@ -860,7 +866,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 12), child: SectionHeader(title: '最新消息', actionText: _newsError ? '重試' : '全部', onAction: _newsError ? _fetchNews : () => Navigator.push(context, _goRoute(const NewsScreen())))),
+        Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 12), child: SectionHeader(title: context.watch<AppSettingsProvider>().l10n.homeLatestNews, actionText: _newsError ? context.read<AppSettingsProvider>().l10n.retry : context.read<AppSettingsProvider>().l10n.all, onAction: _newsError ? _fetchNews : () => Navigator.push(context, _goRoute(const NewsScreen())))),
         if (_newsLoading) SizedBox(height: 100, child: Center(child: CircularProgressIndicator(color: primary, strokeWidth: 2.5))),
         if (!_newsLoading && (_newsError || _newsItems.isEmpty))
           Padding(
@@ -873,7 +879,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(children: [
                   const Icon(Icons.inbox_rounded, size: 26, color: AppColors.textHint),
                   const SizedBox(width: 12),
-                  Expanded(child: Text(_newsError ? '載入失敗，點此重試' : '目前無最新消息', style: const TextStyle(color: AppColors.textHint, fontSize: 13))),
+                  Expanded(child: Text(_newsError ? context.read<AppSettingsProvider>().l10n.homeNewsLoadFail : context.read<AppSettingsProvider>().l10n.homeNoNews, style: const TextStyle(color: AppColors.textHint, fontSize: 13))),
                   if (_newsError) Icon(Icons.refresh_rounded, color: primary, size: 20),
                 ]),
               ),
@@ -889,7 +895,7 @@ class _HomeScreenState extends State<HomeScreen> {
               itemBuilder: (_, index) {
                 final item = _newsItems[index];
                 final (catColor, catIconData) = deptColorIcon(item.location, item.isEvent);
-                final catLabel = item.isEvent ? '活動' : '新聞';
+                final catLabel = item.isEvent ? context.read<AppSettingsProvider>().l10n.homeNewsEventLabel : context.read<AppSettingsProvider>().l10n.homeNewsNewsLabel;
                 final subtitle = cleanHtml(item.summary ?? item.location ?? '');
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -916,7 +922,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             Row(children: [
                               if (subtitle.isNotEmpty) Expanded(child: Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textHint, height: 1.2), maxLines: 1, overflow: TextOverflow.ellipsis)) else const Spacer(),
                               const SizedBox(width: 6),
-                              Text('看完整', style: TextStyle(fontSize: 10, color: catColor, fontWeight: FontWeight.w600)),
+                              Text(context.read<AppSettingsProvider>().l10n.homeReadFull, style: TextStyle(fontSize: 10, color: catColor, fontWeight: FontWeight.w600)),
                               Icon(Icons.arrow_forward_ios_rounded, size: 8, color: catColor),
                             ]),
                           ],
@@ -958,24 +964,24 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
               Row(children: [
-                Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text(item.isEvent ? '活動' : '新聞', style: TextStyle(color: catColor, fontSize: 12, fontWeight: FontWeight.w600))),
+                Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: catColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text(item.isEvent ? context.read<AppSettingsProvider>().l10n.newsTabEvent : context.read<AppSettingsProvider>().l10n.newsTabNews, style: TextStyle(color: catColor, fontSize: 12, fontWeight: FontWeight.w600))),
                 const Spacer(),
                 if (item.date.isNotEmpty) Text(item.date, style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
               ]),
               const SizedBox(height: 10),
-              Text(item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.4)),
+              TranslatedText(text: item.title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.textPrimary, height: 1.4), domain: TranslationDomain.news),
               if (item.location != null && item.location!.isNotEmpty) ...[
                 const SizedBox(height: 6),
                 Row(children: [const Icon(Icons.business_rounded, size: 13, color: AppColors.textHint), const SizedBox(width: 4), Expanded(child: Text(item.location!, style: const TextStyle(color: AppColors.textHint, fontSize: 12)))],),
               ],
               const Divider(height: 24),
-              if (cleanedSummary.isNotEmpty) SelectableText(cleanedSummary, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.85)),
+              if (cleanedSummary.isNotEmpty) TranslatedText(text: cleanedSummary, style: const TextStyle(fontSize: 15, color: AppColors.textSecondary, height: 1.85), domain: TranslationDomain.news),
               const SizedBox(height: 20),
               if (item.url != null && item.url!.isNotEmpty) ...[
                 Row(children: [
-                  Expanded(child: ElevatedButton.icon(onPressed: () async { try { final raw = item.url!.trim(); final uri = Uri.parse(raw.startsWith('http') ? raw : 'https://$raw'); await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) { if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法開啟連結'), behavior: SnackBarBehavior.floating)); } } }, icon: const Icon(Icons.open_in_new_rounded, size: 16), label: const Text('開啟原始連結'))),
+                  Expanded(child: ElevatedButton.icon(onPressed: () async { try { final raw = item.url!.trim(); final uri = Uri.parse(raw.startsWith('http') ? raw : 'https://$raw'); await launchUrl(uri, mode: LaunchMode.externalApplication); } catch (_) { if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.newsCannotOpen), behavior: SnackBarBehavior.floating)); } } }, icon: const Icon(Icons.open_in_new_rounded, size: 16), label: Text(context.read<AppSettingsProvider>().l10n.newsOpenOriginal))),
                   const SizedBox(width: 10),
-                  OutlinedButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: item.url!)); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已複製連結'), duration: Duration(seconds: 2), behavior: SnackBarBehavior.floating)); }, icon: const Icon(Icons.copy_rounded, size: 16), label: const Text('複製')),
+                  OutlinedButton.icon(onPressed: () { Clipboard.setData(ClipboardData(text: item.url!)); ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.newsCopied), duration: const Duration(seconds: 2), behavior: SnackBarBehavior.floating)); }, icon: const Icon(Icons.copy_rounded, size: 16), label: Text(context.read<AppSettingsProvider>().l10n.newsCopyLink)),
                 ]),
               ],
             ],
@@ -1139,8 +1145,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(children: [const Icon(Icons.location_on_outlined, size: 14, color: AppColors.textHint), const SizedBox(width: 6), Expanded(child: Text(s.address, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4)))])
               ],
               if (s.description.isNotEmpty) ...[
-                const Divider(height: 28), const Text('簡介', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
-                const SizedBox(height: 8), Text(s.description, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.75)),
+                const Divider(height: 28), Text(context.read<AppSettingsProvider>().l10n.widgetSpotIntro, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                const SizedBox(height: 8), TranslatedText(text: s.description, style: const TextStyle(fontSize: 13, color: AppColors.textPrimary, height: 1.75), domain: TranslationDomain.spot),
               ],
               const SizedBox(height: 20),
               SizedBox(

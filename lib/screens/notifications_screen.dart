@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
 import '../theme/fabric_textures.dart';
 
@@ -121,7 +123,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           return Row(mainAxisSize: MainAxisSize.min, children: [
             DoodleHeart(color: p.withValues(alpha: 0.55), size: 10),
             const SizedBox(width: 6),
-            const Text('通知中心', style: TextStyle(fontWeight: FontWeight.w800)),
+            Text(context.watch<AppSettingsProvider>().l10n.notifCenter, style: const TextStyle(fontWeight: FontWeight.w800)),
             const SizedBox(width: 6),
             DoodleLightning(color: p.withValues(alpha: 0.55), size: 10),
           ]);
@@ -173,13 +175,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             color: primary.withValues(alpha: 0.10),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: Text('$unreadCount 則未讀',
+                          child: Text(context.read<AppSettingsProvider>().l10n.notifUnread(unreadCount),
                               style: TextStyle(fontSize: 11, color: primary, fontWeight: FontWeight.w700)),
                         ),
                         const Spacer(),
                         TextButton(
                           onPressed: () => _markAllRead(items),
-                          child: Text('全部已讀',
+                          child: Text(context.read<AppSettingsProvider>().l10n.notifMarkAllRead,
                               style: TextStyle(color: primary, fontSize: 13)),
                         ),
                       ]),

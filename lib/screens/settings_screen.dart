@@ -96,7 +96,7 @@ class SettingsScreen extends StatelessWidget {
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: Text(
-                    settings.currentTheme.name,
+                    settings.currentTheme.localizedName(settings.langCode),
                     key: ValueKey(settings.themeIndex),
                     style: TextStyle(
                       fontSize: 13,
@@ -112,8 +112,53 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
+          // ── 語言 ──────────────────────────────────────────
+          _SectionHeader(title: l10n.language, icon: Icons.language_rounded),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: StitchedBox(
+              color: AppColors.surface,
+              stitchColor: primary.withValues(alpha: 0.20),
+              radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: AppL10n.langOptions.map((opt) {
+                  final selected = settings.langCode == opt.code;
+                  return GestureDetector(
+                    onTap: () => context.read<AppSettingsProvider>().setLang(opt.code),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: selected ? primary.withValues(alpha: 0.12) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: selected ? primary : AppColors.divider,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text(opt.emoji, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(height: 4),
+                        Text(opt.native,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            color: selected ? primary : AppColors.textSecondary,
+                          )),
+                      ]),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
           // ── 預覽 ──────────────────────────────────────────
-          _SectionHeader(title: '預覽效果', icon: Icons.visibility_rounded),
+          _SectionHeader(title: l10n.settingsPreview, icon: Icons.visibility_rounded),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: _ThemePreview(primary: primary),
@@ -122,13 +167,13 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ── 通知設定 ──────────────────────────────────────
-          _SectionHeader(title: '通知設定', icon: Icons.notifications_rounded),
-          const _NotificationSettings(),
+          _SectionHeader(title: l10n.settingsNotifications, icon: Icons.notifications_rounded),
+          _NotificationSettings(l10n: l10n),
 
           const SizedBox(height: 20),
 
           // ── 開發者工具 ────────────────────────────────────
-          _SectionHeader(title: '開發者工具', icon: Icons.developer_mode_rounded),
+          _SectionHeader(title: l10n.settingsDevTools, icon: Icons.developer_mode_rounded),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: StitchedBox(
@@ -145,8 +190,8 @@ class SettingsScreen extends StatelessWidget {
                 ),
                 child: const Icon(Icons.cloud_upload_rounded, size: 18, color: Color(0xFFE65100)),
               ),
-              title: const Text('Firebase 測試資料', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              subtitle: const Text('上傳假貼文測試按讚/收藏', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+              title: Text(l10n.settingsFirebaseSeed, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(l10n.settingsFirebaseSeedSub, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
               trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
               onTap: () => Navigator.push(context,
                 MaterialPageRoute(builder: (_) => const FirebaseSeedScreen())),
@@ -163,7 +208,8 @@ class SettingsScreen extends StatelessWidget {
 
 // ── 通知設定區塊 ──────────────────────────────────────────────
 class _NotificationSettings extends StatefulWidget {
-  const _NotificationSettings();
+  final AppL10n l10n;
+  const _NotificationSettings({required this.l10n});
   @override
   State<_NotificationSettings> createState() => _NotificationSettingsState();
 }
@@ -210,16 +256,16 @@ class _NotificationSettingsState extends State<_NotificationSettings> {
         radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
         padding: EdgeInsets.zero,
         child: Column(children: [
-          _notifTile('推播通知', '接收 App 所有通知', Icons.notifications_active_rounded,
+          _notifTile(widget.l10n.settingsNotifPush, widget.l10n.settingsNotifPushSub, Icons.notifications_active_rounded,
               _pushEnabled, primary, (v) { setState(() => _pushEnabled = v); _setpref('push', v); }),
           const Divider(height: 1, indent: 54),
-          _notifTile('最新消息', '嘉義市政府新聞與活動', Icons.newspaper_rounded,
+          _notifTile(widget.l10n.settingsNotifNews, widget.l10n.settingsNotifNewsSub, Icons.newspaper_rounded,
               _newsEnabled, primary, (v) { setState(() => _newsEnabled = v); _setpref('news', v); }),
           const Divider(height: 1, indent: 54),
-          _notifTile('社群互動', '按讚、留言、追蹤通知', Icons.people_rounded,
+          _notifTile(widget.l10n.settingsNotifComm, widget.l10n.settingsNotifCommSub, Icons.people_rounded,
               _communityEnabled, primary, (v) { setState(() => _communityEnabled = v); _setpref('community', v); }),
           const Divider(height: 1, indent: 54),
-          _notifTile('行程提醒', '出發前一天自動提醒', Icons.calendar_today_rounded,
+          _notifTile(widget.l10n.settingsNotifTrip, widget.l10n.settingsNotifTripSub, Icons.calendar_today_rounded,
               _tripEnabled, primary, (v) { setState(() => _tripEnabled = v); _setpref('trip', v); }),
         ]),
       ),
@@ -286,7 +332,9 @@ class _ThemePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mist = Color.lerp(primary, Colors.white, 0.88)!;
+    final mist  = Color.lerp(primary, Colors.white, 0.88)!;
+    final l10n  = context.watch<AppSettingsProvider>().l10n;
+    final navLabels = [l10n.navHome, l10n.navMap, l10n.navTrip, l10n.navStamp];
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -305,9 +353,9 @@ class _ThemePreview extends StatelessWidget {
                 color: primary,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Center(
-                child: Text('按鈕',
-                    style: TextStyle(
+              child: Center(
+                child: Text(l10n.previewButton,
+                    style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w700)),
@@ -322,7 +370,7 @@ class _ThemePreview extends StatelessWidget {
                 border: Border.all(color: primary.withValues(alpha: 0.4)),
               ),
               child: Center(
-                child: Text('次要',
+                child: Text(l10n.previewSecondary,
                     style: TextStyle(
                         color: primary,
                         fontSize: 11,
@@ -344,8 +392,8 @@ class _ThemePreview extends StatelessWidget {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: ['首頁', '地圖', '行程', '集章'].map((label) {
-                final active = label == '首頁';
+              children: navLabels.asMap().entries.map((e) {
+                final active = e.key == 0;
                 return AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(
@@ -355,12 +403,10 @@ class _ThemePreview extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    label,
+                    e.value,
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: active
-                          ? FontWeight.w700
-                          : FontWeight.w400,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                       color: active ? primary : AppColors.textHint,
                     ),
                   ),

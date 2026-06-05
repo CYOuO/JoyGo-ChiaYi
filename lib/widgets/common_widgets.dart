@@ -4,7 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../providers/app_settings_provider.dart';
+import '../services/translation_service.dart';
 
 // ===== SPOT CARD =====
 class SpotCard extends StatefulWidget {
@@ -568,15 +571,15 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
         Row(children: [
           const Icon(Icons.favorite_rounded, size: 15, color: AppColors.error),
           const SizedBox(width: 6),
-          const Text('我的評分',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+          Text(context.read<AppSettingsProvider>().l10n.widgetMyRating,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
                   color: AppColors.textSecondary)),
           if (_rating > 0) ...[
             const Spacer(),
             GestureDetector(
               onTap: () => setState(() { _rating = 0; _saved = false; }),
-              child: const Text('清除',
-                  style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+              child: Text(context.read<AppSettingsProvider>().l10n.widgetClear,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
             ),
           ],
         ]),
@@ -609,8 +612,8 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
         Row(children: [
           const Icon(Icons.edit_note_rounded, size: 15, color: AppColors.textSecondary),
           const SizedBox(width: 6),
-          const Text('備註',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+          Text(context.read<AppSettingsProvider>().l10n.widgetNotes,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
                   color: AppColors.textSecondary)),
         ]),
         const SizedBox(height: 8),
@@ -621,7 +624,7 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
           minLines: 2,
           onChanged: (_) { if (_saved) setState(() => _saved = false); },
           decoration: InputDecoration(
-            hintText: '記下你的感想、提醒或重要資訊…',
+            hintText: context.read<AppSettingsProvider>().l10n.widgetNoteHint,
             hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
             filled: true,
             fillColor: AppColors.surfaceWarm,
@@ -654,7 +657,7 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
               icon: Icon(
                   _saved ? Icons.check_circle_rounded : Icons.save_outlined,
                   size: 16),
-              label: Text(_saved ? '已儲存' : '儲存評分與備註'),
+              label: Text(_saved ? context.read<AppSettingsProvider>().l10n.done : context.read<AppSettingsProvider>().l10n.widgetSaveRating),
               style: ElevatedButton.styleFrom(
                 backgroundColor: _saved ? const Color(0xFF2E7D32) : primary,
                 foregroundColor: Colors.white,
@@ -1590,4 +1593,87 @@ class _EmptyScenePainter extends CustomPainter {
   }
 
   @override bool shouldRepaint(_EmptyScenePainter old) => old.color != color || old.scene != scene;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  TranslatedText
+//  Displays Chinese text, auto-translated to EN/JA using
+//  Gemini Flash when the app language is not 'zh'.
+//  Results are cached in SharedPreferences.
+//
+//  Usage:
+//    TranslatedText(
+//      text: spot.description,
+//      style: TextStyle(fontSize: 13),
+//      domain: TranslationDomain.spot,
+//    )
+// ═══════════════════════════════════════════════════════════
+class TranslatedText extends StatefulWidget {
+  final String      text;
+  final TextStyle?  style;
+  final int?        maxLines;
+  final TextOverflow overflow;
+  final TranslationDomain domain;
+
+  const TranslatedText({
+    super.key,
+    required this.text,
+    this.style,
+    this.maxLines,
+    this.overflow = TextOverflow.clip,
+    this.domain   = TranslationDomain.general,
+  });
+
+  @override
+  State<TranslatedText> createState() => _TranslatedTextState();
+}
+
+class _TranslatedTextState extends State<TranslatedText> {
+  String? _translated;
+  bool    _loading = false;
+  String? _lastLang;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final lang = context.read<AppSettingsProvider>().langCode;
+    if (lang != _lastLang) {
+      _lastLang = lang;
+      _load(lang);
+    }
+  }
+
+  Future<void> _load(String lang) async {
+    if (lang == 'zh') {
+      if (mounted) setState(() { _translated = null; _loading = false; });
+      return;
+    }
+    if (widget.text.trim().isEmpty) return;
+
+    if (mounted) setState(() => _loading = true);
+
+    final result = await TranslationService.translate(
+      widget.text,
+      lang,
+      domain: widget.domain,
+    );
+
+    if (mounted) setState(() { _translated = result; _loading = false; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // While loading show original with shimmer-style opacity
+    final display = (_translated?.isNotEmpty == true) ? _translated! : widget.text;
+    return AnimatedOpacity(
+      opacity: _loading ? 0.45 : 1.0,
+      duration: const Duration(milliseconds: 200),
+      child: Text(
+        display,
+        style:    widget.style,
+        maxLines: widget.maxLines,
+        overflow: widget.overflow,
+      ),
+    );
+  }
 }

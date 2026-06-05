@@ -203,7 +203,7 @@ class _LoginPageState extends State<LoginPage>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('歡迎加入探索諸羅，$nickname！'),
+          content: Text(context.read<AppSettingsProvider>().l10n.loginWelcomeNew(nickname)),
           backgroundColor: Theme.of(context).colorScheme.primary,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -226,22 +226,22 @@ class _LoginPageState extends State<LoginPage>
         return AlertDialog(
           backgroundColor: AppColors.surface,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text('重設密碼', style: TextStyle(fontWeight: FontWeight.w800)),
+          title: Text(context.read<AppSettingsProvider>().l10n.loginResetTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('請輸入你的電子郵件，\n我們將寄送密碼重設連結。',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.5)),
+            Text(context.read<AppSettingsProvider>().l10n.loginResetDesc,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, height: 1.5)),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               keyboardType: TextInputType.emailAddress,
-              decoration: const InputDecoration(
-                labelText: '電子郵件',
-                prefixIcon: Icon(Icons.email_outlined, size: 18),
+              decoration: InputDecoration(
+                labelText: context.read<AppSettingsProvider>().l10n.loginEmail,
+                prefixIcon: const Icon(Icons.email_outlined, size: 18),
               ),
             ),
           ]),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            TextButton(onPressed: () => Navigator.pop(ctx), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
             ElevatedButton(
               onPressed: () async {
                 final email = ctrl.text.trim();
@@ -251,7 +251,7 @@ class _LoginPageState extends State<LoginPage>
                   if (!mounted) return;
                   Navigator.pop(ctx);
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: const Text('密碼重設郵件已寄出，請檢查收件匣'),
+                    content: Text(context.read<AppSettingsProvider>().l10n.loginResetSent),
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -262,7 +262,7 @@ class _LoginPageState extends State<LoginPage>
                   _showError(_authErrorMsg(e.code));
                 }
               },
-              child: const Text('發送'),
+              child: Text(context.read<AppSettingsProvider>().l10n.loginSendBtn),
             ),
           ],
         );
@@ -373,7 +373,7 @@ class _LoginPageState extends State<LoginPage>
                   Row(children: [
                     DoodleHeart(color: accentPurple.withValues(alpha: 0.60), size: 9),
                     const SizedBox(width: 5),
-                    Text('嘉義旅遊夥伴，陪你玩遍嘉義！',
+                    Text(context.read<AppSettingsProvider>().l10n.loginBrandSubtitle,
                       style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.w600)),
                     const SizedBox(width: 5),
                     DoodleHeart(color: accentPurple.withValues(alpha: 0.60), size: 9),
@@ -436,7 +436,7 @@ class _LoginPageState extends State<LoginPage>
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 18),
-                            child: JournalDivider(color: accentPurple.withValues(alpha: 0.30), label: '或'),
+                            child: JournalDivider(color: accentPurple.withValues(alpha: 0.30), label: context.read<AppSettingsProvider>().l10n.loginOrDivider),
                           ),
                           _socialBtn('Google',   accentPurple, Icons.g_mobiledata_rounded, accentPurple, onTap: _doGoogleSignIn),
                           const SizedBox(height: 10),
@@ -448,8 +448,8 @@ class _LoginPageState extends State<LoginPage>
                             RichText(text: TextSpan(
                               style: TextStyle(fontSize: 11, color: accentPurple.withValues(alpha: 0.55)),
                               children: [
-                                const TextSpan(text: '登入即代表同意 JoyGo '),
-                                TextSpan(text: '服務條款與隱私政策',
+                                TextSpan(text: context.read<AppSettingsProvider>().l10n.loginTerms),
+                                TextSpan(text: context.read<AppSettingsProvider>().l10n.loginTermsLink,
                                   style: TextStyle(color: accentPurple, fontWeight: FontWeight.w600, decoration: TextDecoration.underline, decorationColor: accentPurple)),
                               ],
                             )),
@@ -471,39 +471,41 @@ class _LoginPageState extends State<LoginPage>
 
   // ── 登入表單 ──────────────────────────────────────────────
   Widget _loginForm(Color primary, {Key? key}) {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     return Column(key: key, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FormTitle(title: '歡迎回來！', subtitle: '登入帳號繼續探索嘉義', primary: primary),
+      _FormTitle(title: l10n.loginWelcomeBack, subtitle: l10n.loginSignInSubtitle, primary: primary),
       const SizedBox(height: 20),
-      _field(_emailCtrl, '電子郵件', Icons.mail_outline_rounded, primary, type: TextInputType.emailAddress, action: TextInputAction.next),
+      _field(_emailCtrl, l10n.loginEmail, Icons.mail_outline_rounded, primary, type: TextInputType.emailAddress, action: TextInputAction.next),
       const SizedBox(height: 12),
-      _pwField(_passwordCtrl, '密碼', _loginPwVisible, () => setState(() => _loginPwVisible = !_loginPwVisible), primary, onSubmit: _doLogin),
+      _pwField(_passwordCtrl, l10n.loginPassword, _loginPwVisible, () => setState(() => _loginPwVisible = !_loginPwVisible), primary, onSubmit: _doLogin),
       const SizedBox(height: 8),
       Align(
         alignment: Alignment.centerRight,
         child: GestureDetector(
           onTap: _showForgotPassword,
-          child: Text('忘記密碼？', style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w600)),
+          child: Text(l10n.loginForgotPw, style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w600)),
         ),
       ),
       const SizedBox(height: 22),
-      _submitBtn('登入 ✦', _isLoading, primary, _doLogin),
+      _submitBtn(l10n.loginBtn, _isLoading, primary, _doLogin),
     ]);
   }
 
   // ── 註冊表單 ──────────────────────────────────────────────
   Widget _registerForm(Color primary, {Key? key}) {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     return Column(key: key, crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FormTitle(title: '建立帳號', subtitle: '加入探索諸羅，嘉義等你', primary: primary),
+      _FormTitle(title: l10n.loginRegisterTitle, subtitle: l10n.loginRegisterSub, primary: primary),
       const SizedBox(height: 20),
-      _field(_nicknameCtrl, '暱稱', Icons.person_outline_rounded, primary, action: TextInputAction.next),
+      _field(_nicknameCtrl, l10n.loginNickname, Icons.person_outline_rounded, primary, action: TextInputAction.next),
       const SizedBox(height: 12),
-      _field(_emailCtrl, '電子郵件', Icons.mail_outline_rounded, primary, type: TextInputType.emailAddress, action: TextInputAction.next),
+      _field(_emailCtrl, l10n.loginEmail, Icons.mail_outline_rounded, primary, type: TextInputType.emailAddress, action: TextInputAction.next),
       const SizedBox(height: 12),
-      _pwField(_passwordCtrl, '密碼（至少 6 位）', _registerPwVisible, () => setState(() => _registerPwVisible = !_registerPwVisible), primary, action: TextInputAction.next),
+      _pwField(_passwordCtrl, l10n.loginPasswordMin, _registerPwVisible, () => setState(() => _registerPwVisible = !_registerPwVisible), primary, action: TextInputAction.next),
       const SizedBox(height: 12),
-      _pwField(_confirmCtrl, '確認密碼', _confirmPwVisible, () => setState(() => _confirmPwVisible = !_confirmPwVisible), primary, onSubmit: _doRegister),
+      _pwField(_confirmCtrl, l10n.loginConfirmPw, _confirmPwVisible, () => setState(() => _confirmPwVisible = !_confirmPwVisible), primary, onSubmit: _doRegister),
       const SizedBox(height: 22),
-      _submitBtn('建立帳號 ✦', _isLoading, primary, _doRegister),
+      _submitBtn(l10n.loginCreateBtn, _isLoading, primary, _doRegister),
     ]);
   }
 
@@ -569,7 +571,7 @@ class _LoginPageState extends State<LoginPage>
     return OutlinedButton(
       onPressed: _isLoading ? null : (isReal ? onTap : () {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('$platform 登入 — 即將推出'),
+          content: Text(context.read<AppSettingsProvider>().l10n.loginComingSoon(platform)),
           backgroundColor: primary,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -585,7 +587,7 @@ class _LoginPageState extends State<LoginPage>
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(icon, color: accent, size: 20),  // icon 才帶品牌色
         const SizedBox(width: 10),
-        Text('使用 $platform 帳號登入',
+        Text(context.read<AppSettingsProvider>().l10n.loginWithPlatform(platform),
           style: TextStyle(color: primary, fontWeight: FontWeight.w600, fontSize: 14)),
       ]),
     );

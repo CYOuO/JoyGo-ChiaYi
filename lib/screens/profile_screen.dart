@@ -1382,13 +1382,34 @@ class _CouponsScreenState extends State<CouponsScreen> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
+        // 不加 orderBy 避免 Firestore composite index 需求，client 端排序
         stream: _db.collection('coupons')
             .where('isActive', isEqualTo: true)
-            .orderBy('createdAt', descending: true)
             .snapshots(),
         builder: (ctx, couponSnap) {
-          if (!couponSnap.hasData) return const Center(child: CircularProgressIndicator());
-          final coupons = couponSnap.data!.docs;
+          // 只在第一次等待時顯示 loading，避免一直轉圈
+          if (couponSnap.connectionState == ConnectionState.waiting &&
+              !couponSnap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          // 有錯誤（如 Firestore 權限/index）或無資料 → 直接顯示空狀態
+          if (couponSnap.hasError || !couponSnap.hasData) {
+            return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.local_offer_outlined, size: 52, color: AppColors.textHint.withValues(alpha: 0.5)),
+              const SizedBox(height: 14),
+              const Text('目前沒有優惠券', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              const SizedBox(height: 6),
+              const Text('敬請期待管理員上架更多優惠！', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+            ]));
+          }
+          // 按 createdAt 降序排序（client 端）
+          final coupons = couponSnap.data!.docs.toList()
+            ..sort((a, b) {
+              final ta = (a.data() as Map)['createdAt'];
+              final tb = (b.data() as Map)['createdAt'];
+              if (ta == null || tb == null) return 0;
+              return (tb as Timestamp).compareTo(ta as Timestamp);
+            });
 
           if (coupons.isEmpty) {
             return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -1626,202 +1647,3 @@ class _CouponCardState extends State<_CouponCard> {
   }
 }
 
-// ── 舊的靜態假資料 class（保留給舊版相容，實際已不使用）──────
-class _CouponData {
-  final String title, desc, expiry;
-  final IconData icon;
-  final Color color;
-  final bool isUsed;
-  const _CouponData({
-    required this.title, required this.desc, required this.expiry,
-    required this.icon, required this.color, required this.isUsed,
-  });
-      title: '嘉義市立博物館免費入場',
-      desc: '憑 App 集章 3 個以上，免費參觀一次',
-      expiry: '2026/12/31',
-      icon: Icons.account_balance_rounded,
-      color: Color(0xFF5B7CE8),
-      isUsed: false,
-    ),
-    _CouponData(
-      title: '阿里山森鐵 9 折優惠',
-      desc: '搭乘阿里山森林鐵路享 9 折折扣',
-      expiry: '2026/09/30',
-      icon: Icons.landscape_rounded,
-      color: Color(0xFF5B8A5F),
-      isUsed: false,
-    ),
-    _CouponData(
-      title: '文化路夜市美食導覽',
-      desc: '免費參加每週六文化路美食導覽行程',
-      expiry: '2026/08/31',
-      icon: Icons.restaurant_rounded,
-      color: Color(0xFFC4856A),
-      isUsed: true,
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('優惠券', style: TextStyle(fontWeight: FontWeight.w800)),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // 提示卡片
-          Container(
-            padding: const EdgeInsets.all(14),
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [primary.withValues(alpha: 0.12), primary.withValues(alpha: 0.05)],
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(children: [
-              Icon(Icons.local_fire_department_rounded, color: primary, size: 24),
-              const SizedBox(width: 10),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('持續探索，解鎖更多優惠！',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
-                const SizedBox(height: 2),
-                const Text('集章打卡即可獲得景點周邊專屬折扣',
-                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-              ])),
-            ]),
-          ),
-          ..._kCoupons.map((c) => _CouponCard(coupon: c, primary: primary)),
-        ],
-      ),
-    );
-  }
-}
-
-class _CouponData {
-  final String title, desc, expiry;
-  final IconData icon;
-  final Color color;
-  final bool isUsed;
-  const _CouponData({
-    required this.title, required this.desc, required this.expiry,
-    required this.icon, required this.color, required this.isUsed,
-  });
-}
-
-class _CouponCard extends StatefulWidget {
-  final _CouponData coupon;
-  final Color primary;
-  const _CouponCard({required this.coupon, required this.primary});
-  @override State<_CouponCard> createState() => _CouponCardState();
-}
-class _CouponCardState extends State<_CouponCard> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = widget.coupon;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: c.isUsed ? AppColors.background : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.isUsed ? AppColors.divider : c.color.withValues(alpha: 0.3), width: 1.5),
-        boxShadow: c.isUsed ? [] : [
-          BoxShadow(color: c.color.withValues(alpha: 0.10), blurRadius: 10, offset: const Offset(0, 3)),
-        ],
-      ),
-      child: Column(children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => setState(() => _expanded = !_expanded),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(children: [
-              // 圖示
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: (c.isUsed ? AppColors.textHint : c.color).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(c.icon, color: c.isUsed ? AppColors.textHint : c.color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(c.title,
-                  style: TextStyle(
-                    fontSize: 14, fontWeight: FontWeight.w800,
-                    color: c.isUsed ? AppColors.textHint : AppColors.textPrimary,
-                    decoration: c.isUsed ? TextDecoration.lineThrough : null,
-                  )),
-                const SizedBox(height: 3),
-                Row(children: [
-                  Icon(Icons.access_time_rounded, size: 11, color: AppColors.textHint),
-                  const SizedBox(width: 3),
-                  Text('效期至 ${c.expiry}',
-                    style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                ]),
-              ])),
-              // 狀態
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: c.isUsed
-                      ? AppColors.divider
-                      : c.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  c.isUsed ? '已使用' : '未使用',
-                  style: TextStyle(
-                    fontSize: 10, fontWeight: FontWeight.w700,
-                    color: c.isUsed ? AppColors.textHint : c.color,
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ),
-        if (_expanded && !c.isUsed) ...[
-          Divider(height: 1, color: c.color.withValues(alpha: 0.15)),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.desc,
-                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5)),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: const Text('優惠碼已複製！至現場出示即可使用'),
-                      backgroundColor: c.color,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ));
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: c.color, foregroundColor: Colors.white,
-                    elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  child: const Text('立即使用', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ]),
-          ),
-        ],
-      ]),
-    );
-  }
-}

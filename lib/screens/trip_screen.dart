@@ -14,7 +14,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
-import '../models/dummy_data.dart';
+// dummy_data.dart removed — all spots now use SpotService.cached
 import '../widgets/common_widgets.dart';
 import '../services/trip_service.dart';
 import '../services/local_fav_service.dart';
@@ -191,7 +191,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     final toSync = Set<String>.from(_guestSavedIds);
     if (toSync.isEmpty) return;
     for (final spotId in toSync) {
-      final matches = DummyData.spots.where((s) => s.id == spotId);
+      final matches = SpotService.cached.where((s) => s.id == spotId);
       if (matches.isNotEmpty) {
         final s = matches.first;
         await TripService.toggleSavedSpot(spotId, spotName: s.name, imageUrl: s.imageUrl, rating: s.rating);
@@ -1062,7 +1062,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     );
   }
 
-  // ── Saved spots ── Shows ALL saved spots (map spots + DummyData spots)
+  // ── Saved spots ── Shows ALL saved spots
   Widget _buildSavedSpotsTab() {
     final user = _authUser;
     if (user != null) {
@@ -1088,8 +1088,8 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         },
       );
     } else {
-      // Guest: show DummyData spots filtered by local IDs
-      final savedSpots = DummyData.spots.where((s) => _guestSavedIds.contains(s.id)).toList();
+      // Guest: 從 LocalFavService 讀取本地收藏
+      final savedSpots = SpotService.cached.where((s) => _guestSavedIds.contains(s.id)).toList();
       final rawGuest = savedSpots.map((s) => {
         'spotId': s.id, 'spotName': s.name,
         'imageUrl': s.imageUrl, 'rating': s.rating,
@@ -1097,8 +1097,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
       return _savedSpotsGridRaw(
         rawSpots: rawGuest,
         onUnsave: (spotId, spotName) async {
-          final s = DummyData.spots.firstWhere((x) => x.id == spotId, orElse: () => DummyData.spots.first);
-          await _toggleGuestFavorite(s);
+          final spot = SpotService.cached.firstWhere((x) => x.id == spotId,
+              orElse: () => Spot(id: spotId, name: spotName, nameEn: '', category: '', address: '', imageUrl: '', description: '', openHours: '', rating: 0, lat: 0, lng: 0));
+          await _toggleGuestFavorite(spot);
         },
         isGuest: true,
       );
@@ -1236,13 +1237,14 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     5: ['restaurant'],
   };
 
-  // ── 根據偏好從 DummyData 過濾推薦景點 ─────────────────────────
+  // ── 根據偏好從 SpotService 快取過濾推薦景點 ─────────────────────
   List<Spot> _generateSuggestions(Set<int> selected) {
-    if (selected.isEmpty) return DummyData.spots.take(6).toList();
+    final allSpots = SpotService.cached;
+    if (selected.isEmpty) return allSpots.take(6).toList();
     final categories = selected
         .expand((i) => _prefCategories[i] ?? <String>[])
         .toSet();
-    var spots = DummyData.spots
+    var spots = allSpots
         .where((s) => categories.contains(s.category))
         .toList();
     // 已在候選清單的排到後面
@@ -1586,11 +1588,12 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     final fbAddress   = d['address']?.toString() ?? '';
     final fbCategory  = d['category']?.toString() ?? '';
 
-    // 嘗試從 DummyData 補充更多資訊（精確 → 名稱 → 模糊）
+    // 從 SpotService 快取補充更多資訊（精確 → 名稱 → 模糊）
     Spot? info;
-    try { info = DummyData.spots.firstWhere((s) => s.id == spotId); } catch (_) {}
-    if (info == null) try { info = DummyData.spots.firstWhere((s) => s.name == spotName); } catch (_) {}
-    if (info == null) try { info = DummyData.spots.firstWhere((s) => s.name.contains(spotName) || spotName.contains(s.name)); } catch (_) {}
+    final cache = SpotService.cached;
+    info ??= cache.where((s) => s.id == spotId).firstOrNull;
+    info ??= cache.where((s) => s.name == spotName).firstOrNull;
+    info ??= cache.where((s) => s.name.contains(spotName) || spotName.contains(s.name)).firstOrNull;
 
     showModalBottomSheet(
       context: ctx,
@@ -1665,7 +1668,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 );
               }),
 
-              // ── 開放時間（DummyData 才有）─────────────────────────
+              // ── 開放時間（SpotService 快取提供）──────────────────
               if (info != null && info.openHours.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Row(children: [
@@ -1676,7 +1679,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 ]),
               ],
 
-              // ── 簡介（DummyData → Firebase → Firestore 原始文件）──
+              // ── 簡介（SpotService → Firebase → Firestore）────────
               FutureBuilder<String>(
                 future: (info?.description ?? fbDesc).isNotEmpty
                     ? Future.value(info?.description ?? fbDesc)
@@ -2998,12 +3001,11 @@ class _TripDetailPageState extends State<_TripDetailPage>
     }
   }
 
-  // 座標查詢（精確 → 模糊 → 嘉義市區佔位）
+  // 座標查詢（精確 → 模糊 → SpotService 快取）
   static Spot? _lookupSpot(String name) {
-    try { return DummyData.spots.firstWhere((s) => s.name == name); } catch (_) {}
-    try { return DummyData.spots.firstWhere(
-      (s) => s.name.contains(name) || name.contains(s.name)); } catch (_) {}
-    return null;
+    final cache = SpotService.cached;
+    return cache.where((s) => s.name == name).firstOrNull
+        ?? cache.where((s) => s.name.contains(name) || name.contains(s.name)).firstOrNull;
   }
 
   List<LatLng> _spotsToLatLngs(List<String> names) {

@@ -8,6 +8,7 @@ import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle;
 import '../models/dummy_data.dart';
 import '../services/community_service.dart';
+import '../services/spot_service.dart';
 import '../services/trip_service.dart';
 import '../widgets/common_widgets.dart' show WashiTapeDivider;
 
@@ -998,8 +999,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 
   void _showUserProfile(BuildContext context, TripPlan trip) {
-    final publishedTrips = DummyData.communityTrips
-        .where((t) => t.creatorName == trip.creatorName).length;
+    const publishedTrips = 0; // real count loaded via _loadAuthorStats
     // Use creatorName as key for dummy data users (real users would use authorId)
     final dummyUserId = 'dummy_${trip.creatorName.hashCode}';
     showModalBottomSheet(
@@ -1393,10 +1393,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   spacing: 6,
                   runSpacing: 4,
                   children: trip.spotIds.take(3).map((id) {
-                    final spot = DummyData.spots.firstWhere(
-                      (s) => s.id == id,
-                      orElse: () => DummyData.spots[0],
-                    );
+                    final spot = SpotService.cached.where((s) => s.id == id).firstOrNull;
+                    if (spot == null) return const SizedBox.shrink();
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
@@ -1449,7 +1447,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     const Icon(Icons.chat_bubble_outline_rounded,
                         size: 18, color: AppColors.textHint),
                     const SizedBox(width: 4),
-                    const Text('23',
+                    const Text('留言',
                         style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                     const SizedBox(width: 20),
                     const Icon(Icons.share_outlined, size: 18, color: AppColors.textHint),
@@ -2000,9 +1998,8 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           onPressed: () {
                             // 取得 TripPlan 的景點名稱列表，套用到行程
                             final spotNames = widget.trip.spotIds.map((id) {
-                              final spot = DummyData.spots.firstWhere(
-                                (s) => s.id == id, orElse: () => DummyData.spots.first);
-                              return spot.name;
+                              final spot = SpotService.cached.where((s) => s.id == id).firstOrNull;
+                              return spot?.name ?? id;
                             }).toList();
                             _showApplyTripSheet(context, spotNames);
                           },
@@ -2062,8 +2059,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                         ]),
                         const SizedBox(height: 12),
                         ...widget.trip.spotIds.asMap().entries.map((e) {
-                          final spot = DummyData.spots.firstWhere(
-                              (s) => s.id == e.value, orElse: () => DummyData.spots[0]);
+                          final spot = SpotService.cached.where((s) => s.id == e.value).firstOrNull;
                           final isLast = e.key == widget.trip.spotIds.length - 1;
                           return Column(children: [
                             Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -2080,11 +2076,11 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               Expanded(child: Padding(
                                 padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
                                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text(spot.name,
+                                  Text(spot?.name ?? e.value,
                                     style: const TextStyle(fontWeight: FontWeight.w700,
                                         fontSize: 14, color: AppColors.textPrimary)),
                                   const SizedBox(height: 2),
-                                  Text(spot.address,
+                                  Text(spot?.address ?? '',
                                     style: const TextStyle(fontSize: 11, color: AppColors.textHint),
                                     maxLines: 1, overflow: TextOverflow.ellipsis),
                                 ]),

@@ -8,6 +8,10 @@ class SpotService {
   SpotService._();
 
   static List<Spot>? _cached;
+
+  /// 已快取的景點清單（同步讀取；loadAllSpots 完成後才有資料）
+  static List<Spot> get cached => _cached ?? [];
+
   static const _kCacheKey = 'spot_service_cache_v1';
   static const _kTsKey = 'spot_service_ts_v1';
   static const _kTtlMs = 6 * 60 * 60 * 1000; // 6 hours

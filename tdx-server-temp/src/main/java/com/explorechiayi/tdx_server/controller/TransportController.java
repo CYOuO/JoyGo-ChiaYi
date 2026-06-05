@@ -72,4 +72,14 @@ public class TransportController {
         // cityType 可以傳入 "Chiayi" 或 "ChiayiCounty"
         return tdxService.getWeeklyWeather(cityType);
     }
+
+    /**
+     * UV 指數 + 日出日落（呼叫 OpenWeatherMap）
+     * Flutter 端呼叫：GET /api/transport/weather/extra
+     * 後端 .env 需設定：OPENWEATHER_KEY=你的key
+     */
+    @GetMapping("/weather/extra")
+    public Map<String, Object> getWeatherExtra() {
+        return tdxService.getWeatherExtra();
+    }
 }

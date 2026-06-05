@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
+import java.util.LinkedHashMap;
 
 @Service
 public class TdxService {
@@ -681,6 +682,94 @@ public class TdxService {
                  + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
                  * Math.sin(dLon / 2) * Math.sin(dLon / 2);
         return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    // ──────────────────────────────────────────────────────────
+    //  UV 指數 + 日出日落（OpenWeatherMap One Call API）
+    //  回傳格式供 Flutter weather_screen 使用
+    // ──────────────────────────────────────────────────────────
+    private static final long WEATHER_EXTRA_CACHE_DURATION = 60 * 60 * 1000L; // 1 小時
+
+    public Map<String, Object> getWeatherExtra() {
+        String cacheKey = "WEATHER_EXTRA";
+        Long lastFetch = cacheTimeMap.get(cacheKey);
+        if (lastFetch != null && (System.currentTimeMillis() - lastFetch) < WEATHER_EXTRA_CACHE_DURATION) {
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> cached = cacheDataMap.get(cacheKey);
+            if (cached != null && !cached.isEmpty()) return cached.get(0);
+        }
+
+        String key = TdxConfig.OPENWEATHER_KEY;
+        if (key == null || key.isEmpty()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("error", "OPENWEATHER_KEY 未設定，請在 .env 加入 OPENWEATHER_KEY=你的key");
+            return empty;
+        }
+
+        try {
+            String url = "https://api.openweathermap.org/data/3.0/onecall"
+                    + "?lat=23.4801&lon=120.4501"
+                    + "&appid=" + key
+                    + "&units=metric&exclude=minutely,hourly,daily,alerts";
+
+            ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, null, String.class);
+            JsonNode root    = objectMapper.readTree(resp.getBody());
+            JsonNode current = root.path("current");
+
+            double uvi     = current.path("uvi").asDouble(0);
+            long   sunrise = current.path("sunrise").asLong(0);
+            long   sunset  = current.path("sunset").asLong(0);
+            int    humidity = current.path("humidity").asInt(0);
+
+            // UV 標籤
+            String uviLabel, uviTip;
+            if      (uvi < 3)  { uviLabel = String.format("%.1f 低", uvi);   uviTip = "無需特別防護"; }
+            else if (uvi < 6)  { uviLabel = String.format("%.1f 中", uvi);   uviTip = "建議塗 SPF30+"; }
+            else if (uvi < 8)  { uviLabel = String.format("%.1f 高", uvi);   uviTip = "建議塗 SPF50+"; }
+            else if (uvi < 11) { uviLabel = String.format("%.1f 極高", uvi); uviTip = "上午10點後避免外出"; }
+            else               { uviLabel = String.format("%.1f 危險", uvi); uviTip = "避免日曬，全身防護"; }
+
+            // 日出日落
+            java.util.function.Function<Long, String> fmt = ts -> {
+                java.time.Instant instant = java.time.Instant.ofEpochSecond(ts);
+                java.time.ZonedDateTime zdt = instant.atZone(java.time.ZoneId.of("Asia/Taipei"));
+                return String.format("%02d:%02d", zdt.getHour(), zdt.getMinute());
+            };
+            String sunriseStr = sunrise > 0 ? fmt.apply(sunrise) : "--:--";
+            String sunsetStr  = sunset  > 0 ? fmt.apply(sunset)  : "--:--";
+            int daylightH     = (sunrise > 0 && sunset > 0) ? (int)((sunset - sunrise) / 3600) : 0;
+
+            // 舒適度
+            String comfort, comfortTip;
+            if      (humidity < 40) { comfort = "乾燥"; comfortTip = "空氣乾燥，注意補水"; }
+            else if (humidity < 60) { comfort = "舒適"; comfortTip = "濕度適中，體感良好"; }
+            else if (humidity < 80) { comfort = "偏潮"; comfortTip = "相對濕度偏高，注意補水"; }
+            else                    { comfort = "悶熱"; comfortTip = "高濕悶熱，建議待在室內"; }
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("uviLabel",   uviLabel);
+            result.put("uviTip",     uviTip);
+            result.put("sunrise",    sunriseStr);
+            result.put("sunset",     sunsetStr);
+            result.put("daylightH",  daylightH);
+            result.put("comfort",    comfort);
+            result.put("comfortTip", comfortTip);
+
+            // 存入 cache
+            List<Map<String, Object>> wrap = new ArrayList<>();
+            wrap.add(result);
+            cacheDataMap.put(cacheKey, wrap);
+            cacheTimeMap.put(cacheKey, System.currentTimeMillis());
+
+            System.out.println("✅ [WeatherExtra] UV=" + uviLabel + " 日出=" + sunriseStr + " 日落=" + sunsetStr);
+            return result;
+
+        } catch (Exception e) {
+            System.out.println("❌ [WeatherExtra] 失敗: " + e.getMessage());
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", "無法取得額外天氣資料: " + e.getMessage());
+            return err;
+        }
     }
 
     public Map<String, Object> getTraTrainStops(String trainNo, String date) {

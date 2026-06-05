@@ -498,12 +498,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return NotebookBackground(
       lineColor: primary.withValues(alpha: 0.08),
       child: events.isEmpty
-          ? IllustratedEmptyState(
-              scene: EmptyScene.calendar,
-              title: l10n.calNoEvent,
-              body: '點右下角 + 新增你的行程\n或等待政府活動資料載入',
-              color: primary,
-            )
+          ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.event_busy_rounded, size: 32, color: primary.withValues(alpha: 0.28)),
+              const SizedBox(height: 8),
+              Text(l10n.calNoEvent,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: primary.withValues(alpha: 0.5))),
+              const SizedBox(height: 4),
+              Text('點右下角 + 新增行程', style: TextStyle(fontSize: 11, color: primary.withValues(alpha: 0.35))),
+            ]))
           : ListView.separated(
               padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
               itemCount: events.length,

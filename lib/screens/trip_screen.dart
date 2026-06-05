@@ -25,6 +25,7 @@ import 'calendar_screen.dart';
 import 'expense_screen.dart';
 import 'community_screen.dart' show CreatePostPage;
 import 'ai_planner_screen.dart';
+import 'login_page.dart';
 import 'map_screen.dart' as from_map;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -328,15 +329,40 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   // ── My Trips ── (uses StreamSubscription, no flicker)
   Widget _buildMyTripsTab() {
     if (_authUser == null) {
-      return Center(child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.lock_outline_rounded, size: 48, color: AppColors.textHint),
-          const SizedBox(height: 12),
-          const Text('請先登入', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-          const SizedBox(height: 6),
-          const Text('登入後才能建立和管理行程', style: TextStyle(color: AppColors.textHint)),
-        ],
+      final primary = Theme.of(context).colorScheme.primary;
+      return Center(child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 80, height: 80,
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.08),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.luggage_rounded, size: 38, color: primary.withValues(alpha: 0.55)),
+          ),
+          const SizedBox(height: 20),
+          Text('登入後開始規劃旅程',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primary)),
+          const SizedBox(height: 10),
+          Text('建立嘉義行程、收藏景點，\n讓諸羅精靈幫你安排完美旅程！',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: primary.withValues(alpha: 0.65), height: 1.7)),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.of(context, rootNavigator: true)
+                  .push(MaterialPageRoute(builder: (_) => const LoginPage())),
+              icon: const Icon(Icons.login_rounded, size: 18),
+              label: const Text('前往登入 / 註冊'),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text('訪客也可以先收藏景點，登入後自動同步',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: primary.withValues(alpha: 0.4), height: 1.5)),
+        ]),
       ));
     }
     if (_tripsLoading) {
@@ -1088,20 +1114,20 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         },
       );
     } else {
-      // Guest: 從 LocalFavService 讀取本地收藏
-      final savedSpots = SpotService.cached.where((s) => _guestSavedIds.contains(s.id)).toList();
-      final rawGuest = savedSpots.map((s) => {
-        'spotId': s.id, 'spotName': s.name,
-        'imageUrl': s.imageUrl, 'rating': s.rating,
-      }).toList();
-      return _savedSpotsGridRaw(
-        rawSpots: rawGuest,
-        onUnsave: (spotId, spotName) async {
-          final spot = SpotService.cached.firstWhere((x) => x.id == spotId,
-              orElse: () => Spot(id: spotId, name: spotName, nameEn: '', category: '', address: '', imageUrl: '', description: '', openHours: '', rating: 0, lat: 0, lng: 0));
-          await _toggleGuestFavorite(spot);
+      // Guest: 用 LocalFavService metadata，不依賴 SpotService.cached
+      return FutureBuilder<List<Map<String, dynamic>>>(
+        future: LocalFavService.getSavedSpotsData(),
+        builder: (ctx, snap) {
+          final rawGuest = snap.data ?? [];
+          return _savedSpotsGridRaw(
+            rawSpots: rawGuest,
+            onUnsave: (spotId, spotName) async {
+              await LocalFavService.toggleWithMeta(spotId, spotName: spotName);
+              if (mounted) setState(() => _guestSavedIds.remove(spotId));
+            },
+            isGuest: true,
+          );
         },
-        isGuest: true,
       );
     }
   }
@@ -1113,26 +1139,22 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   }) {
     final primary = Theme.of(context).colorScheme.primary;
     if (rawSpots.isEmpty) {
-      return Center(child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.bookmark_border_rounded, size: 52, color: AppColors.textHint),
-            const SizedBox(height: 12),
-            const Text('還沒有收藏景點',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-            const SizedBox(height: 8),
-            Text(
-              isGuest
-                  ? '點地圖或首頁景點旁的收藏鍵，\n登入後會自動同步到你的帳戶'
-                  : '在地圖、首頁點景點旁的收藏鍵，\n方便之後加入行程！',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: AppColors.textHint, fontSize: 13, height: 1.6),
-            ),
-          ],
-        ),
-      ));
+      return IllustratedEmptyState(
+        scene: EmptyScene.saved,
+        title: '還沒有收藏景點',
+        body: isGuest
+            ? '點地圖或景點旁的 ♡ 收藏，\n登入後自動同步到你的帳戶'
+            : '到地圖或景點詳細頁點 ♡\n收藏後可以快速加入行程！',
+        color: primary,
+        action: isGuest
+            ? OutlinedButton.icon(
+                onPressed: () => Navigator.of(context, rootNavigator: true)
+                    .push(MaterialPageRoute(builder: (_) => const LoginPage())),
+                icon: const Icon(Icons.login_rounded, size: 16),
+                label: const Text('立即登入同步'),
+              )
+            : null,
+      );
     }
     // Derive categories from spot names (simple keyword matching)
     String _categorize(Map<String, dynamic> d) {

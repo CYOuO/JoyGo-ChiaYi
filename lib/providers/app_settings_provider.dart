@@ -12,10 +12,12 @@ class ThemePreset {
   final Color  primary;
   final Color  primaryDark;
   final Color  primaryMist;
+  final Color  accent;
   const ThemePreset({
     required this.name,
     String emoji = '',   // retained for backward compat, unused
     required this.primary, required this.primaryDark, required this.primaryMist,
+    required this.accent,
   });
 }
 
@@ -29,95 +31,110 @@ class ThemePreset {
 const kThemePresets = <ThemePreset>[
   ThemePreset(
     name: '嘉義青',  emoji: '🌊',
-    primary:     Color(0xFF00838F), // deep cyan-teal
+    primary:     Color(0xFF00838F),
     primaryDark: Color(0xFF006064),
     primaryMist: Color(0xFFE0F7FA),
+    accent:      Color(0xFFC04848), // 珊瑚紅搭青
   ),
   ThemePreset(
     name: '嘉義藍',  emoji: '🌌',
-    primary:     Color(0xFF1565C0), // deep blue
+    primary:     Color(0xFF1565C0),
     primaryDark: Color(0xFF003C8F),
     primaryMist: Color(0xFFE3F2FD),
+    accent:      Color(0xFF2E8B5C), // 祖母綠搭深藍
   ),
   ThemePreset(
     name: '嘉義綠',  emoji: '🌿',
-    primary:     Color(0xFF5B8A5F), // original sage green
+    primary:     Color(0xFF5B8A5F),
     primaryDark: Color(0xFF3D6B42),
     primaryMist: Color(0xFFEDF2ED),
+    accent:      Color(0xFFD4873A), // 琥珀橙搭苔綠
   ),
   ThemePreset(
     name: '嘉義橙',  emoji: '🍊',
-    primary:     Color(0xFFE65100), // deep burnt orange
+    primary:     Color(0xFFE65100),
     primaryDark: Color(0xFFBF360C),
     primaryMist: Color(0xFFFBE9E7),
+    accent:      Color(0xFF1565C0), // 深藍搭燒橙
   ),
   ThemePreset(
     name: '嘉義紫',  emoji: '💜',
-    primary:     Color(0xFF6A1B9A), // deep purple
+    primary:     Color(0xFF6A1B9A),
     primaryDark: Color(0xFF38006B),
     primaryMist: Color(0xFFF3E5F5),
+    accent:      Color(0xFF2565D0), // 藍搭深紫
   ),
-  // ── Pastel candy colors（飽和度稍加深，保留粉嫩感）───────────
+  // ── Pastel candy colors ──────────────────────────────────────
   ThemePreset(
     name: '甜蜜桃',  emoji: '🍑',
-    primary:     Color(0xFFE07858), // 珊瑚橘
+    primary:     Color(0xFFE07858),
     primaryDark: Color(0xFFC05030),
     primaryMist: Color(0xFFFFEDE6),
+    accent:      Color(0xFF9070C0), // 薰衣紫搭珊瑚橘
   ),
   ThemePreset(
     name: '少女粉',  emoji: '🌸',
-    primary:     Color(0xFFD05878), // 玫瑰粉
+    primary:     Color(0xFFD05878),
     primaryDark: Color(0xFFAA3055),
     primaryMist: Color(0xFFFFF0F4),
+    accent:      Color(0xFF00858A), // 青綠搭玫瑰粉
   ),
   ThemePreset(
     name: '薰衣紫',  emoji: '💜',
-    primary:     Color(0xFF9070C0), // 薰衣草紫
+    primary:     Color(0xFF9070C0),
     primaryDark: Color(0xFF6A4898),
     primaryMist: Color(0xFFF4F0FC),
+    accent:      Color(0xFF4A90C0), // 天藍搭薰衣紫
   ),
   ThemePreset(
     name: '夢幻綠',  emoji: '🌱',
-    primary:     Color(0xFF58A880), // 薄荷綠
+    primary:     Color(0xFF58A880),
     primaryDark: Color(0xFF38865E),
     primaryMist: Color(0xFFEEFBF4),
+    accent:      Color(0xFF8060B0), // 紫搭薄荷
   ),
   ThemePreset(
     name: '檸檬黃',  emoji: '🍋',
-    primary:     Color(0xFFB89020), // 芥末金
+    primary:     Color(0xFFB89020),
     primaryDark: Color(0xFF906E00),
     primaryMist: Color(0xFFFFF9E0),
+    accent:      Color(0xFFC0394A), // 莓紅搭芥末金
   ),
   ThemePreset(
     name: '天空藍',  emoji: '☁️',
-    primary:     Color(0xFF5090C0), // 晴空藍
+    primary:     Color(0xFF5090C0),
     primaryDark: Color(0xFF306898),
     primaryMist: Color(0xFFEEF7FF),
+    accent:      Color(0xFF3A9A6A), // 翠綠搭晴空藍
   ),
-  // ── Extra four to complete 3 rows of 5 ──────────────────────
+  // ── Extra four ──────────────────────────────────────────────
   ThemePreset(
     name: '莓果紅',  emoji: '🍓',
-    primary:     Color(0xFFC0394A), // 莓果深紅
+    primary:     Color(0xFFC0394A),
     primaryDark: Color(0xFF97202F),
     primaryMist: Color(0xFFFFECEE),
+    accent:      Color(0xFF00838F), // 青搭莓紅
   ),
   ThemePreset(
     name: '深海綠',  emoji: '🐊',
-    primary:     Color(0xFF2E8B5C), // 祖母綠
+    primary:     Color(0xFF2E8B5C),
     primaryDark: Color(0xFF1A6640),
     primaryMist: Color(0xFFE8F6EF),
+    accent:      Color(0xFFD05878), // 玫瑰粉搭祖母綠
   ),
   ThemePreset(
     name: '咖啡棕',  emoji: '☕',
-    primary:     Color(0xFF7B5E42), // 深可可棕
+    primary:     Color(0xFF7B5E42),
     primaryDark: Color(0xFF5A3F28),
     primaryMist: Color(0xFFF5EDE5),
+    accent:      Color(0xFFD05878), // 玫瑰粉搭咖啡棕
   ),
   ThemePreset(
     name: '暮光藍',  emoji: '🌆',
-    primary:     Color(0xFF4A6FA5), // 暮光鋼藍
+    primary:     Color(0xFF4A6FA5),
     primaryDark: Color(0xFF2D4F80),
     primaryMist: Color(0xFFECF1F9),
+    accent:      Color(0xFF3A9A6A), // 翠綠搭暮光藍
   ),
 ];
 

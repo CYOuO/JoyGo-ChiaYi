@@ -197,7 +197,7 @@ class _WeatherScreenState extends State<WeatherScreen>
               Row(children: [
                 Expanded(child: _infoCard(Icons.wb_sunny_rounded, 'UV 指數',
                     hasData ? (e['uviLabel'] as String) : '--',
-                    hasData ? (e['uviTip'] as String) : '後端尚未設定 OPENWEATHER_KEY',
+                    hasData ? (e['uviTip'] as String) : '資料暫時無法取得',
                     AppColors.accentTerra)),
                 const SizedBox(width: 12),
                 Expanded(child: _infoCard(Icons.sentiment_satisfied_rounded, '舒適度',

@@ -142,9 +142,12 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   late final GenerativeModel _model;
   final List<Content> _history = [];
 
-  static const _kDayColors = [
-    Color(0xFFE8845A), Color(0xFF5A8ABF), Color(0xFF5A9F6A),
-    Color(0xFF8A5ABF), Color(0xFFBFA84A),
+  static List<Color> _dayColors(Color primary, Color accent) => [
+    primary,
+    accent,
+    Color.lerp(primary, accent, 0.45)!,
+    Color.lerp(primary, Colors.black, 0.18)!,
+    Color.lerp(accent, Colors.black, 0.18)!,
   ];
 
   static const _kSystemPrompt = '''
@@ -214,6 +217,9 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   Future<({String reply, List<_DayPlan>? plan})> _callGemini(
     String prompt, {bool clearHistory = false}
   ) async {
+    if (_kApiKey.isEmpty) {
+      return (reply: '尚未設定 Gemini API Key，請在 local.env.json 填入 GEMINI_API_KEY 後以 --dart-define-from-file=local.env.json 重新執行。', plan: null);
+    }
     if (clearHistory) _history.clear();
     _history.add(Content.text(prompt));
     try {
@@ -228,7 +234,9 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       final data = jsonDecode(clean) as Map<String, dynamic>;
       final reply = data['replyText'] as String? ?? '好的，請稍候';
       final planData = data['plan'] as List?;
-      final plan = planData != null ? _parsePlan(planData) : null;
+      final primary = context.appPrimary;
+      final accent  = context.appAccent;
+      final plan = planData != null ? _parsePlan(planData, primary, accent) : null;
       return (reply: reply, plan: plan);
     } catch (e) {
       _history.removeLast(); // 失敗時移除未完成的 user message
@@ -236,11 +244,12 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     }
   }
 
-  List<_DayPlan> _parsePlan(List<dynamic> planData) {
+  List<_DayPlan> _parsePlan(List<dynamic> planData, Color primary, Color accent) {
+    final colors = _dayColors(primary, accent);
     return planData.asMap().entries.map((dayEntry) {
       final d = dayEntry.value as Map<String, dynamic>;
       final day = (d['day'] as num?)?.toInt() ?? (dayEntry.key + 1);
-      final color = _kDayColors[day % _kDayColors.length];
+      final color = colors[day % colors.length];
       final rawItems = (d['items'] as List? ?? []);
       final items = rawItems.map((raw) {
         final m = raw as Map<String, dynamic>;
@@ -434,13 +443,14 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   }
 
   void _showSavedSnackbar(BuildContext ctx, String title) {
+    final primary = Theme.of(ctx).colorScheme.primary;
     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
       content: Row(children: [
         const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
         const SizedBox(width: 8),
         Expanded(child: Text('「$title」已加入行程列表！')),
       ]),
-      backgroundColor: const Color(0xFF5A9F6A),
+      backgroundColor: primary,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       duration: const Duration(seconds: 3),
@@ -453,6 +463,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final accent  = context.appAccent;
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(slivers: [
@@ -472,7 +483,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
           ),
           child: _mode == 'schedule'
               ? _buildScheduleMode(primary)
-              : _buildChatMode(primary),
+              : _buildChatMode(primary, accent),
         )),
         const SliverToBoxAdapter(child: SizedBox(height: 80)),
       ]),
@@ -683,13 +694,13 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
                   decoration: BoxDecoration(
-                    color: sel ? primary.withValues(alpha: 0.12) : AppColors.surfaceMoss,
+                    color: sel ? primary.withValues(alpha: 0.12) : primary.withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: sel ? primary : AppColors.divider)),
+                    border: Border.all(color: sel ? primary : primary.withValues(alpha: 0.20))),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(mode.icon, size: 14, color: sel ? primary : AppColors.textHint),
+                    Icon(mode.icon, size: 14, color: sel ? primary : primary.withValues(alpha: 0.45)),
                     const SizedBox(width: 5),
-                    Text(mode.label, style: TextStyle(fontSize: 12, fontWeight: sel ? FontWeight.w700 : FontWeight.w500, color: sel ? primary : AppColors.textSecondary)),
+                    Text(mode.label, style: TextStyle(fontSize: 12, fontWeight: sel ? FontWeight.w700 : FontWeight.w500, color: sel ? primary : primary.withValues(alpha: 0.6))),
                   ]),
                 ),
               );
@@ -842,14 +853,14 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
             width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 18),
             decoration: BoxDecoration(
               gradient: (_scheduling || activeSpots.isEmpty) ? null : LinearGradient(colors: [primary, Color.lerp(primary, Colors.black, 0.2)!]),
-              color: (_scheduling || activeSpots.isEmpty) ? AppColors.surfaceMoss : null,
+              color: (_scheduling || activeSpots.isEmpty) ? primary.withValues(alpha: 0.08) : null,
               borderRadius: BorderRadius.circular(18),
               boxShadow: (_scheduling || activeSpots.isEmpty) ? [] : [BoxShadow(color: primary.withValues(alpha: 0.4), blurRadius: 14, offset: const Offset(0, 6))]),
             child: _scheduling
                 ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: primary)),
                     const SizedBox(width: 12),
-                    const Text('諸羅精靈思考中…', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                    Text('諸羅精靈思考中…', style: TextStyle(fontWeight: FontWeight.w700, color: primary.withValues(alpha: 0.7))),
                   ])
                 : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(Icons.auto_fix_high_rounded, color: Colors.white, size: 18),
@@ -904,7 +915,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   // ════════════════════════════════════════════════════════════
   // MODE 2 & 3: Chat
   // ════════════════════════════════════════════════════════════
-  Widget _buildChatMode(Color primary) {
+  Widget _buildChatMode(Color primary, Color accent) {
     final isImport = _mode == 'chat_import';
     final key = ValueKey(_mode);
 
@@ -947,20 +958,20 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         // ── 對話視窗 ──
         Container(
           constraints: const BoxConstraints(maxHeight: 380),
-          decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(20), border: Border.all(color: AppColors.divider)),
+          decoration: BoxDecoration(color: accent.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(20), border: Border.all(color: accent.withValues(alpha: 0.20))),
           child: _chatMessages.isEmpty
               ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(Icons.chat_bubble_outline_rounded, size: 40, color: primary.withValues(alpha: 0.3)),
                   const SizedBox(height: 12),
-                  Text('開始對話，讓精靈幫你規劃行程', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                  Text('開始對話，讓精靈幫你規劃行程', style: TextStyle(color: primary.withValues(alpha: 0.45), fontSize: 13)),
                 ])))
               : ListView.builder(
                   controller: _chatScroll,
                   padding: const EdgeInsets.all(14),
                   itemCount: _chatMessages.length + (_chatThinking ? 1 : 0),
                   itemBuilder: (ctx, i) {
-                    if (i == _chatMessages.length && _chatThinking) return _buildThinkingBubble(primary);
-                    return _buildChatBubble(_chatMessages[i], primary);
+                    if (i == _chatMessages.length && _chatThinking) return _buildThinkingBubble(primary, accent);
+                    return _buildChatBubble(_chatMessages[i], primary, accent);
                   },
                 ),
         ),
@@ -969,14 +980,15 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         // ── 輸入框 ──
         Row(children: [
           Expanded(child: Container(
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.divider), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))]),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: primary.withValues(alpha: 0.20)), boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 8, offset: const Offset(0, 2))]),
             child: TextField(
               controller: _chatCtrl,
               style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
               decoration: InputDecoration(
                 hintText: '告訴精靈你的需求…',
-                hintStyle: TextStyle(color: AppColors.textHint, fontSize: 13),
+                hintStyle: TextStyle(color: primary.withValues(alpha: 0.4), fontSize: 13),
                 border: InputBorder.none,
+                filled: false,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               onSubmitted: (v) => _sendChat(v),
@@ -1005,26 +1017,26 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
             width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 15),
             decoration: BoxDecoration(
               gradient: _chatThinking ? null : LinearGradient(colors: [primary, Color.lerp(primary, Colors.black, 0.2)!]),
-              color: _chatThinking ? AppColors.surfaceMoss : null,
+              color: _chatThinking ? primary.withValues(alpha: 0.08) : null,
               borderRadius: BorderRadius.circular(16),
               boxShadow: _chatThinking ? [] : [BoxShadow(color: primary.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 5))]),
             child: _chatThinking
                 ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: primary)),
                     const SizedBox(width: 10),
-                    const Text('精靈思考中…', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w700)),
+                    Text('精靈思考中…', style: TextStyle(color: primary.withValues(alpha: 0.7), fontWeight: FontWeight.w700)),
                   ])
                 : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 16),
                     SizedBox(width: 8),
-                    Text('✨ 生成完整行程', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
+                    Text('生成完整行程', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
                   ]),
           ),
         ),
 
         if (_chatProposal != null) ...[
           const SizedBox(height: 20),
-          _buildChatProposalCard(_chatProposal!, primary),
+          _buildChatProposalCard(_chatProposal!, primary, accent),
           const SizedBox(height: 12),
           if (!_chatProposalSaved)
             _buildSaveButton(label: '加入行程列表', icon: Icons.bookmark_add_rounded, primary: primary, onTap: _saveChatTrip)
@@ -1035,7 +1047,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     );
   }
 
-  Widget _buildChatBubble(_ChatMessage msg, Color primary) {
+  Widget _buildChatBubble(_ChatMessage msg, Color primary, Color accent) {
     if (msg.isUser) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),
@@ -1066,13 +1078,13 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: const BorderRadius.only(topLeft: Radius.circular(4), topRight: Radius.circular(16), bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
-              border: Border.all(color: AppColors.divider),
+              border: Border.all(color: accent.withValues(alpha: 0.25)),
               boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 6, offset: const Offset(0, 2))]),
-            child: Text(msg.text, style: const TextStyle(color: AppColors.textPrimary, fontSize: 13, height: 1.6)),
+            child: Text(msg.text, style: const TextStyle(color: Color(0xFF2C3030), fontSize: 13, height: 1.6)),
           ),
           if (msg.generatedTrip != null) ...[
             const SizedBox(height: 8),
-            _buildChatProposalCard(msg.generatedTrip!, primary),
+            _buildChatProposalCard(msg.generatedTrip!, primary, accent),
           ],
         ])),
         const SizedBox(width: 48),
@@ -1080,7 +1092,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     );
   }
 
-  Widget _buildThinkingBubble(Color primary) {
+  Widget _buildThinkingBubble(Color primary, Color accent) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(children: [
@@ -1089,7 +1101,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         const SizedBox(width: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.divider)),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: accent.withValues(alpha: 0.30))),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: primary)),
             const SizedBox(width: 8),
@@ -1100,9 +1112,9 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     );
   }
 
-  Widget _buildChatProposalCard(AiGeneratedTrip trip, Color primary) {
+  Widget _buildChatProposalCard(AiGeneratedTrip trip, Color primary, Color accent) {
     return StitchedBox(
-      color: primary.withValues(alpha: 0.06), stitchColor: primary.withValues(alpha: 0.3),
+      color: accent.withValues(alpha: 0.05), stitchColor: accent.withValues(alpha: 0.28),
       radius: 20, inset: 4, dashWidth: 5, dashGap: 4,
       padding: const EdgeInsets.all(16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1135,11 +1147,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.divider)),
+            decoration: BoxDecoration(color: accent.withValues(alpha: 0.07), borderRadius: BorderRadius.circular(12), border: Border.all(color: accent.withValues(alpha: 0.25))),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(Icons.tips_and_updates_rounded, size: 14, color: primary),
+              Icon(Icons.tips_and_updates_rounded, size: 14, color: accent),
               const SizedBox(width: 8),
-              Expanded(child: Text(trip.tips, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.6))),
+              Expanded(child: Text(trip.tips, style: TextStyle(fontSize: 11, color: accent.withValues(alpha: 0.80), height: 1.6))),
             ]),
           ),
         ],
@@ -1177,11 +1189,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
                 Container(
                   width: 32, height: 32,
                   decoration: BoxDecoration(
-                    color: isTransport ? day.color.withValues(alpha: 0.07) : item.isMeal ? AppColors.surfaceMoss : day.color.withValues(alpha: 0.12),
+                    color: isTransport ? day.color.withValues(alpha: 0.07) : item.isMeal ? day.color.withValues(alpha: 0.08) : day.color.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
-                    border: Border.all(color: isTransport ? day.color.withValues(alpha: 0.25) : item.isMeal ? AppColors.divider : day.color.withValues(alpha: 0.4))),
+                    border: Border.all(color: isTransport ? day.color.withValues(alpha: 0.25) : item.isMeal ? day.color.withValues(alpha: 0.22) : day.color.withValues(alpha: 0.4))),
                   child: Center(child: Icon(item.icon, size: 14,
-                      color: isTransport ? day.color.withValues(alpha: 0.6) : item.isMeal ? AppColors.textHint : day.color)),
+                      color: isTransport ? day.color.withValues(alpha: 0.6) : item.isMeal ? day.color.withValues(alpha: 0.55) : day.color)),
                 ),
                 if (!isLast) Container(width: 2, height: isTransport ? 22 : 32, color: day.color.withValues(alpha: isTransport ? 0.12 : 0.2)),
               ]),
@@ -1193,8 +1205,8 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
                   Row(children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: isTransport ? AppColors.surfaceMoss : day.color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
-                      child: Text(item.time, style: TextStyle(fontSize: 10, color: isTransport ? AppColors.textHint : day.color, fontWeight: FontWeight.w800)),
+                      decoration: BoxDecoration(color: isTransport ? day.color.withValues(alpha: 0.07) : day.color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(4)),
+                      child: Text(item.time, style: TextStyle(fontSize: 10, color: isTransport ? day.color.withValues(alpha: 0.5) : day.color, fontWeight: FontWeight.w800)),
                     ),
                     const SizedBox(width: 6),
                     Text(item.duration, style: const TextStyle(fontSize: 10, color: AppColors.textHint)),
@@ -1258,11 +1270,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   Widget _buildSavedBadge(Color primary) {
     return Container(
       width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14),
-      decoration: BoxDecoration(color: const Color(0xFF5A9F6A).withValues(alpha: 0.10), borderRadius: BorderRadius.circular(16), border: Border.all(color: const Color(0xFF5A9F6A).withValues(alpha: 0.4))),
-      child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.check_circle_rounded, color: Color(0xFF5A9F6A), size: 18),
-        SizedBox(width: 8),
-        Text('已加入行程列表！', style: TextStyle(color: Color(0xFF5A9F6A), fontSize: 15, fontWeight: FontWeight.w800)),
+      decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(16), border: Border.all(color: primary.withValues(alpha: 0.4))),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.check_circle_rounded, color: primary, size: 18),
+        const SizedBox(width: 8),
+        Text('已加入行程列表！', style: TextStyle(color: primary, fontSize: 15, fontWeight: FontWeight.w800)),
       ]),
     );
   }
@@ -1298,7 +1310,7 @@ class _StationMapSheet extends StatelessWidget {
       height: MediaQuery.of(context).size.height * 0.5,
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       child: Column(children: [
-        Padding(padding: const EdgeInsets.only(top: 12), child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+        Padding(padding: const EdgeInsets.only(top: 12), child: Container(width: 40, height: 4, decoration: BoxDecoration(color: primary.withValues(alpha: 0.20), borderRadius: BorderRadius.circular(2)))),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
           child: Row(children: [
@@ -1317,12 +1329,12 @@ class _StationMapSheet extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
             child: Container(
-              color: AppColors.surfaceMoss,
+              color: primary.withValues(alpha: 0.05),
               child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.map_rounded, size: 48, color: primary.withValues(alpha: 0.3)),
                 const SizedBox(height: 8),
                 Text('$stationName\n${lat.toStringAsFixed(4)}°N, ${lng.toStringAsFixed(4)}°E',
-                    textAlign: TextAlign.center, style: const TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.5)),
+                    textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.5), height: 1.5)),
               ])),
             ),
           ),

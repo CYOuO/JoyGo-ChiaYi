@@ -699,27 +699,21 @@ public class TdxService {
             if (cached != null && !cached.isEmpty()) return cached.get(0);
         }
 
-        String key = TdxConfig.OPENWEATHER_KEY;
-        if (key == null || key.isEmpty()) {
-            Map<String, Object> empty = new HashMap<>();
-            empty.put("error", "OPENWEATHER_KEY 未設定，請在 .env 加入 OPENWEATHER_KEY=你的key");
-            return empty;
-        }
-
         try {
-            String url = "https://api.openweathermap.org/data/3.0/onecall"
-                    + "?lat=23.4801&lon=120.4501"
-                    + "&appid=" + key
-                    + "&units=metric&exclude=minutely,hourly,daily,alerts";
+            // Open-Meteo: 完全免費，不需 API key
+            String url = "https://api.open-meteo.com/v1/forecast"
+                    + "?latitude=23.4801&longitude=120.4501"
+                    + "&daily=sunrise,sunset,uv_index_max"
+                    + "&current=relative_humidity_2m,uv_index"
+                    + "&timezone=Asia/Taipei&forecast_days=1";
 
             ResponseEntity<String> resp = restTemplate.exchange(url, HttpMethod.GET, null, String.class);
             JsonNode root    = objectMapper.readTree(resp.getBody());
             JsonNode current = root.path("current");
+            JsonNode daily   = root.path("daily");
 
-            double uvi     = current.path("uvi").asDouble(0);
-            long   sunrise = current.path("sunrise").asLong(0);
-            long   sunset  = current.path("sunset").asLong(0);
-            int    humidity = current.path("humidity").asInt(0);
+            double uvi     = current.path("uv_index").asDouble(0);
+            int    humidity = current.path("relative_humidity_2m").asInt(0);
 
             // UV 標籤
             String uviLabel, uviTip;
@@ -729,17 +723,23 @@ public class TdxService {
             else if (uvi < 11) { uviLabel = String.format("%.1f 極高", uvi); uviTip = "上午10點後避免外出"; }
             else               { uviLabel = String.format("%.1f 危險", uvi); uviTip = "避免日曬，全身防護"; }
 
-            // 日出日落
-            java.util.function.Function<Long, String> fmt = ts -> {
-                java.time.Instant instant = java.time.Instant.ofEpochSecond(ts);
-                java.time.ZonedDateTime zdt = instant.atZone(java.time.ZoneId.of("Asia/Taipei"));
-                return String.format("%02d:%02d", zdt.getHour(), zdt.getMinute());
-            };
-            String sunriseStr = sunrise > 0 ? fmt.apply(sunrise) : "--:--";
-            String sunsetStr  = sunset  > 0 ? fmt.apply(sunset)  : "--:--";
-            int daylightH     = (sunrise > 0 && sunset > 0) ? (int)((sunset - sunrise) / 3600) : 0;
+            // 日出日落：Open-Meteo 回傳 ISO 字串 "2024-06-05T05:10"
+            String sunriseRaw = daily.path("sunrise").path(0).asText("");
+            String sunsetRaw  = daily.path("sunset").path(0).asText("");
 
-            // 舒適度
+            String sunriseStr = sunriseRaw.contains("T") ? sunriseRaw.split("T")[1] : "--:--";
+            String sunsetStr  = sunsetRaw.contains("T")  ? sunsetRaw.split("T")[1]  : "--:--";
+
+            int daylightH = 0;
+            if (!sunriseStr.equals("--:--") && !sunsetStr.equals("--:--")) {
+                String[] r = sunriseStr.split(":");
+                String[] s = sunsetStr.split(":");
+                int riseMin = Integer.parseInt(r[0]) * 60 + Integer.parseInt(r[1]);
+                int setMin  = Integer.parseInt(s[0]) * 60 + Integer.parseInt(s[1]);
+                daylightH   = (setMin - riseMin) / 60;
+            }
+
+            // 舒適度（以濕度計算）
             String comfort, comfortTip;
             if      (humidity < 40) { comfort = "乾燥"; comfortTip = "空氣乾燥，注意補水"; }
             else if (humidity < 60) { comfort = "舒適"; comfortTip = "濕度適中，體感良好"; }
@@ -755,7 +755,6 @@ public class TdxService {
             result.put("comfort",    comfort);
             result.put("comfortTip", comfortTip);
 
-            // 存入 cache
             List<Map<String, Object>> wrap = new ArrayList<>();
             wrap.add(result);
             cacheDataMap.put(cacheKey, wrap);

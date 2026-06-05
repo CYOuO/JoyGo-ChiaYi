@@ -169,9 +169,14 @@ class RailService {
     try {
       final res = await http.get(
         Uri.parse('$baseUrl/weather/extra'),
-      ).timeout(const Duration(seconds: 8));
+      ).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
-        return Map<String, dynamic>.from(jsonDecode(utf8.decode(res.bodyBytes)));
+        final data = Map<String, dynamic>.from(jsonDecode(utf8.decode(res.bodyBytes)));
+        if (data.containsKey('error')) {
+          if (kDebugMode) print('[WeatherExtra] 後端錯誤: ${data['error']}');
+          return {};
+        }
+        return data;
       }
     } catch (e) {
       if (kDebugMode) print('[WeatherExtra] $e');

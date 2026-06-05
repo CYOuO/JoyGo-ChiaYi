@@ -51,13 +51,14 @@ class AppColors {
 }
 
 class AppTheme {
-  /// Build theme from a custom primary color (for dynamic theming).
-  static ThemeData buildTheme(Color primarySeed) => _build(primarySeed);
+  /// Build theme from primary + accent (for dynamic theming).
+  static ThemeData buildTheme(Color primary, {Color? accent}) =>
+      _build(primary, accent ?? AppColors.accentTerra);
 
   /// Default light theme.
-  static ThemeData get lightTheme => _build(AppColors.primary);
+  static ThemeData get lightTheme => _build(AppColors.primary, AppColors.accentTerra);
 
-  static ThemeData _build(Color primary) {
+  static ThemeData _build(Color primary, Color accent) {
     final mist = Color.lerp(primary, Colors.white, 0.88) ?? AppColors.primaryMist;
 
     return ThemeData(
@@ -65,7 +66,7 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primary,
         primary:   primary,
-        secondary: AppColors.accentTerra,
+        secondary: accent,
         surface:   AppColors.surface,
         brightness: Brightness.light,
       ),
@@ -249,6 +250,9 @@ class AppTheme {
 extension AppThemeX on BuildContext {
   /// Current theme primary color (updates with preset changes).
   Color get appPrimary => Theme.of(this).colorScheme.primary;
+
+  /// Companion accent color (the contrasting pair to primary).
+  Color get appAccent => Theme.of(this).colorScheme.secondary;
 
   /// Soft mist tint — 88 % white blend of appPrimary.
   Color get appMist =>

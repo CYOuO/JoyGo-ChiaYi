@@ -51,7 +51,7 @@ class _ExploreChiayiAppState extends State<ExploreChiayiApp> {
     return MaterialApp(
       title: '探索諸羅',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.buildTheme(settings.currentTheme.primary),
+      theme: AppTheme.buildTheme(settings.currentTheme.primary, accent: settings.currentTheme.accent),
       locale: const Locale('zh', 'TW'),
       home: _showSplash
           ? SplashScreen(onFinish: _onSplashFinished)
@@ -75,7 +75,7 @@ class _MainShellState extends State<MainShell> {
   void _switchTab(int index) => setState(() => _currentIndex = index);
 
   void _goToTripCalendar() {
-    _switchTab(2);
+    _switchTab(1); // 行程(1)，地圖是(2)
     _tripCalendarTrigger.value++;
   }
 

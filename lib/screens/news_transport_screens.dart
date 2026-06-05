@@ -34,6 +34,147 @@ const _kRouteColors = [
   Color(0xFFB07A30), Color(0xFF7B6BAE),
 ];
 
+// ═══════════════════════════════════════════════════════════════
+// 手帳風站點選擇器 (Bottom Sheet 版本) - 已優化防壓線與可愛裝飾
+// ═══════════════════════════════════════════════════════════════
+void _showScrapbookPicker({
+  required BuildContext context,
+  required String title,
+  required List<String> items,
+  required String selectedItem,
+  required ValueChanged<String> onSelected,
+}) {
+  final primary = context.appPrimary;
+  
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent, // 背景透明，才看得到自定義的紙張感
+    isScrollControlled: true,
+    builder: (ctx) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        height: MediaQuery.of(context).size.height * 0.65, // 稍微調高一點點讓清單更好滑
+        child: Stack(
+          alignment: Alignment.topCenter,
+          children: [
+            // ── 1. 主紙張區域 ──
+            Padding(
+              padding: const EdgeInsets.only(top: 24, bottom: 20),
+              child: StitchedBox(
+                color: const Color(0xFFFFF8E7), // 象牙黃手帳紙張色
+                stitchColor: primary.withValues(alpha: 0.3),
+                radius: 24,
+                inset: 5,
+                padding: EdgeInsets.zero,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(24),
+                  child: Stack(
+                    children: [
+                      // 筆記本橫線與紅邊距裝飾
+                      const Positioned.fill(child: CustomPaint(painter: _RuledLinePainter())),
+                      
+                      // 🌟 可愛裝飾：右上角小花
+                      Positioned(
+                        top: 40,
+                        right: 20,
+                        child: Text('✿', style: TextStyle(fontSize: 26, color: primary.withValues(alpha: 0.3))),
+                      ),
+                      
+                      // 🌟 可愛裝飾：右下角偷看的小熊
+                      const Positioned(
+                        bottom: 15,
+                        right: 15,
+                        child: Text('🐻', style: TextStyle(fontSize: 45)),
+                      ),
+
+                      // 選項列表
+                      Column(
+                        children: [
+                          const SizedBox(height: 56), // 留空間給頂部的紙膠帶標題
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.only(bottom: 20),
+                              itemCount: items.length,
+                              itemBuilder: (context, index) {
+                                final isSelected = items[index] == selectedItem;
+                                return InkWell(
+                                  onTap: () {
+                                    onSelected(items[index]);
+                                    Navigator.pop(context);
+                                  },
+                                  child: Container(
+                                    height: 56, // 設定為橫線間距(28)的兩倍，讓文字完美對齊橫線
+                                    // 🌟 核心修正：left 設為 70，完美避開 52px 的紅色邊線
+                                    padding: const EdgeInsets.only(left: 70, right: 30),
+                                    alignment: Alignment.centerLeft,
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          items[index],
+                                          style: TextStyle(
+                                            fontSize: 20, // 🌟 字體放大
+                                            letterSpacing: 1.2, // 增加一點點字距，更像手寫字
+                                            fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                                            color: isSelected ? primary : AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        const Spacer(),
+                                        // 🌟 選中時的可愛標示
+                                        if (isSelected) ...[
+                                          Icon(Icons.star_rounded, color: primary, size: 20),
+                                          const SizedBox(width: 4),
+                                          const Text('✨', style: TextStyle(fontSize: 16)),
+                                        ]
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            
+            // ── 2. 紙膠帶標題裝飾 ──
+            Positioned(
+              top: 10,
+              child: Transform.rotate(
+                angle: -0.04, // 🌟 微微傾斜，更有真實紙膠帶隨意貼上的感覺
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 4, offset: const Offset(2, 3))
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('🐾', style: TextStyle(fontSize: 14)), // 加上小肉球
+                      const SizedBox(width: 8),
+                      Text(
+                        title,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 2),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
 class TransportScreen extends StatefulWidget {
   final int initialTab;
   final void Function(int)? onSwitchTab;
@@ -90,15 +231,43 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   bool _thsrLoading = false;
   String? _thsrError;
 
-  static const _traStations = {
-    '基隆': '0900', '台北': '1000', '桃園': '1080', '新竹': '1210',
-    '竹南': '1250', '苗栗': '3160', '豐原': '3230', '台中': '3300',
-    '彰化': '3360', '員林': '3390', '斗六': '3470', '斗南': '3480',
-    '大林': '4050', '民雄': '4060', '嘉北': '4070', '嘉義': '4080',
-    '水上': '4090', '南靖': '4100', '新營': '4120', '台南': '4220',
-    '新左營': '4320', '高雄': '4400', '屏東': '4310',
+  /// 台鐵站點依縣市分組（已將新竹、嘉義之縣市拆分）
+  static const _traStationsByCounty = <String, Map<String, String>>{
+    '基隆市':   {'基隆': '0900', '八堵': '0920', '七堵': '0930', '百福': '0940'},
+    '台北市':   {'南港': '0970', '松山': '0980', '台北': '1000', '萬華': '1010'},
+    '新北市':   {'汐止': '0960', '汐科': '0950', '板橋': '1020', '樹林': '1030', '山佳': '1040', '鶯歌': '1050', '瑞芳': '7360', '福隆': '7330'},
+    '桃園市':   {'桃園': '1080', '內壢': '1090', '中壢': '1100', '埔心': '1110', '楊梅': '1120', '富岡': '1130'},
+    '新竹縣':   {'湖口': '1150', '新豐': '1160', '竹北': '1170'},
+    '新竹市':   {'新竹': '1210', '香山': '1220'},
+    '苗栗縣':   {'竹南': '1250', '苗栗': '3160', '銅鑼': '3180', '三義': '3190', '苑裡': '2190'},
+    '台中市':   {'大甲': '2150', '清水': '2140', '沙鹿': '2130', '豐原': '3230', '潭子': '3250', '太原': '3270', '台中': '3300', '大慶': '3310', '新烏日': '3340'},
+    '彰化縣':   {'彰化': '3360', '花壇': '3370', '大村': '3380', '員林': '3390', '永靖': '3400', '社頭': '3410', '田中': '3420', '二水': '3430'},
+    '雲林縣':   {'林內': '3450', '石榴': '3460', '斗六': '3470', '斗南': '3480', '石龜': '3490'},
+    '嘉義縣':   {'大林': '4050', '民雄': '4060', '水上': '4090', '南靖': '4100'},
+    '嘉義市':   {'嘉北': '4070', '嘉義': '4080'},
+    '台南市':   {'後壁': '4110', '新營': '4120', '隆田': '4150', '善化': '4170', '新市': '4190', '永康': '4200', '台南': '4220', '保安': '4250', '中洲': '4260'},
+    '高雄市':   {'大湖': '4270', '路竹': '4290', '岡山': '4310', '楠梓': '4330', '新左營': '4340', '左營': '4350', '高雄': '4400', '鳳山': '4420', '九曲堂': '4450'},
+    '屏東縣':   {'屏東': '4460', '潮州': '4530', '林邊': '4630', '枋寮': '4660'},
+    '宜蘭縣':   {'頭城': '7230', '礁溪': '7190', '宜蘭': '7130', '羅東': '7080', '蘇澳新': '7020'},
+    '花蓮縣':   {'新城': '6110', '花蓮': '6000', '吉安': '5990', '壽豐': '5950', '光復': '5860', '瑞穗': '5810', '玉里': '5750'},
+    '台東縣':   {'池上': '5680', '關山': '5610', '鹿野': '5540', '台東': '5430', '知本': '5240', '太麻里': '5190'},
   };
+
+  /// 展開成平坦 Map（站名 → 站ID），供 API 查詢用
+  static Map<String, String> get _traStations => {
+    for (final m in _traStationsByCounty.values) ...m
+  };
+
+  /// 根據站名反查所屬縣市
+  static String _countyOf(String station) {
+    for (final e in _traStationsByCounty.entries) {
+      if (e.value.containsKey(station)) return e.key;
+    }
+    return _traStationsByCounty.keys.first;
+  }
+
   String _traO = '嘉義', _traD = '台北';
+  String _traCountyO = '嘉義市', _traCountyD = '台北市';
   bool _traOnlySaved = false;
 
   static const _thsrStations = {
@@ -1033,10 +1202,31 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       Padding(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
         child: Column(children: [
-          _ODCard(origin: _traO, dest: _traD, stations: _traStations.keys.toList(), bg: context.appMist, acc: context.appPrimary,
-            onO: (v) { setState(() { _traO = v; _traLive = RailService.getTraLiveBoard(_traStations[v]!); }); _fetchTra(); },
-            onD: (v) { setState(() => _traD = v); _fetchTra(); },
-            onSwap: () { setState(() { final t = _traO; _traO = _traD; _traD = t; _traLive = RailService.getTraLiveBoard(_traStations[_traO]!); }); _fetchTra(); },
+          _GroupedODCard(
+            origin: _traO, dest: _traD,
+            originCounty: _traCountyO, destCounty: _traCountyD,
+            stationsByCounty: _traStationsByCounty,
+            bg: context.appMist, acc: context.appPrimary,
+            onO: (county, station) {
+              setState(() {
+                _traCountyO = county; _traO = station;
+                _traLive = RailService.getTraLiveBoard(_traStations[station]!);
+              });
+              _fetchTra();
+            },
+            onD: (county, station) {
+              setState(() { _traCountyD = county; _traD = station; });
+              _fetchTra();
+            },
+            onSwap: () {
+              setState(() {
+                final ts = _traO; final tc = _traCountyO;
+                _traO = _traD; _traCountyO = _traCountyD;
+                _traD = ts; _traCountyD = tc;
+                _traLive = RailService.getTraLiveBoard(_traStations[_traO]!);
+              });
+              _fetchTra();
+            },
           ),
           const SizedBox(height: 10),
           if ((_traUpdateTime ?? '').isNotEmpty) _UpdTime(_traUpdateTime!),
@@ -1354,7 +1544,141 @@ class _Hint extends StatelessWidget {
   );
 }
 
-// OD 選擇器（筆記本膠帶風格）
+// ═══════════════════════════════════════════════════════════════
+// 兩段式 OD 選擇器（縣市 → 站名，台鐵專用） - 已改為手帳選單
+// ═══════════════════════════════════════════════════════════════
+class _GroupedODCard extends StatelessWidget {
+  final String origin, dest, originCounty, destCounty;
+  final Map<String, Map<String, String>> stationsByCounty;
+  final Color bg, acc;
+  final void Function(String county, String station) onO, onD;
+  final VoidCallback onSwap;
+
+  const _GroupedODCard({
+    required this.origin, required this.dest,
+    required this.originCounty, required this.destCounty,
+    required this.stationsByCounty,
+    required this.bg, required this.acc,
+    required this.onO, required this.onD, required this.onSwap,
+  });
+
+  Widget _buildSelector({
+    required BuildContext context,
+    required String label,
+    required String selectedCounty,
+    required String selectedStation,
+    required void Function(String county, String station) onChange,
+  }) {
+    final counties = stationsByCounty.keys.toList();
+    final stations = stationsByCounty[selectedCounty]?.keys.toList() ?? [];
+    final currentStation = stations.contains(selectedStation) ? selectedStation : stations.first;
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+      const SizedBox(height: 6),
+      
+      // ── 縣市選擇 (點擊觸發手帳選單) ──
+      GestureDetector(
+        onTap: () => _showScrapbookPicker(
+          context: context,
+          title: '選擇縣市',
+          items: counties,
+          selectedItem: selectedCounty,
+          onSelected: (c) {
+            final firstStation = stationsByCounty[c]!.keys.first;
+            onChange(c, firstStation);
+          },
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: acc.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: acc.withValues(alpha: 0.1)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(selectedCounty, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: acc)),
+              const SizedBox(width: 2),
+              Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 16),
+            ],
+          ),
+        ),
+      ),
+      
+      const SizedBox(height: 8),
+      
+      // ── 站名選擇 (點擊觸發手帳選單) ──
+      GestureDetector(
+        onTap: () => _showScrapbookPicker(
+          context: context,
+          title: '選擇車站',
+          items: stations,
+          selectedItem: currentStation,
+          onSelected: (s) => onChange(selectedCounty, s),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                currentStation,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: AppColors.textPrimary),
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
+          ],
+        ),
+      ),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cardBg = Color.lerp(bg, Colors.white, 0.55)!;
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: acc.withValues(alpha: 0.18), width: 1),
+        boxShadow: [BoxShadow(color: acc.withValues(alpha: 0.08), blurRadius: 12, offset: const Offset(0, 3))],
+      ),
+      child: Stack(children: [
+        Positioned(top: -2, left: 14, child: Transform.rotate(angle: -0.08, child: Container(
+          width: 46, height: 14,
+          decoration: BoxDecoration(color: acc.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(3)),
+        ))),
+        Positioned(top: 8, right: 12, child: Text('✿', style: TextStyle(fontSize: 14, color: acc.withValues(alpha: 0.4)))),
+        Positioned(bottom: 6, right: 10, child: const Text('🐻', style: TextStyle(fontSize: 18))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 18, 50, 14),
+          child: Row(children: [
+            Expanded(child: _buildSelector(
+              context: context, label: '出發站',
+              selectedCounty: originCounty, selectedStation: origin,
+              onChange: onO,
+            )),
+            GestureDetector(
+              onTap: onSwap,
+              child: Container(
+                width: 36, height: 36, margin: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(color: acc.withValues(alpha: 0.18), shape: BoxShape.circle),
+                child: Icon(Icons.swap_horiz_rounded, color: acc, size: 20),
+              ),
+            ),
+            Expanded(child: _buildSelector(
+              context: context, label: '抵達站',
+              selectedCounty: destCounty, selectedStation: dest,
+              onChange: onD,
+            )),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+// OD 選擇器（筆記本膠帶風格 - 已改為手帳選單）
 class _ODCard extends StatelessWidget {
   final String origin, dest;
   final List<String> stations;
@@ -1392,12 +1716,16 @@ class _ODCard extends StatelessWidget {
           child: Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('出發站', style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-              DropdownButton<String>(
-                value: origin, isExpanded: true, underline: const SizedBox(),
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: AppColors.textPrimary),
-                items: stations.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)))).toList(),
-                onChanged: (v) { if (v != null) onO(v); },
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: () => _showScrapbookPicker(
+                  context: context, title: '選擇車站',
+                  items: stations, selectedItem: origin, onSelected: onO,
+                ),
+                child: Row(children: [
+                  Expanded(child: Text(origin, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: AppColors.textPrimary))),
+                  Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
+                ]),
               ),
             ])),
             GestureDetector(
@@ -1410,12 +1738,16 @@ class _ODCard extends StatelessWidget {
             ),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('抵達站', style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
-              DropdownButton<String>(
-                value: dest, isExpanded: true, underline: const SizedBox(),
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
-                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: AppColors.textPrimary),
-                items: stations.map((s) => DropdownMenuItem(value: s, child: Text(s, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)))).toList(),
-                onChanged: (v) { if (v != null) onD(v); },
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: () => _showScrapbookPicker(
+                  context: context, title: '選擇車站',
+                  items: stations, selectedItem: dest, onSelected: onD,
+                ),
+                child: Row(children: [
+                  Expanded(child: Text(dest, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 22, color: AppColors.textPrimary))),
+                  Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
+                ]),
               ),
             ])),
           ]),

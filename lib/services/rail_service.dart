@@ -162,6 +162,23 @@ class RailService {
     return [];
   }
 
+  /// UV 指數 + 日出日落（由後端呼叫 OpenWeatherMap，App 不需要 API key）
+  /// 後端端點：GET /api/transport/weather/extra
+  /// 後端環境變數：OPENWEATHER_KEY=你的key
+  static Future<Map<String, dynamic>> getWeatherExtra() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/weather/extra'),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(utf8.decode(res.bodyBytes)));
+      }
+    } catch (e) {
+      if (kDebugMode) print('[WeatherExtra] $e');
+    }
+    return {};
+  }
+
   static Future<List<Map<String, dynamic>>> fetchAlishanSchedules() async {
     final snap = await FirebaseFirestore.instance.collection('tdx_alishan_rail_schedules').get();
     return snap.docs.map((d) {

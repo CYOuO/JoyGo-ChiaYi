@@ -6,8 +6,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
+import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show TapFeedback, SectionHeader;
 import '../services/community_service.dart';
 import 'saved_posts_page.dart';
@@ -205,13 +207,13 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false, D
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isGuest ? '登入享探索旅人特權' : _memberTitle(joinedAt),
+            isGuest ? context.read<AppSettingsProvider>().l10n.memberCardGuest : _memberTitle(joinedAt),
             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
                 color: AppColors.textPrimary),
           ),
           const SizedBox(height: 3),
           Text(
-            isGuest ? '行程管理 · 集章成就 · 旅行分享' : _formatJoinDate(joinedAt),
+            isGuest ? context.read<AppSettingsProvider>().l10n.memberCardGuestDesc : _formatJoinDate(joinedAt),
             style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),
         ],
@@ -230,7 +232,10 @@ Widget _memberCard(BuildContext context, Color primary, {bool isGuest = false, D
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
         ),
-        child: Text(isGuest ? '立即登入' : '旅行統計'),
+        child: Builder(builder: (ctx) {
+          final l = ctx.read<AppSettingsProvider>().l10n;
+          return Text(isGuest ? l.signIn : l.profileStats);
+        }),
       ),
     ]),
   );
@@ -314,20 +319,20 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
             decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
             child: Icon(Icons.bar_chart_rounded, color: p, size: 22)),
           const SizedBox(width: 12),
-          const Text('旅行統計', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          Text(context.read<AppSettingsProvider>().l10n.profileStats, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
         ]),
         const SizedBox(height: 20),
         if (!_loaded)
           Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: CircularProgressIndicator(color: p, strokeWidth: 2))
         else
           Row(children: [
-            _statTile(p, Icons.approval_rounded, '$_stamps', '打卡景點'),
+            _statTile(p, Icons.approval_rounded, '$_stamps', context.read<AppSettingsProvider>().l10n.profileCheckIn),
             const SizedBox(width: 8),
-            _statTile(p, Icons.local_fire_department_rounded, '$_streak', '連續打卡'),
+            _statTile(p, Icons.local_fire_department_rounded, '$_streak', context.read<AppSettingsProvider>().l10n.profileStreak),
             const SizedBox(width: 8),
-            _statTile(p, Icons.map_rounded, '$_trips', '行程數'),
+            _statTile(p, Icons.map_rounded, '$_trips', context.read<AppSettingsProvider>().l10n.profileTripStat),
             const SizedBox(width: 8),
-            _statTile(p, Icons.bookmark_rounded, '$_saved', '收藏數'),
+            _statTile(p, Icons.bookmark_rounded, '$_saved', context.read<AppSettingsProvider>().l10n.profileSavedCount),
           ]),
         const SizedBox(height: 16),
         // 激勵文字
@@ -336,9 +341,7 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(color: p.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12)),
           child: Text(
-            _stamps >= 10 ? '你已打卡 $_stamps 個景點，是資深探索者！🌟'
-              : _stamps >= 5 ? '繼續探索，還有 ${10 - _stamps} 個景點等你！✨'
-              : '開始你的第一次打卡，探索嘉義的美！🗺️',
+            context.read<AppSettingsProvider>().l10n.profileStampMotivation(_stamps),
             style: TextStyle(fontSize: 12, color: p, fontWeight: FontWeight.w600, height: 1.5),
             textAlign: TextAlign.center,
           ),
@@ -363,24 +366,20 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
 
 // ── 我的資料快捷區塊（一行 4 格，各色縫線邊框）──────────────────
 Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}) {
-  // 四種顏色各異：綠、暖橘、藍、粉紅
+  final l10n = context.read<AppSettingsProvider>().l10n;
   final tiles = [
-    // tab 1 = 打卡照片
-    (Icons.photo_camera_outlined, '打卡照片', const Color(0xFFE6F0E6),
+    (Icons.photo_camera_outlined, l10n.profilePhotos, const Color(0xFFE6F0E6),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 1)))),
-    // tab 2 = 成就徽章
-    (Icons.emoji_events_outlined, '成就徽章', const Color(0xFFF5EFE6),
+    (Icons.emoji_events_outlined, l10n.profileAchievements, const Color(0xFFF5EFE6),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 2)))),
-    // tab 4 = 小地圖（我的足跡）
-    (Icons.map_outlined, '我的足跡', const Color(0xFFE8EFF8),
+    (Icons.map_outlined, l10n.profileFootprint, const Color(0xFFE8EFF8),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 4)))),
-    // 收藏景點 → 本地收藏頁
-    (Icons.bookmark_border_rounded, '收藏景點', const Color(0xFFF8EAF0),
+    (Icons.bookmark_border_rounded, l10n.profileSavedSpotsNav, const Color(0xFFF8EAF0),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _GuestSavedSpotsPage()))),
   ];
 
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-    SectionHeader(title: '我的資料'),
+    SectionHeader(title: l10n.profileMyData),
     const SizedBox(height: 12),
     Row(
       children: tiles.asMap().entries.map((e) {
@@ -416,7 +415,8 @@ Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}
 }
 
 // ── 分享橫幅 ─────────────────────────────────────────────────
-Widget _referralBanner(Color primary) {
+Widget _referralBanner(BuildContext context, Color primary) {
+  final l10n = context.read<AppSettingsProvider>().l10n;
   return Container(
     padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
     decoration: BoxDecoration(
@@ -434,11 +434,11 @@ Widget _referralBanner(Color primary) {
       Expanded(child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('分享旅行，賺取回饋！',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
+          Text(l10n.profileShareTitle,
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800,
                 color: AppColors.textPrimary)),
           const SizedBox(height: 4),
-          Text('邀請好友註冊，雙方都能獲得優惠獎勵！',
+          Text(l10n.profileShareDesc,
             style: TextStyle(fontSize: 11,
                 color: AppColors.textPrimary.withValues(alpha: 0.65))),
           const SizedBox(height: 12),
@@ -455,7 +455,7 @@ Widget _referralBanner(Color primary) {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
             ),
-            child: const Text('立即邀請'),
+            child: Text(l10n.profileInvite),
           ),
         ],
       )),
@@ -467,32 +467,27 @@ Widget _referralBanner(Color primary) {
 
 // ── 隱私政策 / 常見問題連結 ──────────────────────────────────
 Widget _faqLinks(BuildContext context) {
+  final l10n = context.read<AppSettingsProvider>().l10n;
   return Row(
     mainAxisAlignment: MainAxisAlignment.center,
     children: [
-      _textLink(context, '隱私政策'),
+      _textLink(context, l10n.profilePrivacyPolicy, const PrivacyPolicyPage()),
       const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10),
         child: Text('·', style: TextStyle(color: AppColors.textHint)),
       ),
-      _textLink(context, '常見問題'),
+      _textLink(context, l10n.profileFAQ, const FAQPage()),
       const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10),
         child: Text('·', style: TextStyle(color: AppColors.textHint)),
       ),
-      _textLink(context, '關於我們'),
+      _textLink(context, l10n.profileAboutUs, const AboutPage()),
     ],
   );
 }
 
-Widget _textLink(BuildContext context, String label) => GestureDetector(
-  onTap: () {
-    Widget page;
-    if (label == '隱私政策') page = const PrivacyPolicyPage();
-    else if (label == '常見問題') page = const FAQPage();
-    else page = const AboutPage();
-    Navigator.push(context, MaterialPageRoute(builder: (_) => page));
-  },
+Widget _textLink(BuildContext context, String label, Widget page) => GestureDetector(
+  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => page)),
   child: Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
 );
 
@@ -503,6 +498,7 @@ class _GuestProfileView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n = context.watch<AppSettingsProvider>().l10n;
 
     return Scaffold(
       body: CustomScrollView(
@@ -515,8 +511,8 @@ class _GuestProfileView extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                 child: Column(children: [
                   Row(children: [
-                    const Text('關於我',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
+                    Text(l10n.profileAboutMe,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
                           color: AppColors.textPrimary)),
                   ]),
                   const SizedBox(height: 20),
@@ -527,21 +523,21 @@ class _GuestProfileView extends StatelessWidget {
                         size: 46, color: primary.withValues(alpha: 0.35))),
                   ),
                   const SizedBox(height: 10),
-                  const Text('訪客',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+                  Text(l10n.profileGuest,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary)),
                   const SizedBox(height: 2),
-                  Text('登入以儲存你的旅行足跡',
-                    style: TextStyle(fontSize: 12,
+                  Text(l10n.profileLoginPrompt,
+                    style: const TextStyle(fontSize: 12,
                         color: AppColors.textHint)),
                   const SizedBox(height: 20),
                   // Stats
                   Row(children: [
-                    _statBox('--', '旅行次數'),
+                    _statBox('--', l10n.profileTripCount),
                     _statDivider(),
-                    _statBox('--', '收藏景點'),
+                    _statBox('--', l10n.profileSavedSpots),
                     _statDivider(),
-                    _statBox('--', '集章數'),
+                    _statBox('--', l10n.profileStampCount),
                   ]),
                   const SizedBox(height: 20),
                 ]),
@@ -580,21 +576,21 @@ class _GuestProfileView extends StatelessWidget {
                   ),
                   child: Column(children: [
                     _menuItem(context, icon: Icons.bookmark_outline_rounded,
-                      iconColor: const Color(0xFFE91E63), title: '我的收藏',
+                      iconColor: const Color(0xFFE91E63), title: l10n.profileMyCollection,
                       onTap: () => _requireLogin(context)),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.local_offer_outlined,
-                      iconColor: const Color(0xFFFF9800), title: '優惠券',
+                      iconColor: const Color(0xFFFF9800), title: l10n.profileCoupons,
                       onTap: () => _requireLogin(context)),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.settings_outlined,
-                      iconColor: AppColors.textSecondary, title: '設定',
+                      iconColor: AppColors.textSecondary, title: l10n.settings,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SettingsScreen()))),
                   ]),
                 ),
                 const SizedBox(height: 14),
-                _referralBanner(primary),
+                _referralBanner(context, primary),
                 const SizedBox(height: 14),
                 _faqLinks(context),
                 const SizedBox(height: 40),
@@ -638,22 +634,23 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   }
 
   Future<void> _showEditNameDialog(BuildContext context, Color primary, String currentName) async {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     final ctrl = TextEditingController(text: currentName);
     final newName = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('修改名稱', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(l10n.profileEditName, style: const TextStyle(fontWeight: FontWeight.w800)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '輸入新的暱稱'),
+          decoration: InputDecoration(hintText: l10n.profileNameHint),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancel)),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            child: const Text('儲存'),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -667,10 +664,10 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
         }
         if (mounted) setState(() {});
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('名稱已更新'), behavior: SnackBarBehavior.floating));
+          SnackBar(content: Text(l10n.profileNameUpdated), behavior: SnackBarBehavior.floating));
       } catch (e) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('更新失敗：$e'), behavior: SnackBarBehavior.floating));
+          SnackBar(content: Text('${l10n.updateFail}：$e'), behavior: SnackBarBehavior.floating));
       }
     }
   }
@@ -692,12 +689,12 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
             decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
           ListTile(
             leading: const Icon(Icons.photo_library_rounded),
-            title: const Text('從相簿選取'),
+            title: Text(context.read<AppSettingsProvider>().l10n.profileSelectAlbum),
             onTap: () => Navigator.pop(context, ImageSource.gallery),
           ),
           ListTile(
             leading: const Icon(Icons.camera_alt_rounded),
-            title: const Text('拍照'),
+            title: Text(context.read<AppSettingsProvider>().l10n.profileTakePhoto),
             onTap: () => Navigator.pop(context, ImageSource.camera),
           ),
         ]),
@@ -766,9 +763,9 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                 child: Column(children: [
-                  const Row(children: [
-                    Text('我的',
-                      style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
+                  Row(children: [
+                    Text(context.watch<AppSettingsProvider>().l10n.profileMyProfile,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
                           color: AppColors.textPrimary)),
                   ]),
                   const SizedBox(height: 20),
@@ -817,11 +814,11 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                   const SizedBox(height: 20),
                   // Stats row
                   Row(children: [
-                    _statBox('$_tripCount', '旅行次數'),
+                    _statBox('$_tripCount', context.watch<AppSettingsProvider>().l10n.profileTripCount),
                     _statDivider(),
-                    _statBox('$_savedCount', '收藏景點'),
+                    _statBox('$_savedCount', context.watch<AppSettingsProvider>().l10n.profileSavedSpots),
                     _statDivider(),
-                    _statBox('$_stampCount', '集章數'),
+                    _statBox('$_stampCount', context.watch<AppSettingsProvider>().l10n.profileStampCount),
                   ]),
                   const SizedBox(height: 20),
                 ]),
@@ -861,33 +858,33 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                   ),
                   child: Column(children: [
                     _menuItem(context, icon: Icons.favorite_border_rounded,
-                      iconColor: const Color(0xFFE91E63), title: '我的收藏',
+                      iconColor: const Color(0xFFE91E63), title: context.watch<AppSettingsProvider>().l10n.profileMyCollection,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SavedPostsPage()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.local_offer_outlined,
-                      iconColor: const Color(0xFFFF9800), title: '優惠券',
+                      iconColor: const Color(0xFFFF9800), title: context.watch<AppSettingsProvider>().l10n.profileCoupons,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const CouponsScreen()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.people_outline_rounded,
-                      iconColor: const Color(0xFF2196F3), title: '旅伴管理',
+                      iconColor: const Color(0xFF2196F3), title: context.watch<AppSettingsProvider>().l10n.profileTravelCompanions,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const TravelCompanionsPage()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.emoji_events_outlined,
-                      iconColor: const Color(0xFFF57F17), title: '集章成就',
+                      iconColor: const Color(0xFFF57F17), title: context.watch<AppSettingsProvider>().l10n.profileAchievements,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const StampScreen()))),
                     _menuDivider(),
                     _menuItem(context, icon: Icons.settings_outlined,
-                      iconColor: AppColors.textSecondary, title: '設定',
+                      iconColor: AppColors.textSecondary, title: context.watch<AppSettingsProvider>().l10n.settings,
                       onTap: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const SettingsScreen()))),
                   ]),
                 ),
                 const SizedBox(height: 14),
-                _referralBanner(primary),
+                _referralBanner(context, primary),
                 const SizedBox(height: 14),
                 _faqLinks(context),
                 const SizedBox(height: 14),
@@ -897,7 +894,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                   child: OutlinedButton.icon(
                     onPressed: () => _logout(context),
                     icon: const Icon(Icons.logout_rounded, size: 16),
-                    label: const Text('登出'),
+                    label: Text(context.watch<AppSettingsProvider>().l10n.signOut),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
                       side: const BorderSide(color: AppColors.error, width: 1.2),
@@ -917,18 +914,19 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    final l10n = context.read<AppSettingsProvider>().l10n;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('確認登出', style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text('確定要登出帳號嗎？'),
+        title: Text(l10n.profileConfirmLogout, style: const TextStyle(fontWeight: FontWeight.w800)),
+        content: Text(l10n.profileConfirmLogout + '？'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消')),
+              child: Text(l10n.cancel)),
           TextButton(onPressed: () => Navigator.pop(context, true),
-              child: const Text('登出',
-                  style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))),
+              child: Text(l10n.signOut,
+                  style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))),
         ],
       ),
     );
@@ -973,7 +971,7 @@ class SavedPostsPage extends StatelessWidget {
                 return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                   const Icon(Icons.bookmark_border_rounded, size: 48, color: AppColors.textHint),
                   const SizedBox(height: 12),
-                  const Text('還沒有收藏的貼文', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                  Text(context.read<AppSettingsProvider>().l10n.profileNoSavedPosts, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
                   const SizedBox(height: 6),
                   const Text('去社群探索喜歡的貼文並收藏吧！', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
                 ]));
@@ -1155,7 +1153,7 @@ class _GuestSavedSpotsPageState extends State<_GuestSavedSpotsPage> {
               ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Icon(Icons.favorite_border_rounded, size: 52, color: AppColors.textHint.withValues(alpha: 0.4)),
                   const SizedBox(height: 14),
-                  const Text('還沒有收藏景點', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text(context.read<AppSettingsProvider>().l10n.profileNoSavedSpotsTxt, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                   const SizedBox(height: 6),
                   const Text('點擊景點上的愛心即可收藏', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
                   const SizedBox(height: 20),

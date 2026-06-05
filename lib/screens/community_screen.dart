@@ -4,12 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle;
 import '../models/dummy_data.dart';
 import '../services/community_service.dart';
 import '../services/spot_service.dart';
 import '../services/trip_service.dart';
+import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show WashiTapeDivider;
 
 // Map trip icon key (emoji or named) → IconData
@@ -33,27 +35,22 @@ IconData _tripIconFromKey(String key) {
   }
 }
 
-// 全域時間格式化工具
-String _timeAgo(DateTime dt) {
-  final diff = DateTime.now().difference(dt);
-  if (diff.inMinutes < 1) return '剛剛';
-  if (diff.inHours < 1) return '${diff.inMinutes} 分鐘前';
-  if (diff.inDays < 1) return '${diff.inHours} 小時前';
-  if (diff.inDays < 7) return '${diff.inDays} 天前';
-  return '${dt.month}/${dt.day}';
-}
+// 全域時間格式化工具（由 AppL10n.commTimeAgo 處理）
+String _timeAgo(DateTime dt, [AppL10n? l10n]) =>
+    (l10n ?? const AppL10n('zh')).commTimeAgo(dt);
 
 // ── 套用行程：top-level function，任何頁面都可呼叫 ───────────────
 void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
   final user = FirebaseAuth.instance.currentUser;
+  final l10n = context.read<AppSettingsProvider>().l10n;
   if (user == null) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('請先登入才能套用行程'), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(l10n.commLoginRequired), behavior: SnackBarBehavior.floating));
     return;
   }
   if (spotNames.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-      content: Text('此貼文沒有景點資訊'), behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(l10n.commNoSpotInfo), behavior: SnackBarBehavior.floating));
     return;
   }
   final primary = Theme.of(context).colorScheme.primary;
@@ -78,7 +75,7 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
           child: Row(children: [
             Icon(Icons.add_location_alt_rounded, color: primary, size: 20),
             const SizedBox(width: 8),
-            Text('套用到哪個行程？',
+            Text(l10n.commApplyToTrip,
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
           ]),
         ),
@@ -86,7 +83,7 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Text(
-            '將加入 ${spotNames.length} 個景點：${spotNames.take(3).join("、")}${spotNames.length > 3 ? "…" : ""}',
+            l10n.commAddSpotsDesc(spotNames.length, spotNames.toList()),
             style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
         ),
         const Divider(height: 20),
@@ -101,8 +98,8 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.map_outlined, size: 40, color: AppColors.textHint),
                     const SizedBox(height: 12),
-                    const Text('還沒有行程，請先在行程管理中建立行程',
-                      style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                    Text(l10n.commNoTripYet,
+                      style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
                   ]),
                 );
               }
@@ -130,7 +127,7 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(
-                                '已將 ${spotNames.length} 個景點加入「${trip.title}」'),
+                                l10n.commApplySuccess(spotNames.length, trip.title)),
                             behavior: SnackBarBehavior.floating,
                             backgroundColor: primary,
                             shape: RoundedRectangleBorder(
@@ -140,7 +137,7 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
                       } catch (e) {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('套用失敗：$e'),
+                            content: Text('${l10n.commApplyFailPrefix}$e'),
                             behavior: SnackBarBehavior.floating,
                           ));
                         }
@@ -233,6 +230,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n = context.watch<AppSettingsProvider>().l10n;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.surface,
@@ -241,7 +239,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 controller: _searchCtrl,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: '搜尋景點名稱，篩選行程…',
+                  hintText: l10n.mapSearch,
                   hintStyle: const TextStyle(fontSize: 14),
                   border: InputBorder.none,
                   filled: false,
@@ -267,7 +265,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                         color: p.withValues(alpha: 0.35)))),
                   ])),
                   const SizedBox(width: 2),
-                  const Text('旅遊社群', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  Text(l10n.commTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                 ]);
               }),
         leading: _isSearching
@@ -292,7 +290,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             color: AppColors.surface,
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: _SegmentedControl(
-              labels: const ['我的貼文', '追蹤的貼文', '探索全部'],
+              labels: [l10n.commMyPosts, l10n.commFollowingTab, l10n.commExploreAll],
               selectedIndex: _tabIndex,
               primary: primary,
               onChanged: (i) {
@@ -374,8 +372,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 )),
                 Text(
                   _budgetActive
-                      ? 'NT\$${_budgetRange.start.round()}–${_budgetRange.end >= _budgetMax ? "不限" : "${_budgetRange.end.round()}"}'
-                      : '不限',
+                      ? 'NT\$${_budgetRange.start.round()}–${_budgetRange.end >= _budgetMax ? context.read<AppSettingsProvider>().l10n.noLimit : "${_budgetRange.end.round()}"}'
+                      : context.read<AppSettingsProvider>().l10n.noLimit,
                   style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
                       color: _budgetActive ? primary : AppColors.textHint)),
                 const SizedBox(width: 10),
@@ -390,8 +388,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
               child: Row(children: [
-                Expanded(child: _contentTabItem('行程分享', 0, primary)),
-                Expanded(child: _contentTabItem('討論區', 1, primary)),
+                Expanded(child: _contentTabItem(context.read<AppSettingsProvider>().l10n.commTripShareTab, 0, primary)),
+                Expanded(child: _contentTabItem(context.read<AppSettingsProvider>().l10n.commDiscussionTab, 1, primary)),
               ]),
             ),
             const Divider(height: 1),
@@ -484,12 +482,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
                               context: context,
                               builder: (_) => AlertDialog(
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: const Text('刪除貼文', style: TextStyle(fontWeight: FontWeight.w800)),
-                                content: const Text('確定要刪除這篇貼文嗎？此操作無法復原。'),
+                                title: Text(context.read<AppSettingsProvider>().l10n.commDeletePost, style: const TextStyle(fontWeight: FontWeight.w800)),
+                                content: Text(context.read<AppSettingsProvider>().l10n.commDeleteConfirm),
                                 actions: [
-                                  TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                                  TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
                                   TextButton(onPressed: () => Navigator.pop(context, true),
-                                    child: const Text('刪除', style: TextStyle(color: AppColors.error))),
+                                    child: Text(context.read<AppSettingsProvider>().l10n.delete, style: const TextStyle(color: AppColors.error))),
                                 ],
                               ),
                             );
@@ -566,7 +564,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請先登入才能發布貼文'), behavior: SnackBarBehavior.floating));
+        SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost), behavior: SnackBarBehavior.floating));
       return;
     }
     Navigator.push(context,
@@ -588,7 +586,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
             Row(children: [
-              Text('預算篩選', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(context.read<AppSettingsProvider>().l10n.commBudgetFilter, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
               const Spacer(),
               TextButton(
                 onPressed: () {
@@ -596,7 +594,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                   setState(() => _budgetRange = const RangeValues(0, _budgetMax));
                   Navigator.pop(ctx);
                 },
-                child: const Text('重設'),
+                child: Text(context.read<AppSettingsProvider>().l10n.reset),
               ),
             ]),
             const SizedBox(height: 8),
@@ -627,14 +625,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
               Text('NT\$0', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
               Text('NT\$1000', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
               Text('NT\$2000', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
-              Text('不限', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+              Text(context.read<AppSettingsProvider>().l10n.noLimit, style: TextStyle(fontSize: 11, color: AppColors.textHint)),
             ]),
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('套用篩選'),
+                child: Text(context.read<AppSettingsProvider>().l10n.commApplyFilter),
               ),
             ),
           ]),
@@ -732,7 +730,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               heroTag: 'create_post',
               onPressed: () => _showCreatePostSheet(context, primary),
               icon: const Icon(Icons.add_rounded),
-              label: const Text('發文'),
+              label: Text(context.read<AppSettingsProvider>().l10n.commCreatePost),
               backgroundColor: primary,
               foregroundColor: Colors.white,
             ),
@@ -763,15 +761,15 @@ class _CommunityScreenState extends State<CommunityScreen> {
             Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               const Icon(Icons.map_outlined, size: 52, color: AppColors.textHint),
               const SizedBox(height: 12),
-              Text(q.isNotEmpty ? '找不到「$q」相關行程' : '還沒有行程分享',
+              Text(q.isNotEmpty ? context.read<AppSettingsProvider>().l10n.commSearchNoResult(q) : context.read<AppSettingsProvider>().l10n.commNoTripsShared,
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
               const SizedBox(height: 6),
-              const Text('點下方按鈕分享你的行程！', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+              Text(context.read<AppSettingsProvider>().l10n.commShareTripHint, style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
             ])),
             Positioned(right: 16, bottom: 16, child: FloatingActionButton.extended(
               heroTag: 'create_trip_post',
               onPressed: () => _showCreatePostSheet(context, primary, defaultType: 'trip'),
-              icon: const Icon(Icons.add_rounded), label: const Text('分享行程'),
+              icon: const Icon(Icons.add_rounded), label: Text(context.read<AppSettingsProvider>().l10n.commShareTrip),
               backgroundColor: primary, foregroundColor: Colors.white,
             )),
           ]);
@@ -808,9 +806,9 @@ class _CommunityScreenState extends State<CommunityScreen> {
                       children: [
                         const Icon(Icons.chat_bubble_outline_rounded, size: 52, color: AppColors.textHint),
                         const SizedBox(height: 12),
-                        const Text('還沒有討論', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+                        Text(context.read<AppSettingsProvider>().l10n.commNoDiscussion, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
                         const SizedBox(height: 6),
-                        const Text('點下方按鈕發起第一個討論！', style: TextStyle(color: AppColors.textHint, fontSize: 13)),
+                        Text(context.read<AppSettingsProvider>().l10n.commNoDiscussionHint, style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
                       ],
                     ))
                   : ListView(
@@ -824,7 +822,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
               heroTag: 'create_discussion',
               onPressed: () => _showCreatePostSheet(context, primary, defaultType: 'discussion'),
               icon: const Icon(Icons.add_rounded),
-              label: const Text('發文'),
+              label: Text(context.read<AppSettingsProvider>().l10n.commCreatePost),
               backgroundColor: primary,
               foregroundColor: Colors.white,
             ),
@@ -923,7 +921,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(8)),
-                  child: Text('討論', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
+                  child: Text(context.read<AppSettingsProvider>().l10n.commDiscussionLabel, style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
                 ),
               ]),
               const SizedBox(height: 14),
@@ -931,12 +929,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
               const SizedBox(height: 12),
               Text(post.$2, style: const TextStyle(fontSize: 14, color: AppColors.textSecondary, height: 1.8)),
               const SizedBox(height: 6),
-              Text('歡迎分享你的看法與建議，讓更多旅人參考！', style: TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.7)),
+              Text(context.read<AppSettingsProvider>().l10n.commWelcomeOpinion, style: TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.7)),
               const Divider(height: 28),
               Row(children: [
                 Icon(Icons.chat_bubble_outline_rounded, size: 15, color: primary),
                 const SizedBox(width: 6),
-                Text('留言區', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: primary)),
+                Text(context.read<AppSettingsProvider>().l10n.commCommentSection, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: primary)),
               ]),
               const SizedBox(height: 12),
               _discussionReply('旅行達人', '達', '謝謝分享！這個問題我也很好奇，期待更多人的回覆。', '1小時前', 5, primary),
@@ -1235,8 +1233,8 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     decoration: BoxDecoration(
                       color: AppColors.accentStraw,
                       borderRadius: BorderRadius.circular(4)),
-                    child: const Text('本週精選',
-                      style: TextStyle(color: AppColors.primaryDark, fontSize: 10, fontWeight: FontWeight.w700))),
+                    child: Text(context.read<AppSettingsProvider>().l10n.commWeeklyFeature,
+                      style: const TextStyle(color: AppColors.primaryDark, fontSize: 10, fontWeight: FontWeight.w700))),
                   const SizedBox(height: 8),
                   const Text('嘉義文青散步路線\n本週最多人按讚',
                     style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w800, height: 1.4)),
@@ -1457,7 +1455,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     const Spacer(),
                     GestureDetector(
                       onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: const Text('已加入收藏'), backgroundColor: Theme.of(context).colorScheme.primary,
+                        SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.commAddedFav), backgroundColor: Theme.of(context).colorScheme.primary,
                           behavior: SnackBarBehavior.floating)),
                       child: const Icon(Icons.bookmark_border_rounded, size: 20, color: AppColors.textHint),
                     ),
@@ -1480,10 +1478,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
           children: [
             const Icon(Icons.group_outlined, size: 60, color: AppColors.textHint),
             const SizedBox(height: 16),
-            const Text('還沒有追蹤任何人',
+            Text(context.read<AppSettingsProvider>().l10n.commNoFollowingPeople,
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.textPrimary)),
             const SizedBox(height: 8),
-            const Text('去探索頁面找找志同道合的旅伴吧！',
+            Text(context.read<AppSettingsProvider>().l10n.commGoExplore,
               style: TextStyle(color: AppColors.textHint)),
             const SizedBox(height: 20),
             ElevatedButton(
@@ -1494,7 +1492,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     curve: Curves.easeInOut)
                     .then((_) { if (mounted) _programmaticScroll = false; });
               },
-              child: const Text('探索社群'),
+              child: Text(context.read<AppSettingsProvider>().l10n.commExploreComm),
             ),
           ],
         ),
@@ -1510,10 +1508,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
           return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             const Icon(Icons.inbox_rounded, size: 52, color: AppColors.textHint),
             const SizedBox(height: 12),
-            const Text('追蹤的人還沒有發文',
+            Text(context.read<AppSettingsProvider>().l10n.commFollowingNoPosts,
               style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
             const SizedBox(height: 6),
-            const Text('等等看他們分享新旅程！',
+            Text(context.read<AppSettingsProvider>().l10n.commFollowingWait,
               style: TextStyle(color: AppColors.textHint)),
           ]));
         }
@@ -1541,10 +1539,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
             children: [
               Icon(Icons.edit_note_rounded, size: 60, color: AppColors.textHint.withValues(alpha: 0.5)),
               const SizedBox(height: 16),
-              const Text('還沒有發布貼文',
+              Text(context.read<AppSettingsProvider>().l10n.commNoMyPost,
                 style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.textPrimary)),
               const SizedBox(height: 8),
-              const Text('分享你的嘉義旅行，讓更多人看見！',
+              Text(context.read<AppSettingsProvider>().l10n.commShareEncourage,
                 style: TextStyle(color: AppColors.textHint)),
               const SizedBox(height: 20),
               ElevatedButton.icon(
@@ -1626,7 +1624,7 @@ class _SortToggleButtonState extends State<_SortToggleButton>
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: Text(
-                widget.isLatest ? '最新' : '熱門',
+                widget.isLatest ? context.read<AppSettingsProvider>().l10n.commSortLatest : context.read<AppSettingsProvider>().l10n.commSortHot,
                 key: ValueKey(widget.isLatest),
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
                     color: AppColors.textSecondary)),
@@ -2004,7 +2002,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                             _showApplyTripSheet(context, spotNames);
                           },
                           icon: const Icon(Icons.add_rounded, size: 15),
-                          label: const Text('套用行程'),
+                          label: Text(context.read<AppSettingsProvider>().l10n.commApplyTripBtn),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                             textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
@@ -2028,7 +2026,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           const SizedBox(width: 6),
                           HandDrawnUnderline(
                             color: primary.withValues(alpha: 0.25),
-                            child: Text('行程介紹',
+                            child: Text(context.read<AppSettingsProvider>().l10n.commTripIntroLabel,
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: primary))),
                         ]),
                         const SizedBox(height: 10),
@@ -2054,7 +2052,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                           const SizedBox(width: 6),
                           HandDrawnUnderline(
                             color: primary.withValues(alpha: 0.25),
-                            child: Text('行程景點',
+                            child: Text(context.read<AppSettingsProvider>().l10n.commTripSpotsLabel,
                               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: primary))),
                         ]),
                         const SizedBox(height: 12),
@@ -2474,11 +2472,11 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                   builder: (_) => AlertDialog(
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                     title: const Text('刪除貼文', style: TextStyle(fontWeight: FontWeight.w800)),
-                    content: const Text('確定要刪除這篇貼文嗎？此操作無法復原。'),
+                    content: Text(context.read<AppSettingsProvider>().l10n.commDeleteConfirm),
                     actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                      TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
                       TextButton(onPressed: () => Navigator.pop(context, true),
-                        child: const Text('刪除', style: TextStyle(color: AppColors.error))),
+                        child: Text(context.read<AppSettingsProvider>().l10n.delete, style: const TextStyle(color: AppColors.error))),
                     ],
                   ),
                 );
@@ -2607,7 +2605,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
               ),
               const SizedBox(height: 18),
               // Comments stream
-              Text('留言區', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: primary)),
+              Text(context.read<AppSettingsProvider>().l10n.commCommentSection, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: primary)),
               const SizedBox(height: 10),
               StreamBuilder<List<CommunityComment>>(
                 stream: CommunityService.commentsStream(post.id),
@@ -2616,7 +2614,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                   if (comments.isEmpty) {
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      child: Center(child: Text('還沒有留言，來搶頭香！',
+                      child: Center(child: Text(context.read<AppSettingsProvider>().l10n.commNoComment,
                         style: TextStyle(color: AppColors.textHint, fontSize: 13))),
                     );
                   }
@@ -2687,7 +2685,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                   controller: _commentCtrl,
                   focusNode: _commentFocus,
                   decoration: InputDecoration(
-                    hintText: _replyTarget != null ? '回覆 @$_replyTarget…' : '分享你的想法…',
+                    hintText: _replyTarget != null ? '${context.read<AppSettingsProvider>().l10n.commReplyTo}$_replyTarget…' : context.read<AppSettingsProvider>().l10n.commShareThoughts,
                     filled: true, fillColor: const Color(0xFFF5F5F5),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
@@ -2716,7 +2714,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                     _commentFocus.unfocus();
                   } catch (e) {
                     if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('留言失敗：$e'), behavior: SnackBarBehavior.floating));
+                      SnackBar(content: Text('${context.read<AppSettingsProvider>().l10n.commCommentFail}$e'), behavior: SnackBarBehavior.floating));
                   } finally {
                     if (mounted) setState(() => _sending = false);
                   }
@@ -2837,7 +2835,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                         if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('已送出舉報，感謝你的回報'), behavior: SnackBarBehavior.floating));
+                          SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.commReported), behavior: SnackBarBehavior.floating));
                       }
                     },
                     child: const Icon(Icons.flag_outlined, size: 13, color: AppColors.textHint),
@@ -2917,7 +2915,7 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.map_outlined, size: 40, color: AppColors.textHint),
                       const SizedBox(height: 12),
-                      const Text('還沒有行程，請先建立行程',
+                      Text(context.read<AppSettingsProvider>().l10n.commNoTripInCreate,
                         style: TextStyle(color: AppColors.textHint)),
                     ]),
                   );
@@ -3127,13 +3125,13 @@ class _ReportDialog extends StatelessWidget {
       title: Row(children: [
         Icon(Icons.flag_rounded, size: 18, color: AppColors.error),
         const SizedBox(width: 8),
-        const Text('舉報留言', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+        Text(context.read<AppSettingsProvider>().l10n.commReportComment, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
       ]),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('請選擇舉報原因：', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+          Text(context.read<AppSettingsProvider>().l10n.commReportReason, style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
           const SizedBox(height: 10),
           ..._reasons.map((r) => ListTile(
             dense: true,
@@ -3211,7 +3209,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
           Center(child: Container(width: 36, height: 4,
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
-          const Text('選擇行程', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          Text(context.read<AppSettingsProvider>().l10n.commSelectTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           ...snap.docs.map((doc) {
             final d = doc.data();
@@ -3256,7 +3254,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
     }
     if (_type == 'trip' && _selectedTrip == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('行程分享請先選擇一個行程'), behavior: SnackBarBehavior.floating));
+        SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.commTripShareNoTrip), behavior: SnackBarBehavior.floating));
       return;
     }
     setState(() => _posting = true);
@@ -3295,7 +3293,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
             onPressed: _posting ? null : _submit,
             child: _posting
               ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : Text('發布', style: TextStyle(fontWeight: FontWeight.w800, color: primary, fontSize: 15)),
+              : Text(context.read<AppSettingsProvider>().l10n.publish, style: TextStyle(fontWeight: FontWeight.w800, color: primary, fontSize: 15)),
           ),
         ],
       ),
@@ -3330,9 +3328,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
           const SizedBox(height: 12),
           // 貼文類型
           Row(children: [
-            _typeChip('行程分享', 'trip', primary, Icons.luggage_rounded),
+            _typeChip(context.read<AppSettingsProvider>().l10n.commTripShareTab, 'trip', primary, Icons.luggage_rounded),
             const SizedBox(width: 10),
-            _typeChip('討論區', 'discussion', primary, Icons.forum_rounded),
+            _typeChip(context.read<AppSettingsProvider>().l10n.commDiscussionTab, 'discussion', primary, Icons.forum_rounded),
           ]),
           const SizedBox(height: 12),
           // 選擇行程（僅行程分享類型）
@@ -3374,7 +3372,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('行程景點', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
+                  Text(context.read<AppSettingsProvider>().l10n.commTripSpotsLabel, style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
                   const SizedBox(height: 6),
                   ...(_selectedTrip!['spots'] as List).asMap().entries.map((e) =>
                     Padding(

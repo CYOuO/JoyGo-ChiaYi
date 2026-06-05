@@ -59,22 +59,31 @@ class SpotService {
   }
 
   static Map<String, dynamic> _toJson(Spot s) => {
-    'id': s.id, 'name': s.name, 'category': s.category,
-    'description': s.description, 'lat': s.lat, 'lng': s.lng,
+    'id': s.id, 'name': s.name,
+    'name_en': s.nameEn, 'name_ja': s.nameJa,
+    'category': s.category,
+    'description': s.description,
+    'desc_en': s.descriptionEn, 'desc_ja': s.descriptionJa,
+    'lat': s.lat, 'lng': s.lng,
     'rating': s.rating, 'imageUrl': s.imageUrl,
     'openHours': s.openHours, 'address': s.address,
   };
 
   static Spot _fromJson(Map<String, dynamic> m) => Spot(
-    id: m['id'] as String? ?? '', name: m['name'] as String? ?? '', nameEn: '',
-    category: m['category'] as String? ?? 'attraction',
-    description: m['description'] as String? ?? '',
-    lat: (m['lat'] as num?)?.toDouble() ?? 0,
-    lng: (m['lng'] as num?)?.toDouble() ?? 0,
-    rating: (m['rating'] as num?)?.toDouble() ?? 0,
-    imageUrl: m['imageUrl'] as String? ?? '',
-    openHours: m['openHours'] as String? ?? '',
-    address: m['address'] as String? ?? '',
+    id:             m['id']          as String? ?? '',
+    name:           m['name']        as String? ?? '',
+    nameEn:         m['name_en']     as String? ?? '',
+    nameJa:         m['name_ja']     as String? ?? '',
+    category:       m['category']    as String? ?? 'attraction',
+    description:    m['description'] as String? ?? '',
+    descriptionEn:  m['desc_en']     as String? ?? '',
+    descriptionJa:  m['desc_ja']     as String? ?? '',
+    lat:     (m['lat']      as num?)?.toDouble() ?? 0,
+    lng:     (m['lng']      as num?)?.toDouble() ?? 0,
+    rating:  (m['rating']   as num?)?.toDouble() ?? 0,
+    imageUrl:  m['imageUrl']   as String? ?? '',
+    openHours: m['openHours']  as String? ?? '',
+    address:   m['address']    as String? ?? '',
   );
 
   static Future<List<Spot>> _fetchFromFirestore() async {
@@ -98,13 +107,18 @@ class SpotService {
         if (name.isEmpty) continue;
         final images = d['images'];
         out.add(Spot(
-          id: 'tdx_${doc.id}', name: name, nameEn: '',
-          category: 'attraction',
-          description: d['descriptionDetail']?.toString() ?? d['description']?.toString() ?? '',
+          id:           'tdx_${doc.id}',
+          name:          name,
+          nameEn:        d['name_en']?.toString()  ?? '',
+          nameJa:        d['name_ja']?.toString()  ?? '',
+          category:     'attraction',
+          description:   d['descriptionDetail']?.toString() ?? d['description']?.toString() ?? '',
+          descriptionEn: d['desc_en']?.toString()  ?? '',
+          descriptionJa: d['desc_ja']?.toString()  ?? '',
           lat: lat, lng: lng, rating: 0,
-          imageUrl: (images is List && images.isNotEmpty) ? images.first.toString() : '',
-          openHours: d['openTime']?.toString() ?? '',
-          address: d['address']?.toString() ?? '',
+          imageUrl:  (images is List && images.isNotEmpty) ? images.first.toString() : '',
+          openHours:  d['openTime']?.toString() ?? '',
+          address:    d['address']?.toString()  ?? '',
         ));
       }
     } catch (e) {
@@ -124,14 +138,19 @@ class SpotService {
         if (name.isEmpty) continue;
         final images = d['images'];
         out.add(Spot(
-          id: 'rest_${doc.id}', name: name, nameEn: '',
-          category: 'restaurant',
-          description: d['shortDesc']?.toString() ?? '',
+          id:           'rest_${doc.id}',
+          name:          name,
+          nameEn:        d['name_en']?.toString()  ?? '',
+          nameJa:        d['name_ja']?.toString()  ?? '',
+          category:     'restaurant',
+          description:   d['shortDesc']?.toString() ?? '',
+          descriptionEn: d['desc_en']?.toString()  ?? '',
+          descriptionJa: d['desc_ja']?.toString()  ?? '',
           lat: lat, lng: lng,
-          rating: (d['rating'] as num?)?.toDouble() ?? 0,
-          imageUrl: (images is List && images.isNotEmpty) ? images.first.toString() : '',
-          openHours: d['time']?.toString() ?? '',
-          address: d['address']?.toString() ?? '',
+          rating:   (d['rating'] as num?)?.toDouble() ?? 0,
+          imageUrl:  (images is List && images.isNotEmpty) ? images.first.toString() : '',
+          openHours:  d['time']?.toString()    ?? '',
+          address:    d['address']?.toString() ?? '',
         ));
       }
     } catch (e) {

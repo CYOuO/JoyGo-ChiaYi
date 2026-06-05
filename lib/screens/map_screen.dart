@@ -10,8 +10,11 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/common_widgets.dart' show SpotRatingSection;
+import '../providers/app_settings_provider.dart';
+import '../widgets/common_widgets.dart' show SpotRatingSection, TranslatedText;
+import '../services/translation_service.dart';
 import '../widgets/spot_save_button.dart';
 
 // ═══════════════════════════════════════════════════════════
@@ -993,9 +996,9 @@ class _MapScreenState extends State<MapScreen> {
     if (!mounted) return;
     if (_myPos == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('無法取得位置，請確認已開啟定位權限'),
-          duration: Duration(seconds: 3),
+        SnackBar(
+          content: Text(context.read<AppSettingsProvider>().l10n.mapNoLocation),
+          duration: const Duration(seconds: 3),
         ),
       );
       return;
@@ -1440,8 +1443,8 @@ class _MapScreenState extends State<MapScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('細節篩選',
-                                style: TextStyle(
+                            Text(context.read<AppSettingsProvider>().l10n.mapDetailFilter,
+                                style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold)),
                             if (_hasActiveSubFilters)
@@ -1465,7 +1468,7 @@ class _MapScreenState extends State<MapScreen> {
                                   });
                                   setDlg(() {});
                                 },
-                                child: const Text('清除全部'),
+                                child: Text(context.read<AppSettingsProvider>().l10n.clearAll),
                               ),
                           ],
                         ),
@@ -1484,7 +1487,7 @@ class _MapScreenState extends State<MapScreen> {
                         if (!hasAny) ...[
                           const SizedBox(height: 8),
                           Text(
-                            '請先在圖層控制中開啟景點類別。',
+                            context.read<AppSettingsProvider>().l10n.mapNoLayerHint,
                             style: TextStyle(
                                 color: Colors.grey.shade400,
                                 fontSize: 13,
@@ -1496,7 +1499,7 @@ class _MapScreenState extends State<MapScreen> {
                         if (showTdx) ...[
                           _filterHeader(Icons.account_balance_rounded, 'TDX 景點類別'),
                           Text(
-                            '未選則顯示全部',
+                            context.read<AppSettingsProvider>().l10n.mapFilterHintAll,
                             style: TextStyle(
                                 fontSize: 11,
                                 color: Colors.grey.shade400),
@@ -1545,7 +1548,7 @@ class _MapScreenState extends State<MapScreen> {
                                 (v) => setState(() => _accessibleOnly = v)),
                           ]),
                           const SizedBox(height: 10),
-                          Text('公廁類型', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                          Text(context.read<AppSettingsProvider>().l10n.mapToiletType, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 8, runSpacing: 6,
@@ -1571,7 +1574,7 @@ class _MapScreenState extends State<MapScreen> {
                                 (v) => setState(() => _disabledParking = v)),
                           ]),
                           const SizedBox(height: 10),
-                          Text('停車場型式', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                          Text(context.read<AppSettingsProvider>().l10n.mapParkingType, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
                           const SizedBox(height: 6),
                           Wrap(
                             spacing: 8, runSpacing: 6,
@@ -1743,7 +1746,7 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setDlg) => AlertDialog(
-          title: const Text('圖層控制'),
+          title: Text(context.read<AppSettingsProvider>().l10n.mapLayerControl),
           contentPadding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
           content: SizedBox(
             width: double.maxFinite,
@@ -1755,13 +1758,13 @@ class _MapScreenState extends State<MapScreen> {
                       setState(() => _visible.addAll(_Cat.values));
                       setDlg(() {});
                     },
-                    child: const Text('全部顯示')),
+                    child: Text(context.read<AppSettingsProvider>().l10n.mapShowAll)),
                 TextButton(
                     onPressed: () {
                       setState(() => _visible.clear());
                       setDlg(() {});
                     },
-                    child: const Text('全部隱藏')),
+                    child: Text(context.read<AppSettingsProvider>().l10n.mapHideAll)),
               ]),
               const Divider(height: 1),
               Flexible(
@@ -1791,7 +1794,7 @@ class _MapScreenState extends State<MapScreen> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('完成')),
+                child: Text(context.read<AppSettingsProvider>().l10n.done)),
           ],
         ),
       ),
@@ -2137,7 +2140,7 @@ class _PlaceSheet extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    ..._buildFields(),
+                    ..._buildFields(context),
                     SpotRatingSection(placeId: place.id),
                   ]),
                 ),
@@ -2175,9 +2178,8 @@ class _PlaceSheet extends StatelessWidget {
                 fontSize: 12, fontWeight: FontWeight.w600)),
       );
 
-  List<Widget> _buildFields() {
-    // For facilities (旅遊服務中心 / 借問站), show a clean custom layout
-    if (place.cat == _Cat.facility) return _buildFacilityFields();
+  List<Widget> _buildFields(BuildContext context) {
+    if (place.cat == _Cat.facility) return _buildFacilityFields(context);
 
     const shownName = {
       '停車場名稱','加油站站名','加油站名站名','店家名稱','業者名稱',
@@ -2209,17 +2211,17 @@ class _PlaceSheet extends StatelessWidget {
       rows.add(_InfoRow(label: label, value: val));
     }
     if (rows.isEmpty) {
-      rows.add(const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Text('（無額外資訊）',
-            style: TextStyle(color: AppColors.textHint)),
+      rows.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Text(context.read<AppSettingsProvider>().l10n.mapNoExtraInfo,
+            style: const TextStyle(color: AppColors.textHint)),
       ));
     }
     return rows;
   }
 
   /// Clean structured detail for 旅遊服務中心 / 借問站
-  List<Widget> _buildFacilityFields() {
+  List<Widget> _buildFacilityFields(BuildContext context) {
     final raw = place.raw;
 
     // Helper: pull a value from multiple possible field names
@@ -2249,10 +2251,10 @@ class _PlaceSheet extends StatelessWidget {
     if (note != null)
       rows.add(_InfoRow(label: '備註', value: note));
     if (rows.isEmpty)
-      rows.add(const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
-        child: Text('（無額外資訊）',
-            style: TextStyle(color: AppColors.textHint)),
+      rows.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Text(context.read<AppSettingsProvider>().l10n.mapNoExtraInfo,
+            style: const TextStyle(color: AppColors.textHint)),
       ));
     return rows;
   }
@@ -2480,13 +2482,14 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                (!_descExpanded && needsExpand)
+                              TranslatedText(
+                                text: (!_descExpanded && needsExpand)
                                     ? mainText.substring(0, 200)
                                     : mainText,
                                 style: const TextStyle(
                                     fontSize: 13, height: 1.7,
                                     color: AppColors.textPrimary),
+                                domain: TranslationDomain.spot,
                               ),
                               if (needsExpand) ...[
                                 const SizedBox(height: 6),
@@ -2494,7 +2497,9 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                                   onTap: () => setState(() => _descExpanded = !_descExpanded),
                                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                                     Text(
-                                      _descExpanded ? '收起' : '展開全文',
+                                      _descExpanded
+                                          ? context.read<AppSettingsProvider>().l10n.close
+                                          : context.read<AppSettingsProvider>().l10n.more,
                                       style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600),
                                     ),
                                     const SizedBox(width: 2),
@@ -2615,7 +2620,7 @@ class _ImageCarouselState extends State<_ImageCarousel> {
                 Icon(Icons.image_not_supported_outlined,
                     color: Colors.grey.shade300, size: 40),
                 const SizedBox(height: 8),
-                Text('圖片無法載入',
+                Text(context.read<AppSettingsProvider>().l10n.mapImageError,
                     style: TextStyle(
                         color: Colors.grey.shade400, fontSize: 12)),
               ]),

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene, CategoryChip;
 import '../models/spot.dart';
 import '../services/spot_service.dart';
 import '../services/local_fav_service.dart';
+import '../providers/app_settings_provider.dart';
 import 'search_screen.dart';
 import 'trip_screen.dart';
 
@@ -22,11 +24,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
   bool _loading = true;
   String _search = '';
 
-  final _categories = <Map<String, dynamic>>[
-    {'key': 'all',        'label': '全部',    'icon': Icons.map_rounded},
-    {'key': 'attraction', 'label': '景點',    'icon': Icons.account_balance_rounded},
-    {'key': 'restaurant', 'label': '美食',    'icon': Icons.ramen_dining_rounded},
-    {'key': 'hotel',      'label': '住宿',    'icon': Icons.hotel_rounded},
+  List<Map<String, dynamic>> _buildCategories(AppL10n l10n) => [
+    {'key': 'all',        'label': l10n.exploreCatAll,     'icon': Icons.map_rounded},
+    {'key': 'attraction', 'label': l10n.exploreCatAttract, 'icon': Icons.account_balance_rounded},
+    {'key': 'restaurant', 'label': l10n.exploreCatFood,    'icon': Icons.ramen_dining_rounded},
+    {'key': 'hotel',      'label': l10n.exploreCatHotel,   'icon': Icons.hotel_rounded},
   ];
 
   @override
@@ -63,15 +65,17 @@ class _ExploreScreenState extends State<ExploreScreen> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n = context.watch<AppSettingsProvider>().l10n;
+    final categories = _buildCategories(l10n);
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: const Text('探索嘉義', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(l10n.exploreTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
             icon: const Icon(Icons.tune_rounded, color: AppColors.textPrimary),
-            onPressed: () => _showFilter(context),
+            onPressed: () => _showFilter(context, l10n),
           ),
           IconButton(
             icon: const Icon(Icons.search_rounded, color: AppColors.textPrimary),
@@ -92,7 +96,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: _categories.map((cat) {
+                children: categories.map((cat) {
                   return CategoryChip(
                     label: cat['label'] as String,
                     icon: cat['icon'] as IconData,
@@ -112,7 +116,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               child: Row(children: [
                 Icon(Icons.search_rounded, size: 14, color: primary),
                 const SizedBox(width: 4),
-                Text('搜尋：$_search', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
+                Text('${l10n.exploreSearchPrefix}$_search', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => setState(() => _search = ''),
@@ -127,18 +131,18 @@ class _ExploreScreenState extends State<ExploreScreen> {
             child: Row(
               children: [
                 if (_loading)
-                  const Text('載入中…', style: TextStyle(color: AppColors.textHint, fontSize: 13))
+                  Text(l10n.loading, style: const TextStyle(color: AppColors.textHint, fontSize: 13))
                 else
-                  Text('共 ${_filteredSpots.length} 個結果',
+                  Text(l10n.exploreResultCount(_filteredSpots.length),
                       style: const TextStyle(color: AppColors.textHint, fontSize: 13)),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => _showFilter(context),
+                  onTap: () => _showFilter(context, l10n),
                   child: Row(
                     children: [
                       Icon(Icons.sort_rounded, size: 16, color: primary),
                       const SizedBox(width: 4),
-                      Text(_sortBy == 'rating' ? '評分最高' : '距離最近',
+                      Text(_sortBy == 'rating' ? l10n.exploreSortRating : l10n.exploreSortNearest,
                         style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w600)),
                     ],
                   ),
@@ -154,8 +158,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 : _filteredSpots.isEmpty
                     ? IllustratedEmptyState(
                         scene: EmptyScene.map,
-                        title: _search.isNotEmpty ? '找不到「$_search」' : '此分類暫無景點',
-                        body: '試試其他分類或搜尋關鍵字',
+                        title: _search.isNotEmpty ? l10n.exploreNoSearchResult(_search) : l10n.exploreNoCatSpots,
+                        body: l10n.exploreTryOther,
                       )
                     : RefreshIndicator(
                         onRefresh: () => _loadSpots(),
@@ -174,7 +178,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
     );
   }
 
-  void _showFilter(BuildContext context) {
+  void _showFilter(BuildContext context, AppL10n l10n) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -188,16 +192,16 @@ class _ExploreScreenState extends State<ExploreScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('篩選與排序',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
+            Text(l10n.exploreFilterSort,
+                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
             const SizedBox(height: 20),
-            const Text('排序方式',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
+            Text(l10n.exploreSortBy,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary)),
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               children: [
-                ('評分最高', 'rating'),
+                (l10n.exploreSortRating, 'rating'),
               ].map((s) {
                 final isSelected = s.$2 == _sortBy;
                 return FilterChip(
@@ -221,7 +225,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('套用篩選'),
+                child: Text(l10n.exploreApplyFilter),
               ),
             ),
           ],
@@ -295,6 +299,7 @@ class _SpotListCardState extends State<_SpotListCard> {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final l10n = context.watch<AppSettingsProvider>().l10n;
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
@@ -364,13 +369,14 @@ class _SpotListCardState extends State<_SpotListCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Expanded(child: Text(widget.spot.name,
+                  Expanded(child: Text(widget.spot.localizedName(context.watch<AppSettingsProvider>().langCode),
                       style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppColors.textPrimary))),
-                  Text(_categoryLabel(widget.spot.category),
+                  Text(l10n.exploreCatLabel(widget.spot.category),
                       style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.w600)),
                 ]),
                 const SizedBox(height: 6),
-                Text(widget.spot.description,
+                Text(
+                    widget.spot.localizedDescription(context.watch<AppSettingsProvider>().langCode),
                     style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.5),
                     maxLines: 2, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 10),
@@ -393,7 +399,7 @@ class _SpotListCardState extends State<_SpotListCard> {
                       onPressed: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const TripScreen())),
                       icon: const Icon(Icons.add_rounded, size: 15),
-                      label: const Text('加入行程', style: TextStyle(fontSize: 13)),
+                      label: Text(l10n.exploreAddTrip, style: const TextStyle(fontSize: 13)),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         foregroundColor: primary,
@@ -407,7 +413,7 @@ class _SpotListCardState extends State<_SpotListCard> {
                     child: ElevatedButton.icon(
                       onPressed: _openNavigation,
                       icon: const Icon(Icons.directions_rounded, size: 15),
-                      label: const Text('導航', style: TextStyle(fontSize: 13)),
+                      label: Text(l10n.navigate, style: const TextStyle(fontSize: 13)),
                       style: ElevatedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         backgroundColor: primary, foregroundColor: Colors.white, elevation: 0,
@@ -424,8 +430,4 @@ class _SpotListCardState extends State<_SpotListCard> {
     );
   }
 
-  String _categoryLabel(String cat) {
-    const map = {'attraction': '景點', 'restaurant': '美食', 'hotel': '住宿', 'youbike': 'YouBike'};
-    return map[cat] ?? cat;
-  }
 }

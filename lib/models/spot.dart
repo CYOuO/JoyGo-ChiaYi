@@ -4,8 +4,11 @@ class Spot {
   final String id;
   final String name;
   final String nameEn;
+  final String nameJa;
   final String category;
   final String description;
+  final String descriptionEn;
+  final String descriptionJa;
   final double lat;
   final double lng;
   final double rating;
@@ -18,9 +21,12 @@ class Spot {
   const Spot({
     required this.id,
     required this.name,
-    required this.nameEn,
+    this.nameEn = '',
+    this.nameJa = '',
     required this.category,
     required this.description,
+    this.descriptionEn = '',
+    this.descriptionJa = '',
     required this.lat,
     required this.lng,
     required this.rating,
@@ -30,6 +36,20 @@ class Spot {
     this.isLiked = false,
     this.visitCount = 0,
   });
+
+  /// 依語言回傳對應顯示名稱
+  String localizedName(String langCode) {
+    if (langCode == 'en' && nameEn.isNotEmpty) return nameEn;
+    if (langCode == 'ja' && nameJa.isNotEmpty) return nameJa;
+    return name;
+  }
+
+  /// 依語言回傳對應描述
+  String localizedDescription(String langCode) {
+    if (langCode == 'en' && descriptionEn.isNotEmpty) return descriptionEn;
+    if (langCode == 'ja' && descriptionJa.isNotEmpty) return descriptionJa;
+    return description;
+  }
 }
 
 class Achievement {

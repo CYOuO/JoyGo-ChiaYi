@@ -203,7 +203,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     if (mounted) {
       setState(() => _guestSavedIds = {});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${toSync.length} 個收藏景點已同步到你的帳戶'),
+        content: Text(context.read<AppSettingsProvider>().l10n.tripSyncMsg),
         backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -240,7 +240,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
   void _addToCandidate(Spot s) {
     if (_candidates.any((c) => c.spot.id == s.id)) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${s.name} 已在候選清單中'),
+        content: Text(context.read<AppSettingsProvider>().l10n.tripAlreadyInList),
         backgroundColor: AppColors.textSecondary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -287,8 +287,8 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   color: p.withValues(alpha: 0.35)))),
             ])),
             const SizedBox(width: 2),
-            const Text('行程管理',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text(context.watch<AppSettingsProvider>().l10n.tripManage,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
           ]);
         }),
         actions: [
@@ -342,10 +342,10 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
             child: Icon(Icons.luggage_rounded, size: 38, color: primary.withValues(alpha: 0.55)),
           ),
           const SizedBox(height: 20),
-          Text('登入後開始規劃旅程',
+          Text(context.watch<AppSettingsProvider>().l10n.tripLoginTitle,
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: primary)),
           const SizedBox(height: 10),
-          Text('建立嘉義行程、收藏景點，\n讓諸羅精靈幫你安排完美旅程！',
+          Text(context.watch<AppSettingsProvider>().l10n.tripLoginDesc,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 13, color: primary.withValues(alpha: 0.65), height: 1.7)),
           const SizedBox(height: 28),
@@ -355,11 +355,11 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               onPressed: () => Navigator.of(context, rootNavigator: true)
                   .push(MaterialPageRoute(builder: (_) => const LoginPage())),
               icon: const Icon(Icons.login_rounded, size: 18),
-              label: const Text('前往登入 / 註冊'),
+              label: Text(context.watch<AppSettingsProvider>().l10n.tripLoginBtn),
             ),
           ),
           const SizedBox(height: 14),
-          Text('訪客也可以先收藏景點，登入後自動同步',
+          Text(context.watch<AppSettingsProvider>().l10n.tripGuestHint,
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: primary.withValues(alpha: 0.4), height: 1.5)),
         ]),
@@ -374,13 +374,13 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
       final p = Theme.of(context).colorScheme.primary;
       return IllustratedEmptyState(
         scene: EmptyScene.trip,
-        title: '還沒有行程',
-        body: '嘉義在等你！點右上角 + 建立第一個旅程',
+        title: context.read<AppSettingsProvider>().l10n.tripNoTrip,
+        body: context.read<AppSettingsProvider>().l10n.tripNoTripBody,
         color: p,
         action: ElevatedButton.icon(
           onPressed: () => _showCreateTrip(context),
           icon: const Icon(Icons.add_rounded, size: 16),
-          label: const Text('建立行程'),
+          label: Text(context.read<AppSettingsProvider>().l10n.tripCreateBtn),
           style: ElevatedButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
         ),
       );
@@ -404,9 +404,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
         ],
         // ── 統計 ──────────────────────────────────────────
         Row(children: [
-          _statCard('規劃中', '${trips.where((t) => !t.isCompleted).length}', Icons.event_outlined, const Color(0xFFF5EFE6)),
+          _statCard(context.read<AppSettingsProvider>().l10n.tripStatPlanning, '${trips.where((t) => !t.isCompleted).length}', Icons.event_outlined, const Color(0xFFF5EFE6)),
           const SizedBox(width: 10),
-          _statCard('已完成', '${trips.where((t) => t.isCompleted).length}', Icons.check_circle_outline_rounded, const Color(0xFFEDF5ED)),
+          _statCard(context.read<AppSettingsProvider>().l10n.tripStatCompleted, '${trips.where((t) => t.isCompleted).length}', Icons.check_circle_outline_rounded, const Color(0xFFEDF5ED)),
           const SizedBox(width: 10),
           _statCard('總景點', '${trips.fold(0, (s, t) => s + t.spots.length)}', Icons.place_outlined, const Color(0xFFEBEFF2)),
         ]),
@@ -466,9 +466,9 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                 shape: BoxShape.circle),
               padding: const EdgeInsets.all(6),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('倒數', style: TextStyle(fontSize: 8, color: primary, fontWeight: FontWeight.w700)),
+                Text(context.read<AppSettingsProvider>().l10n.tripCountdownLabel, style: TextStyle(fontSize: 8, color: primary, fontWeight: FontWeight.w700)),
                 Text('$daysLeft', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: primary, height: 1.0)),
-                Text('天', style: TextStyle(fontSize: 8, color: primary, fontWeight: FontWeight.w700)),
+                Text(context.read<AppSettingsProvider>().l10n.tripCountdownUnit, style: TextStyle(fontSize: 8, color: primary, fontWeight: FontWeight.w700)),
               ]),
             ),
           )),
@@ -482,7 +482,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   color: primary.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('下一趟旅程', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
+                child: Text(context.read<AppSettingsProvider>().l10n.tripNextTripLabel, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700)),
               ),
               const SizedBox(height: 6),
               Text(trip.title,
@@ -499,7 +499,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                   style: const TextStyle(color: Colors.white70, fontSize: 11)),
                 const SizedBox(width: 8),
                 const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: Colors.white60),
-                const Text('查看', style: TextStyle(color: Colors.white60, fontSize: 11)),
+                Text(context.read<AppSettingsProvider>().l10n.tripView, style: const TextStyle(color: Colors.white60, fontSize: 11)),
               ]),
             ],
           )),
@@ -712,7 +712,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     Expanded(child: OutlinedButton.icon(
                       onPressed: () => _showFirebaseTripDetail(context, trip),
                       icon: const Icon(Icons.edit_outlined, size: 15),
-                      label: const Text('查看 / 編輯'),
+                      label: Text(context.read<AppSettingsProvider>().l10n.tripViewEdit),
                       style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 8),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
                     )),
@@ -728,7 +728,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                             ));
                           },
                           icon: const Icon(Icons.undo_rounded, size: 15),
-                          label: const Text('恢復進行中'),
+                          label: Text(context.read<AppSettingsProvider>().l10n.tripRestoreProgress),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
@@ -744,7 +744,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                             ));
                           },
                           icon: const Icon(Icons.check_circle_outline_rounded, size: 15),
-                          label: const Text('標記完成'),
+                          label: Text(context.read<AppSettingsProvider>().l10n.tripMarkDone),
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
@@ -761,13 +761,13 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                           context: context,
                           builder: (_) => AlertDialog(
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            title: const Text('刪除行程', style: TextStyle(fontWeight: FontWeight.w800)),
-                            content: Text('確定要刪除「${trip.title}」嗎？此操作無法復原。'),
+                            title: Text(context.read<AppSettingsProvider>().l10n.tripDeleteTrip, style: const TextStyle(fontWeight: FontWeight.w800)),
+                            content: Text(context.read<AppSettingsProvider>().l10n.tripDeleteTitle(trip.title)),
                             actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+                              TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
                               TextButton(
                                 onPressed: () => Navigator.pop(context, true),
-                                child: const Text('刪除', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)),
+                                child: Text(context.read<AppSettingsProvider>().l10n.delete, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700)),
                               ),
                             ],
                           ),
@@ -849,7 +849,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
           child: OutlinedButton.icon(
             onPressed: () => _showAddCandidateSheet(context),
             icon: const Icon(Icons.add_location_alt_outlined, size: 18),
-            label: const Text('＋ 加入景點到候選清單'),
+            label: Text(context.read<AppSettingsProvider>().l10n.tripAddCandidates),
             style: OutlinedButton.styleFrom(
               minimumSize: const Size(double.infinity, 44),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -892,7 +892,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               Expanded(child: OutlinedButton.icon(
                 onPressed: () => _openAIPlanner(context),
                 icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: const Text('AI 排程'),
+                label: Text(context.read<AppSettingsProvider>().l10n.tripAISchedule),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1141,7 +1141,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     if (rawSpots.isEmpty) {
       return IllustratedEmptyState(
         scene: EmptyScene.saved,
-        title: '還沒有收藏景點',
+        title: context.read<AppSettingsProvider>().l10n.tripNoSaved,
         body: isGuest
             ? '點地圖或景點旁的 ♡ 收藏，\n登入後自動同步到你的帳戶'
             : '到地圖或景點詳細頁點 ♡\n收藏後可以快速加入行程！',
@@ -2458,7 +2458,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
                   return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(Icons.playlist_add_rounded, size: 48, color: AppColors.textHint.withValues(alpha: 0.4)),
                     const SizedBox(height: 12),
-                    const Text('還沒有候選景點', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                    Text(context.read<AppSettingsProvider>().l10n.tripNoCandidates, style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                     const SizedBox(height: 6),
                     const Text('在地圖或收藏景點加入', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                   ]));
@@ -3164,7 +3164,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
             ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.add_location_alt_outlined, size: 48, color: primary.withValues(alpha: 0.3)),
                 const SizedBox(height: 12),
-                Text(_mapDayFilter != null ? '這天還沒有景點' : '還沒有景點',
+                Text(context.read<AppSettingsProvider>().l10n.tripNoSpotDay(_mapDayFilter != null),
                     style: const TextStyle(color: AppColors.textHint)),
               ]))
             : ListView.builder(

@@ -213,8 +213,8 @@ class _AuthDrawerState extends State<AuthDrawer>
                     child: ElevatedButton.icon(
                       onPressed: () => _openLoginPage(context),
                       icon: const Icon(Icons.login_rounded, size: 18),
-                      label: const Text('登入 / 註冊',
-                          style: TextStyle(
+                      label: Text(context.read<AppSettingsProvider>().l10n.drawerSignInRegister,
+                          style: const TextStyle(
                               fontWeight: FontWeight.w700, fontSize: 15)),
                     ),
                   ),
@@ -231,7 +231,7 @@ class _AuthDrawerState extends State<AuthDrawer>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('登入後解鎖功能',
+                Text(context.read<AppSettingsProvider>().l10n.drawerSignInUnlock,
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -501,32 +501,32 @@ class _AuthDrawerState extends State<AuthDrawer>
         backgroundColor: AppColors.surface,
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('通知設定',
+        title: Text(context.read<AppSettingsProvider>().l10n.drawerNotifSettings,
             style: TextStyle(fontWeight: FontWeight.w800)),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           SwitchListTile(
             value: true,
             onChanged: (_) {},
-            title: const Text('活動提醒'),
+            title: Text(context.read<AppSettingsProvider>().l10n.drawerEventReminders),
             activeThumbColor: Theme.of(ctx).colorScheme.primary,
           ),
           SwitchListTile(
             value: true,
             onChanged: (_) {},
-            title: const Text('社群通知'),
+            title: Text(context.read<AppSettingsProvider>().l10n.drawerCommNotif),
             activeThumbColor: Theme.of(ctx).colorScheme.primary,
           ),
           SwitchListTile(
             value: false,
             onChanged: (_) {},
-            title: const Text('行銷推播'),
+            title: Text(context.read<AppSettingsProvider>().l10n.drawerMarketing),
             activeThumbColor: Theme.of(ctx).colorScheme.primary,
           ),
         ]),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('儲存'),
+            child: Text(context.read<AppSettingsProvider>().l10n.save),
           )
         ],
       ),
@@ -733,14 +733,14 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('個人資料已更新 ✓'),
+        content: Text(context.read<AppSettingsProvider>().l10n.drawerProfileUpdated),
         backgroundColor: Theme.of(context).colorScheme.primary,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('儲存失敗：$e'),
+        content: Text('${context.read<AppSettingsProvider>().l10n.drawerSaveFail}$e'),
         backgroundColor: AppColors.error,
         behavior: SnackBarBehavior.floating,
       ));
@@ -772,7 +772,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('編輯個人資料',
+        title: Text(context.read<AppSettingsProvider>().l10n.drawerEditProfile,
             style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         actions: [
           TextButton(
@@ -821,12 +821,12 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                 ),
               ),
               const SizedBox(height: 6),
-              Text('點擊更換相片',
+              Text(context.read<AppSettingsProvider>().l10n.drawerChangePhoto,
                   style: TextStyle(fontSize: 11, color: primary)),
               const SizedBox(height: 12),
               // Emoji picker (hidden when a real photo is chosen)
               if (_pickedImage == null && _photoUrl == null) ...[
-                const Text('或選擇圖示頭像',
+                Text(context.read<AppSettingsProvider>().l10n.drawerChooseAvatar,
                     style: TextStyle(fontSize: 12, color: AppColors.textHint)),
                 const SizedBox(height: 10),
                 Wrap(
@@ -859,7 +859,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
                     _photoUrl    = null;
                   }),
                   icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                  label: const Text('移除照片，改用圖示'),
+                  label: Text(context.read<AppSettingsProvider>().l10n.drawerRemovePhoto),
                   style: TextButton.styleFrom(foregroundColor: AppColors.error),
                 ),
             ]),
@@ -868,7 +868,7 @@ class _EditProfilePageState extends State<_EditProfilePage> {
           const SizedBox(height: 28),
 
           // ── Basic info ───────────────────────────────────
-          const Text('基本資料',
+          Text(context.read<AppSettingsProvider>().l10n.drawerBasicInfo,
               style: TextStyle(fontWeight: FontWeight.w800,
                   fontSize: 14, color: AppColors.textPrimary)),
           const SizedBox(height: 12),
@@ -962,7 +962,7 @@ class _FavoritesPageState extends State<_FavoritesPage> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('收藏清單', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: Text(context.read<AppSettingsProvider>().l10n.drawerSavedList, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(56),
           child: Padding(
@@ -990,7 +990,7 @@ class _FavoritesPageState extends State<_FavoritesPage> {
                 style: const TextStyle(color: AppColors.textHint, fontSize: 15)),
               if (_spots.isEmpty) ...[
                 const SizedBox(height: 8),
-                const Text('在地圖或景點詳情頁點愛心即可收藏',
+                Text(context.read<AppSettingsProvider>().l10n.drawerSavedHint,
                   style: TextStyle(color: AppColors.textHint, fontSize: 12)),
               ],
             ]))
@@ -1010,10 +1010,10 @@ class _FavoritesPageState extends State<_FavoritesPage> {
                       color: AppColors.error.withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.delete_outline_rounded, color: Colors.white, size: 24),
-                      SizedBox(height: 2),
-                      Text('移除', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 24),
+                      const SizedBox(height: 2),
+                      Text(context.read<AppSettingsProvider>().l10n.drawerRemove, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
                     ]),
                   ),
                   onDismissed: (_) => _remove(s),
@@ -1100,12 +1100,12 @@ class _MyTripsPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('我的行程', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: Text(context.read<AppSettingsProvider>().l10n.drawerMyTrips, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         actions: [
           IconButton(
             icon: Icon(Icons.add_rounded, color: primary),
             onPressed: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: const Text('請至「行程管理」頁面建立新行程'),
+              content: Text(context.read<AppSettingsProvider>().l10n.drawerCreateTripHint),
               backgroundColor: primary, behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             )),
@@ -1245,7 +1245,7 @@ class _BadgesPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('成就徽章', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: Text(context.read<AppSettingsProvider>().l10n.profileAchievements, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -1284,7 +1284,7 @@ class _BadgesPage extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 20),
-          const Text('全部成就', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
+          Text(context.read<AppSettingsProvider>().l10n.drawerAllAchievements, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: AppColors.textPrimary)),
           const SizedBox(height: 12),
           GridView.builder(
             shrinkWrap: true,
@@ -1370,7 +1370,7 @@ class _CheckinPhotosPageState extends State<_CheckinPhotosPage> {
       appBar: AppBar(
         backgroundColor: AppColors.surface,
         elevation: 0,
-        title: const Text('打卡照片', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+        title: Text(context.read<AppSettingsProvider>().l10n.profilePhotos, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -1774,7 +1774,7 @@ class _ProfileDetailPageState extends State<_ProfileDetailPage>
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: const Text('追蹤',
+                  child: Text(context.read<AppSettingsProvider>().l10n.drawerFollow,
                       style: TextStyle(
                           fontSize: 12, fontWeight: FontWeight.w600)),
                 ),

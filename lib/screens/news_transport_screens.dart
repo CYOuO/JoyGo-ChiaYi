@@ -7,8 +7,10 @@ import 'package:page_flip/page_flip.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
+import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show TransportCardSkeleton;
 import '../services/rail_service.dart';
 import '../services/bus_notification_service.dart';
@@ -278,14 +280,15 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
 
   // ── 模式配色 helpers ─────────────────────────────────────────
   static const _tabIcons  = [Icons.directions_bus_rounded, Icons.directions_bike_rounded, Icons.train_rounded, Icons.landscape_rounded, Icons.directions_railway_filled_rounded];
-  static const _tabNames  = ['公車', 'YouBike', '台鐵', '阿里山', '高鐵'];
-  static const _tabTitles = ['公車動態查詢', 'YouBike 租借站', '台鐵時刻查詢', '阿里山森林鐵路', '高鐵時刻查詢'];
 
   @override
   Widget build(BuildContext context) {
     final idx = _tabCtrl.index;
     final primary = context.appPrimary;
     final mist = context.appMist;
+    final l10n = context.watch<AppSettingsProvider>().l10n;
+    final tabNames  = l10n.transportTabNames;
+    final tabTitles = l10n.transportTabTitles;
     final canPop = Navigator.canPop(context);
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -313,7 +316,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                         color: primary.withValues(alpha: 0.35)))),
           ])),
           const SizedBox(width: 6),
-          Text(_tabTitles[idx],
+          Text(tabTitles[idx],
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
         ]),
         actions: [
@@ -370,7 +373,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                                 size: 22),
                           ),
                           const SizedBox(height: 5),
-                          Text(_tabNames[i],
+                          Text(tabNames[i],
                               style: TextStyle(
                                 fontSize: 11, fontWeight: FontWeight.w600,
                                 color: isSelected ? primary : AppColors.textHint,
@@ -490,7 +493,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 0, 16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('熱門搜尋',
+              Text(context.read<AppSettingsProvider>().l10n.transPopularSearch,
                   style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textHint)),
               const SizedBox(height: 8),
               SingleChildScrollView(
@@ -530,7 +533,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 child: Row(children: [
                   Icon(Icons.bookmark_rounded, size: 14, color: c),
                   const SizedBox(width: 6),
-                  Text('我的路線', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: c)),
+                  Text(context.read<AppSettingsProvider>().l10n.transMyRoutes, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: c)),
                   if (favs.isNotEmpty) ...[
                     const SizedBox(width: 6),
                     Container(
@@ -554,7 +557,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                     child: Row(children: [
                       Icon(Icons.info_outline_rounded, size: 13, color: AppColors.textHint),
                       const SizedBox(width: 6),
-                      Text('點搜尋結果右側書籤即可收藏路線',
+                      Text(context.read<AppSettingsProvider>().l10n.transSaveRouteHint,
                           style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
                     ]),
                   )
@@ -616,7 +619,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(color: c.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
-                  child: Text('地圖', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
+                  child: Text(context.read<AppSettingsProvider>().l10n.transMapBtn, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: c)),
                 ),
               ),
           ]),
@@ -684,24 +687,24 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
         child: Row(children: [
-          const Text('附近路線',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+          Text(context.read<AppSettingsProvider>().l10n.transNearbyRoutes,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
           const SizedBox(width: 6),
           const Icon(Icons.gps_fixed_rounded, size: 13, color: AppColors.textHint),
           const SizedBox(width: 4),
           Expanded(child: Text(
-            _nearbyLoading ? '定位中…' :
-            _nearbyError == 'permission_denied' ? '開啟定位以顯示' :
-            _nearbyError == 'gps_error' ? '定位失敗，點右重試' :
-            _nearbyError == 'backend_error' ? '後端未啟動' :
-            _nearbyStops == null ? '開啟定位以顯示' :
-            _nearbyStops!.isEmpty ? '附近 800m 無路線' :
-            '附近 ${_nearbyStops!.map((s) => s["RouteName"]).toSet().length} 條路線',
+            _nearbyLoading ? context.read<AppSettingsProvider>().l10n.transLocating :
+            _nearbyError == 'permission_denied' ? context.read<AppSettingsProvider>().l10n.transEnableLocation :
+            _nearbyError == 'gps_error' ? context.read<AppSettingsProvider>().l10n.transEnableLocation :
+            _nearbyError == 'backend_error' ? context.read<AppSettingsProvider>().l10n.transNoLiveInfo :
+            _nearbyStops == null ? context.read<AppSettingsProvider>().l10n.transEnableLocation :
+            _nearbyStops!.isEmpty ? context.read<AppSettingsProvider>().l10n.transNearbyRoutes :
+            '${_nearbyStops!.map((s) => s["RouteName"]).toSet().length} ${context.read<AppSettingsProvider>().l10n.transNearbyRoutes.toLowerCase()}',
             style: const TextStyle(fontSize: 11, color: AppColors.textHint),
           )),
           GestureDetector(
             onTap: _fetchNearbyStops,
-            child: Text('重新定位',
+            child: Text(context.read<AppSettingsProvider>().l10n.transRecenter,
                 style: TextStyle(fontSize: 12, color: c, fontWeight: FontWeight.w600)),
           ),
         ]),
@@ -719,7 +722,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                 decoration: BoxDecoration(color: context.appMist, borderRadius: BorderRadius.circular(10)),
                 child: Padding(padding: const EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.5, color: c))),
               const SizedBox(width: 12),
-              const Text('正在取得您的位置…', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+              Text(context.read<AppSettingsProvider>().l10n.transGettingLocation, style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
             ]),
           ),
         )
@@ -905,7 +908,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                   ? Column(mainAxisSize: MainAxisSize.min, children: [
                       CircularProgressIndicator(color: primary, strokeWidth: 2),
                       const SizedBox(height: 8),
-                      Text('定位中…', style: TextStyle(color: primary.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600)),
+                      Text(context.read<AppSettingsProvider>().l10n.transLocating, style: TextStyle(color: primary.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w600)),
                     ])
                   : GestureDetector(
                       onTap: _fetchYbLocation,
@@ -913,7 +916,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                         Container(width: 52, height: 52, decoration: BoxDecoration(color: primary.withValues(alpha: 0.12), shape: BoxShape.circle),
                           child: Icon(Icons.location_on_rounded, color: primary, size: 26)),
                         const SizedBox(height: 8),
-                        Text('點此開啟定位', style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                        Text(context.read<AppSettingsProvider>().l10n.transEnableLocation, style: TextStyle(color: primary, fontSize: 13, fontWeight: FontWeight.w700)),
                       ]),
                     )),
             ),
@@ -1002,9 +1005,9 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                               ])),
                               Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
                                 Row(mainAxisSize: MainAxisSize.min, children: [
-                                  Text('可借 ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
+                                  Text('${context.read<AppSettingsProvider>().l10n.transBikeAvail} ', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
                                   AnimatedDigitWidget(value: total, textStyle: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: good ? yp : AppColors.error), duration: const Duration(milliseconds: 500)),
-                                  Text(' 輛', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
+                                  Text(' ${context.read<AppSettingsProvider>().l10n.transBikeUnit}', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: good ? yp : AppColors.error)),
                                 ]),
                                 Text('可還 $ret 格', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
                               ]),
@@ -1099,7 +1102,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                             Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
                               Icon(Icons.loop_rounded, size: 36, color: AppColors.textHint.withValues(alpha: 0.5)),
                               const SizedBox(height: 10),
-                              Text('點此回到第一頁',
+                              Text(context.read<AppSettingsProvider>().l10n.transBackToFirst,
                                   style: TextStyle(color: AppColors.textHint.withValues(alpha: 0.7), fontSize: 13)),
                             ])),
                           ]),
@@ -1143,7 +1146,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                                   Icon(Icons.swipe_rounded, size: 12,
                                       color: AppColors.textHint.withValues(alpha: 0.5)),
                                   const SizedBox(width: 4),
-                                  Text('左滑翻下一頁',
+                                  Text(context.read<AppSettingsProvider>().l10n.transSwipeLeft,
                                       style: TextStyle(fontSize: 10,
                                           color: AppColors.textHint.withValues(alpha: 0.5))),
                                 ]),
@@ -1203,7 +1206,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       ),
       const SizedBox(height: 12),
       if (_aliLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
-      else if (_aliO == _aliD) Center(child: Text('請選擇不同的起迄站', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)))
+      else if (_aliO == _aliD) Center(child: Text(context.read<AppSettingsProvider>().l10n.transDiffStation, style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)))
       else if (valid.isEmpty) _Hint(icon: Icons.forest_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
       else ...valid.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _AliCard(train: t, origin: _aliO, dest: _aliD))),
     ]);
@@ -1330,7 +1333,7 @@ class _UpdTime extends StatelessWidget {
     child: Row(mainAxisAlignment: end ? MainAxisAlignment.end : MainAxisAlignment.start, children: [
       const Icon(Icons.update_rounded, size: 12, color: AppColors.textHint),
       const SizedBox(width: 4),
-      Text('最後更新 $time', style: const TextStyle(color: AppColors.textHint, fontSize: 11)),
+      Text('${context.read<AppSettingsProvider>().l10n.transLastUpdated} $time', style: const TextStyle(color: AppColors.textHint, fontSize: 11)),
     ]),
   );
 }
@@ -1391,7 +1394,7 @@ class _ODCard extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(14, 18, 14, 14),
           child: Row(children: [
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('出發站', style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              Text(context.read<AppSettingsProvider>().l10n.transFromStation, style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
               DropdownButton<String>(
                 value: origin, isExpanded: true, underline: const SizedBox(),
                 icon: Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
@@ -1409,7 +1412,7 @@ class _ODCard extends StatelessWidget {
               ),
             ),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('抵達站', style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
+              Text(context.read<AppSettingsProvider>().l10n.transToStation, style: TextStyle(fontSize: 10, color: acc, fontWeight: FontWeight.w700, letterSpacing: 0.5)),
               DropdownButton<String>(
                 value: dest, isExpanded: true, underline: const SizedBox(),
                 icon: Icon(Icons.keyboard_arrow_down_rounded, color: acc, size: 18),
@@ -1442,7 +1445,7 @@ class _LiveBoard extends StatelessWidget {
         child: Row(children: [
           Icon(Icons.info_outline_rounded, size: 15, color: p),
           const SizedBox(width: 8),
-          Text('$station 目前暫無即時進站資訊', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text('$station ${context.read<AppSettingsProvider>().l10n.transNoArrivalInfo}', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ]),
       );
     }
@@ -1455,7 +1458,7 @@ class _LiveBoard extends StatelessWidget {
         Row(children: [
           Icon(Icons.departure_board_rounded, size: 16, color: p),
           const SizedBox(width: 6),
-          Text('$station 即將進站', style: TextStyle(color: p, fontWeight: FontWeight.w800, fontSize: 13)),
+          Text('$station ${context.read<AppSettingsProvider>().l10n.transArriving}', style: TextStyle(color: p, fontWeight: FontWeight.w800, fontSize: 13)),
           const Spacer(),
           if (updateTime.isNotEmpty) Text(updateTime, style: const TextStyle(color: AppColors.textHint, fontSize: 10)),
         ]),
@@ -1763,7 +1766,7 @@ class _BusCardState extends State<_BusCard> {
             ],
           ),
           if (busMarkers.isEmpty)
-            const Center(child: Text('暫無公車位置資料', style: TextStyle(color: AppColors.textHint, fontSize: 12))),
+            Center(child: Text(context.read<AppSettingsProvider>().l10n.transNoBusPos, style: const TextStyle(color: AppColors.textHint, fontSize: 12))),
           Positioned(
             right: 8, bottom: 8,
             child: GestureDetector(
@@ -1976,8 +1979,8 @@ class _RailCardState extends State<_RailCard> {
             const Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())
           else if (_stops == null || _stops!.isEmpty)
             Padding(padding: const EdgeInsets.all(14), child: Column(children: [
-              const Text('無法取得停靠站資料', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
-              TextButton.icon(onPressed: _loadStops, icon: const Icon(Icons.refresh, size: 15), label: const Text('重試')),
+              Text(context.read<AppSettingsProvider>().l10n.transNoStopData, style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
+              TextButton.icon(onPressed: _loadStops, icon: const Icon(Icons.refresh, size: 15), label: Text(context.read<AppSettingsProvider>().l10n.retry)),
             ]))
           else Padding(
             padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
@@ -2060,7 +2063,7 @@ class _AliCardState extends State<_AliCard> {
               ])),
               const SizedBox(width: 12),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text('觀光列車', style: TextStyle(color: p, fontSize: 10, fontWeight: FontWeight.w700))), const Spacer(), Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint)]),
+                Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text(context.read<AppSettingsProvider>().l10n.transTouristTrain, style: TextStyle(color: p, fontSize: 10, fontWeight: FontWeight.w700))), const Spacer(), Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint)]),
                 const SizedBox(height: 8),
                 Row(children: [
                   Text(_formatTime(widget.train['dep']?.toString() ?? ''), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.textPrimary)),
@@ -2208,7 +2211,7 @@ class _BusNearbyCardState extends State<_BusNearbyCard> {
                 Text(widget.direction, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                 if (widget.via.isNotEmpty) ...[
                   const SizedBox(height: 3),
-                  Text('附近：${widget.via}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                  Text('${context.read<AppSettingsProvider>().l10n.transNearby}${widget.via}', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
                 ],
               ])),
               AnimatedRotation(
@@ -2239,7 +2242,7 @@ class _BusNearbyCardState extends State<_BusNearbyCard> {
                 ..sort((a, b) => (a['StopSequence'] as int? ?? 0).compareTo(b['StopSequence'] as int? ?? 0));
                 
               if (dir.isEmpty) return Padding(padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
-                child: Text('無法取得即時資訊', style: TextStyle(fontSize: 12, color: AppColors.textHint)));
+                child: Text(context.read<AppSettingsProvider>().l10n.transNoLiveInfo, style: TextStyle(fontSize: 12, color: AppColors.textHint)));
               
               return Padding(
                 padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),

@@ -1472,14 +1472,15 @@ class _FirebasePostCardState extends State<_FirebasePostCard> {
   @override
   void didUpdateWidget(_FirebasePostCard old) {
     super.didUpdateWidget(old);
-    // 只有在沒有進行過本地互動時才跟隨 stream 更新 likeCount
-    if (old.post.likeCount != widget.post.likeCount && _liked == null) {
-      _localCount = widget.post.likeCount;
-    } else if (old.post.id != widget.post.id) {
+    if (old.post.id != widget.post.id) {
+      // 換了不同貼文，重置所有狀態
       _localCount = widget.post.likeCount;
       _liked = null;
       _saved = null;
       _loadState();
+    } else if (old.post.likeCount != widget.post.likeCount) {
+      // stream 帶來新 likeCount，永遠以 Firebase 為準
+      _localCount = widget.post.likeCount;
     }
   }
 
@@ -2443,6 +2444,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
   final _commentFocus = FocusNode();
   bool _liked = false;
   bool _saved = false;
+  late int _localCount;
   bool _sending = false;
   double _lastKeyboardH = 0;
   String? _replyTarget; // name of comment being replied to
@@ -2451,6 +2453,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
   @override
   void initState() {
     super.initState();
+    _localCount = widget.post.likeCount;
     _loadUserState();
   }
 
@@ -2522,6 +2525,27 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
     final primary = Theme.of(context).colorScheme.primary;
     final mist    = Color.lerp(primary, Colors.white, 0.88)!;
     final post    = widget.post;
+
+    // 即時監聽貼文的 likeCount 變化（Firebase → 同步 _localCount）
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('community_posts').doc(post.id).snapshots(),
+      builder: (_, docSnap) {
+        if (docSnap.hasData && docSnap.data!.exists) {
+          final freshCount = (docSnap.data!.data() as Map<String, dynamic>)['likeCount'] as int? ?? _localCount;
+          // 只在 Firebase 值與本地不同時才更新（避免蓋掉樂觀更新中的數字）
+          if (freshCount != _localCount && !_likeInProgress) {
+            _localCount = freshCount;
+          }
+        }
+        return _buildContent(context, primary, mist, post);
+      },
+    );
+  }
+
+  bool _likeInProgress = false;
+
+  Widget _buildContent(BuildContext context, Color primary, Color mist, CommunityPost post) {
 
     // Track keyboard for auto-scroll (no focus listener needed)
     final keyboardH = MediaQuery.of(context).viewInsets.bottom;
@@ -2671,8 +2695,20 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                 child: Row(children: [
                   GestureDetector(
                     onTap: () async {
-                      final now = await CommunityService.toggleLike(post.id);
-                      if (mounted) setState(() => _liked = now);
+                      if (FirebaseAuth.instance.currentUser == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),
+                          behavior: SnackBarBehavior.floating));
+                        return;
+                      }
+                      // 樂觀更新，標記進行中避免 stream 覆蓋
+                      setState(() {
+                        _likeInProgress = true;
+                        _localCount = _liked ? _localCount - 1 : _localCount + 1;
+                        _liked = !_liked;
+                      });
+                      await CommunityService.toggleLike(post.id);
+                      if (mounted) setState(() => _likeInProgress = false);
                     },
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 200),
@@ -2681,7 +2717,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                         Icon(_liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
                           color: _liked ? AppColors.error : AppColors.textHint, size: 20),
                         const SizedBox(width: 4),
-                        Text('${post.likeCount}',
+                        Text('$_localCount',
                           style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textSecondary)),
                       ]),
                     ),

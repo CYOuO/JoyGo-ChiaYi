@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -181,6 +182,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
   // 追蹤：key=authorId, value=authorName（本地快取供 UI 使用）
   final Map<String, String> _followedUsers = {};
   Set<String> get _followedIds => _followedUsers.keys.toSet();
+  // 快取 following posts stream，避免每次 rebuild 重新建立 stream 導致閃爍
+  Stream<List<CommunityPost>>? _followingPostsStream;
+  Set<String>? _lastFollowedIds;
+  List<CommunityPost> _cachedFollowingPosts = [];
+  Set<String> _cachedFollowingIds = {};
+  Stream<Set<String>>? _followingIdsStream;
   RangeValues _budgetRange = const RangeValues(0, 3000);
   static const double _budgetMax = 3000;
   bool get _budgetActive => _budgetRange.start > 0 || _budgetRange.end < _budgetMax;
@@ -408,184 +415,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   // ── Firebase 真實貼文卡片 ────────────────────────────────────
   Widget _firebasePostCard(CommunityPost post, Color primary) {
-    return StatefulBuilder(builder: (ctx, setLocal) {
-      bool liked = false; // 初始：非同步 fetch 後更新
-      return FutureBuilder<bool>(
-        future: CommunityService.isLiked(post.id),
-        builder: (_, snap) {
-          liked = snap.data ?? false;
-          return GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(
-                builder: (_) => FirebasePostDetailPage(post: post))),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 12, offset: const Offset(0, 4))],
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                // Image
-                if (post.imageURLs.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                    child: Image.network(post.imageURLs.first,
-                      height: 160, width: double.infinity, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink()),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    // Author row
-                    Row(children: [
-                      GestureDetector(
-                        onTap: () => _showAuthorProfile(context, post, primary),
-                        child: CircleAvatar(radius: 16,
-                          backgroundImage: post.authorPhoto.isNotEmpty
-                              ? NetworkImage(post.authorPhoto) : null,
-                          backgroundColor: primary.withValues(alpha: 0.1),
-                          child: post.authorPhoto.isEmpty
-                              ? Icon(Icons.person_rounded, size: 16, color: primary)
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: GestureDetector(
-                        onTap: () => _showAuthorProfile(context, post, primary),
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(post.authorName,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-                          Text(_timeAgo(post.createdAt),
-                            style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                        ]),
-                      )),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(post.type == 'trip' ? Icons.luggage_rounded : Icons.chat_rounded,
-                            size: 10, color: primary),
-                          const SizedBox(width: 3),
-                          Text(post.type == 'trip' ? '行程' : '討論',
-                            style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
-                        ]),
-                      ),
-                      // Delete (own post only)
-                      if (FirebaseAuth.instance.currentUser?.uid == post.authorId)
-                        GestureDetector(
-                          onTap: () async {
-                            final ok = await showDialog<bool>(
-                              context: context,
-                              builder: (_) => AlertDialog(
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                                title: Text(context.read<AppSettingsProvider>().l10n.commDeletePost, style: const TextStyle(fontWeight: FontWeight.w800)),
-                                content: Text(context.read<AppSettingsProvider>().l10n.commDeleteConfirm),
-                                actions: [
-                                  TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
-                                  TextButton(onPressed: () => Navigator.pop(context, true),
-                                    child: Text(context.read<AppSettingsProvider>().l10n.delete, style: const TextStyle(color: AppColors.error))),
-                                ],
-                              ),
-                            );
-                            if (ok == true) await CommunityService.deletePost(post.id);
-                          },
-                          child: const Padding(
-                            padding: EdgeInsets.only(left: 6),
-                            child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textHint),
-                          ),
-                        ),
-                    ]),
-                    const SizedBox(height: 10),
-                    Text(post.title,
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-                    if (post.content.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(post.content,
-                        style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
-                        maxLines: 2, overflow: TextOverflow.ellipsis),
-                    ],
-                    const SizedBox(height: 12),
-                    Row(children: [
-                      GestureDetector(
-                        onTap: () async {
-                          if (FirebaseAuth.instance.currentUser == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),
-                              behavior: SnackBarBehavior.floating));
-                            return;
-                          }
-                          final now = await CommunityService.toggleLike(post.id);
-                          setLocal(() => liked = now);
-                        },
-                        child: Row(children: [
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
-                            child: Icon(
-                              liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
-                              key: ValueKey(liked),
-                              size: 18,
-                              color: liked ? AppColors.error : AppColors.textHint,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text('${post.likeCount}',
-                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                        ]),
-                      ),
-                      const SizedBox(width: 16),
-                      Icon(Icons.chat_bubble_outline_rounded, size: 16, color: AppColors.textHint),
-                      const SizedBox(width: 4),
-                      Text('${post.commentCount}',
-                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                      const Spacer(),
-                      FutureBuilder<bool>(
-                        future: () async {
-                          final uid = FirebaseAuth.instance.currentUser?.uid;
-                          if (uid == null) return false;
-                          final snap = await FirebaseFirestore.instance
-                              .collection('users').doc(uid).collection('saved_posts').doc(post.id).get();
-                          return snap.exists;
-                        }(),
-                        builder: (_, snap) {
-                          final isSaved = snap.data ?? false;
-                          return GestureDetector(
-                            onTap: () async {
-                              if (FirebaseAuth.instance.currentUser == null) {
-                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                  content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),
-                                  behavior: SnackBarBehavior.floating));
-                                return;
-                              }
-                              await CommunityService.toggleSave(post.id);
-                              setLocal(() {});
-                            },
-                            child: Icon(
-                              isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                              size: 18,
-                              color: isSaved ? primary : AppColors.textHint,
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: () => Share.share('探索諸羅 · ${post.title}\n\n${post.content}'),
-                        child: const Icon(Icons.share_outlined, size: 18, color: AppColors.textHint),
-                      ),
-                    ]),
-                  ]),
-                ),
-              ]),
-            ),
-          );
-        },
-      );
-    });
+    return _FirebasePostCard(
+      key: ValueKey(post.id),
+      post: post,
+      primary: primary,
+      onShowAuthorProfile: (p) => _showAuthorProfile(context, p, primary),
+    );
   }
 
   // ── 建立貼文 bottom sheet ─────────────────────────────────────
@@ -1500,10 +1335,15 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   Widget _buildFollowingTab() {
     final primary = Theme.of(context).colorScheme.primary;
+    _followingIdsStream ??= CommunityService.followingIdsStream();
     return StreamBuilder<Set<String>>(
-      stream: CommunityService.followingIdsStream(),
+      stream: _followingIdsStream,
       builder: (ctx, followSnap) {
-        final followedIds = followSnap.data ?? {};
+        if (followSnap.hasData) _cachedFollowingIds = followSnap.data!;
+        final followedIds = _cachedFollowingIds;
+        if (followSnap.connectionState == ConnectionState.waiting && followedIds.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
         if (followedIds.isEmpty) {
           return Center(
             child: Column(
@@ -1531,10 +1371,16 @@ class _CommunityScreenState extends State<CommunityScreen> {
             ),
           );
         }
+        // 只有當 followedIds 真的改變時才重建 stream，避免閃爍
+        if (_lastFollowedIds == null || !setEquals(_lastFollowedIds!, followedIds)) {
+          _lastFollowedIds = followedIds;
+          _followingPostsStream = CommunityService.followingPostsStream(followedIds);
+        }
         return StreamBuilder<List<CommunityPost>>(
-          stream: CommunityService.followingPostsStream(followedIds),
+          stream: _followingPostsStream,
           builder: (ctx, snap) {
-            final posts = snap.data ?? [];
+            if (snap.hasData) _cachedFollowingPosts = snap.data!;
+            final posts = _cachedFollowingPosts;
             final isLoading = snap.connectionState == ConnectionState.waiting && posts.isEmpty;
             if (isLoading) return const Center(child: CircularProgressIndicator());
             if (posts.isEmpty) {
@@ -1594,6 +1440,219 @@ class _CommunityScreenState extends State<CommunityScreen> {
           itemBuilder: (_, i) => _firebasePostCard(posts[i], primary),
         );
       },
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════
+// 社群貼文卡片（有真正持久化的 liked / localCount 狀態）
+// ════════════════════════════════════════════════════
+class _FirebasePostCard extends StatefulWidget {
+  final CommunityPost post;
+  final Color primary;
+  final void Function(CommunityPost) onShowAuthorProfile;
+  const _FirebasePostCard({super.key, required this.post, required this.primary, required this.onShowAuthorProfile});
+
+  @override
+  State<_FirebasePostCard> createState() => _FirebasePostCardState();
+}
+
+class _FirebasePostCardState extends State<_FirebasePostCard> {
+  bool? _liked; // null = 尚未載入
+  bool? _saved;
+  late int _localCount;
+
+  @override
+  void initState() {
+    super.initState();
+    _localCount = widget.post.likeCount;
+    _loadState();
+  }
+
+  @override
+  void didUpdateWidget(_FirebasePostCard old) {
+    super.didUpdateWidget(old);
+    // 只有在沒有進行過本地互動時才跟隨 stream 更新 likeCount
+    if (old.post.likeCount != widget.post.likeCount && _liked == null) {
+      _localCount = widget.post.likeCount;
+    } else if (old.post.id != widget.post.id) {
+      _localCount = widget.post.likeCount;
+      _liked = null;
+      _saved = null;
+      _loadState();
+    }
+  }
+
+  Future<void> _loadState() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      if (mounted) setState(() { _liked = false; _saved = false; });
+      return;
+    }
+    final results = await Future.wait([
+      CommunityService.isLiked(widget.post.id),
+      FirebaseFirestore.instance.collection('users').doc(uid).collection('saved_posts').doc(widget.post.id).get(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _liked = results[0] as bool;
+      _saved = (results[1] as DocumentSnapshot).exists;
+      // 以 Firestore 最新的 likeCount 為準（初始載入後）
+      _localCount = widget.post.likeCount;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+    final primary = widget.primary;
+    final liked = _liked ?? false;
+    final saved = _saved ?? false;
+    final l10n = context.read<AppSettingsProvider>().l10n;
+
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => FirebasePostDetailPage(post: post))),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          if (post.imageURLs.isNotEmpty)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              child: Image.network(post.imageURLs.first,
+                height: 160, width: double.infinity, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                GestureDetector(
+                  onTap: () => widget.onShowAuthorProfile(post),
+                  child: CircleAvatar(radius: 16,
+                    backgroundImage: post.authorPhoto.isNotEmpty ? NetworkImage(post.authorPhoto) : null,
+                    backgroundColor: primary.withValues(alpha: 0.1),
+                    child: post.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: GestureDetector(
+                  onTap: () => widget.onShowAuthorProfile(post),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(post.authorName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(_timeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                  ]),
+                )),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(post.type == 'trip' ? Icons.luggage_rounded : Icons.chat_rounded, size: 10, color: primary),
+                    const SizedBox(width: 3),
+                    Text(post.type == 'trip' ? '行程' : '討論',
+                        style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+                if (FirebaseAuth.instance.currentUser?.uid == post.authorId)
+                  GestureDetector(
+                    onTap: () async {
+                      final ok = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          title: Text(l10n.commDeletePost, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          content: Text(l10n.commDeleteConfirm),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+                            TextButton(onPressed: () => Navigator.pop(context, true),
+                                child: Text(l10n.delete, style: const TextStyle(color: AppColors.error))),
+                          ],
+                        ),
+                      );
+                      if (ok == true) await CommunityService.deletePost(post.id);
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 6),
+                      child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textHint),
+                    ),
+                  ),
+              ]),
+              const SizedBox(height: 10),
+              Text(post.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              if (post.content.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(post.content,
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.4),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+              ],
+              const SizedBox(height: 12),
+              Row(children: [
+                GestureDetector(
+                  onTap: () async {
+                    if (FirebaseAuth.instance.currentUser == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(l10n.commLoginToPost), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    // 樂觀更新
+                    setState(() {
+                      _liked = !liked;
+                      _localCount = liked ? _localCount - 1 : _localCount + 1;
+                    });
+                    await CommunityService.toggleLike(post.id);
+                  },
+                  child: Row(children: [
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 200),
+                      transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
+                      child: Icon(
+                        liked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                        key: ValueKey(liked),
+                        size: 18,
+                        color: liked ? AppColors.error : AppColors.textHint,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text('$_localCount', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                  ]),
+                ),
+                const SizedBox(width: 16),
+                const Icon(Icons.chat_bubble_outline_rounded, size: 16, color: AppColors.textHint),
+                const SizedBox(width: 4),
+                Text('${post.commentCount}', style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () async {
+                    if (FirebaseAuth.instance.currentUser == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(l10n.commLoginToPost), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    setState(() => _saved = !saved);
+                    await CommunityService.toggleSave(post.id);
+                  },
+                  child: Icon(
+                    saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    size: 18,
+                    color: saved ? primary : AppColors.textHint,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () => Share.share('探索諸羅 · ${post.title}\n\n${post.content}'),
+                  child: const Icon(Icons.share_outlined, size: 18, color: AppColors.textHint),
+                ),
+              ]),
+            ]),
+          ),
+        ]),
+      ),
     );
   }
 }

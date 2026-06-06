@@ -1166,10 +1166,8 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               height: 42,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: primary.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(21),
-                border: Border.all(color: primary.withValues(alpha: 0.35), width: 1.2),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
               ),
               child: TextField(
                 controller: _searchCtrl,
@@ -1198,10 +1196,8 @@ class _MapScreenState extends State<MapScreen> {
           Container(
             height: 42,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: primary.withValues(alpha: 0.35), width: 1.2),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               _viewToggleBtn(

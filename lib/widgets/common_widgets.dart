@@ -1075,12 +1075,21 @@ class _IllustratedEmptyStateState extends State<IllustratedEmptyState>
             animation: _floatAnim,
             builder: (_, child) => Transform.translate(
               offset: Offset(0, _floatAnim.value), child: child),
-            child: SizedBox(
-              width: 180, height: 160,
-              child: CustomPaint(
-                painter: _EmptyScenePainter(scene: widget.scene, color: color),
-              ),
-            ),
+            child: widget.scene == EmptyScene.expense
+                ? Container(
+                    width: 120, height: 120,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.10),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.savings_rounded, size: 64, color: color.withValues(alpha: 0.65)),
+                  )
+                : SizedBox(
+                    width: 180, height: 160,
+                    child: CustomPaint(
+                      painter: _EmptyScenePainter(scene: widget.scene, color: color),
+                    ),
+                  ),
           ),
           const SizedBox(height: 20),
           Text(widget.title,

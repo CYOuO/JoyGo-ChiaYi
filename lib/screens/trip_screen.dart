@@ -796,10 +796,57 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
       builder: (_) => _FirebaseTripDetailPage(trip: trip)));
   }
 
-  void _openAIPlanner(BuildContext context) {
-    final spots = _candidates.map((c) => c.spot.name).toList();
+  void _openAIPlanner(BuildContext context) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    List<String> globalSpots = [];
+    if (uid != null) {
+      final snap = await FirebaseFirestore.instance.collection('users').doc(uid).collection('candidates').orderBy('order').get();
+      globalSpots = snap.docs.map((d) => d['spotName']?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+    }
+
+    final imported = <String, List<String>>{};
+    for (var t in _firebaseTrips.where((t) => !t.isCompleted)) {
+      // 🌟 保留天數標籤，讓 AI 準確知道原本行程有幾天
+      imported[t.title] = t.spots;
+    }
+
+    if (!context.mounted) return;
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => AIPlannerScreen(candidateSpots: spots)));
+      builder: (_) => AIPlannerScreen(
+        candidateSpots: globalSpots,
+        importedTrips: imported.isNotEmpty ? imported : null,
+        // 🌟 明確標示型別 (AiGeneratedTrip, String?) 解決型別報錯
+        onSaveTrip: (AiGeneratedTrip aiTrip, String? targetTitle) async {
+          List<String> aiSpots = [];
+          for (var day in aiTrip.schedule) {
+            aiSpots.add('__DAY_${day.day}__');
+            for (var item in day.items) {
+              if (item.transport == null && !item.isMeal) aiSpots.add(item.name);
+            }
+          }
+
+          if (targetTitle != null && targetTitle != '一般候選清單') {
+            try {
+              final targetTrip = _firebaseTrips.firstWhere((t) => t.title == targetTitle);
+              await TripService.updateTrip(targetTrip.id, {'spots': aiSpots, 'isCompleted': false});
+              
+              for (var day in aiTrip.schedule) {
+                for (var item in day.items) {
+                  if (item.transport == null && !item.isMeal) {
+                    await TripService.setSpotTime(targetTrip.id, item.name, item.time);
+                  }
+                }
+              }
+            } catch (e) {
+              await TripService.createTrip(title: aiTrip.title, startDate: DateTime.now(), spots: aiSpots);
+            }
+          } else {
+            // 新建行程
+            await TripService.createTrip(title: aiTrip.title, startDate: DateTime.now(), spots: aiSpots);
+          }
+        }
+      )
+    ));
   }
 
   Widget _statCard(String label, String val, IconData icon, Color color) {
@@ -1911,41 +1958,72 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
     }
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true, // 🌟 允許自訂高度
       backgroundColor: Colors.transparent,
       builder: (_) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        // 🌟 限制最大高度為螢幕的 80%，避免溢位
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
         decoration: const BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
-          Text('加入行程候選清單', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primary)),
-          const SizedBox(height: 4),
-          Text('「$spotName」將加入選定行程的候選清單',
-            style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
-          const SizedBox(height: 14),
-          ...trips.map((t) => ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            leading: Container(
-              width: 40, height: 40,
-              decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-              child: Center(child: Icon(_tripIconFromKey(t.icon), size: 20, color: primary))),
-            title: Text(t.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-            subtitle: Text(t.dateDisplay, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-            trailing: Icon(Icons.chevron_right_rounded, color: primary),
-            onTap: () async {
-              Navigator.pop(context);
-              await TripService.addTripCandidate(t.id,
-                spotId: spotId, spotName: spotName, category: '', order: 0);
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('已加入「${t.title}」的候選清單'),
-                backgroundColor: primary, behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-            },
-          )),
-        ]),
+        child: SingleChildScrollView( // 🌟 加入捲動功能
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+            Text('加入行程候選清單', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: primary)),
+            const SizedBox(height: 4),
+            Text('「$spotName」將加入選定行程的候選清單',
+              style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+            const SizedBox(height: 14),
+
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: AppColors.accentStraw.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+                child: const Center(child: Icon(Icons.auto_awesome_rounded, size: 20, color: AppColors.accentStraw))),
+              title: const Text('一般候選清單', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              subtitle: const Text('供 AI 助手全域自動排程使用', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+              trailing: Icon(Icons.chevron_right_rounded, color: primary),
+              onTap: () async {
+                Navigator.pop(context);
+                final matches = SpotService.cached.where((s) => s.id == spotId);
+                if (matches.isNotEmpty) {
+                  _addToCandidate(matches.first);
+                } else {
+                  TripService.addCandidate(spotId: spotId, spotName: spotName, category: '', order: 0);
+                  if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: const Text('已加入一般候選清單 ✨'),
+                    backgroundColor: primary, behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+                }
+              },
+            ),
+            const Divider(height: 8),
+
+            ...trips.map((t) => ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+                child: Center(child: Icon(_tripIconFromKey(t.icon), size: 20, color: primary))),
+              title: Text(t.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              subtitle: Text(t.dateDisplay, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+              trailing: Icon(Icons.chevron_right_rounded, color: primary),
+              onTap: () async {
+                Navigator.pop(context);
+                await TripService.addTripCandidate(t.id,
+                  spotId: spotId, spotName: spotName, category: '', order: 0);
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('已加入「${t.title}」的候選清單'),
+                  backgroundColor: primary, behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+              },
+            )),
+          ]),
+        ),
       ),
     );
   }
@@ -2119,6 +2197,9 @@ class _TripDetailPageState extends State<_TripDetailPage>
   late final PageController _pageCtrl;
   bool _programmaticPageChange = false;
 
+  final Map<int, GlobalKey> _dayKeys = {};
+  final ScrollController _scheduleScrollCtrl = ScrollController();
+
   // 即時行程資料（由 tripDocStream 更新，候選加入後概覽自動刷新）
   late FirebaseTrip _trip;
   StreamSubscription<FirebaseTrip?>? _tripSub;
@@ -2290,7 +2371,31 @@ class _TripDetailPageState extends State<_TripDetailPage>
                 final dayDate = trip.startDate.add(Duration(days: d));
                 final weekday = ['日','一','二','三','四','五','六'][dayDate.weekday % 7];
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedDay = d),
+                  onTap: () {
+                    setState(() => _selectedDay = d);
+                    // 🌟 點擊時自動滾動到對應的天數標籤位置
+                    final dayMarkerInt = d + 1;
+                    final key = _dayKeys[dayMarkerInt];
+                    if (key != null && key.currentContext != null) {
+                      Scrollable.ensureVisible(
+                        key.currentContext!,
+                        duration: const Duration(milliseconds: 350),
+                        curve: Curves.easeInOut,
+                        alignment: 0.02, // 留一點點上方邊距，視覺更舒服
+                      );
+                    } else if (_scheduleScrollCtrl.hasClients) {
+                      // 🌟 備用機制：如果從來沒往下滑過（Context 尚未建立）
+                      if (d == 0) {
+                        _scheduleScrollCtrl.animateTo(0, duration: const Duration(milliseconds: 350), curve: Curves.easeInOut);
+                      } else {
+                        // 如果是要往下跳，強制先盲滑一段距離把底下的元件讀取出來
+                        _scheduleScrollCtrl.animateTo(
+                          _scheduleScrollCtrl.position.pixels + 600,
+                          duration: const Duration(milliseconds: 350), curve: Curves.easeInOut
+                        );
+                      }
+                    }
+                  },
                   child: Container(
                     margin: const EdgeInsets.only(right: 6),
                     width: 44,
@@ -2320,7 +2425,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
               setState(() {});
             },
             children: [
-              _buildScheduleList(daySpots[_selectedDay.clamp(0, daySpots.length - 1)], primary),
+              _buildScheduleList(primary),
               _buildMapMode(primary, trip, daySpots),  // 傳 daySpots，保證天數切割一致
               _buildCandidatesTab(primary, trip),
               _buildExpenseTab(primary, trip),
@@ -2752,131 +2857,339 @@ class _TripDetailPageState extends State<_TripDetailPage>
     ));
   }
 
-  Widget _buildScheduleList(List<String> spots, Color primary) {
-    // ── Empty state ──────────────────────────────────────────
-    if (spots.isEmpty && _pendingCandidates.isEmpty) {
-      return NotebookBackground(
-        lineColor: primary.withValues(alpha: 0.10),
-        child: Stack(children: [
-          const ScatteredDoodles(),
-          Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            DoodleCircle(color: primary.withValues(alpha: 0.18), size: 72,
-              child: Icon(Icons.add_location_alt_outlined, size: 32, color: primary.withValues(alpha: 0.5))),
-            const SizedBox(height: 14),
-            const Text('這天還沒有景點', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            Text('到「候選」頁加入景點', style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.6))),
-          ])),
-        ]),
-      );
+  // 1. 自動補齊天數標籤的輔助函式 (🌟 升級版：保證天數完整)
+  List<String> _getNormalizedSpots() {
+    final spots = _trip.spots;
+    if (spots.isEmpty) return [];
+
+    List<String> current = List.from(spots);
+    bool modified = false;
+
+    // 如果完全沒有任何 __DAY_ 標籤，先進行平均分配
+    if (!current.any((s) => s.startsWith('__DAY_'))) {
+      current.clear();
+      int perDay = (spots.length / _trip.days).ceil();
+      if (perDay == 0) perDay = 1;
+      int currentDay = 1;
+      int count = 0;
+      current.add('__DAY_1__');
+      for (var spot in spots) {
+        if (count >= perDay && currentDay < _trip.days) {
+          currentDay++;
+          current.add('__DAY_${currentDay}__');
+          count = 0;
+        }
+        current.add(spot);
+        count++;
+      }
+      modified = true;
     }
 
-    const defaultTimes = ['09:00','10:30','13:00','15:00','18:00','20:00'];
-    const images = [
-      'https://picsum.photos/seed/spot1/120/80',
-      'https://picsum.photos/seed/spot2/120/80',
-      'https://picsum.photos/seed/spot3/120/80',
-      'https://picsum.photos/seed/spot4/120/80',
-    ];
+    // 🌟 關鍵修復：強制檢查並補齊所有天數標籤 (從 1 到 _trip.days)
+    for (int d = 1; d <= _trip.days; d++) {
+      String marker = '__DAY_${d}__';
+      if (!current.contains(marker)) {
+        current.add(marker); // 缺少的天數標籤直接加到最後面
+        modified = true;
+      }
+    }
 
-    // 用 _orderedSpots 過濾出當天景點，保留排序
-    final dayOrdered = _orderedSpots.where(spots.contains).toList();
+    if (modified) {
+      TripService.updateTrip(_trip.id, {'spots': current});
+    }
+    return current;
+  }
+
+  // 2. 全新支援拖曳的行程列表
+  Widget _buildScheduleList(Color primary) {
+    final items = _getNormalizedSpots();
 
     return NotebookBackground(
       lineColor: primary.withValues(alpha: 0.10),
       child: Stack(children: [
         const ScatteredDoodles(),
         Column(children: [
-          // ── 頁首裝飾 ─────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-            child: Row(children: [
-              HandDrawnUnderline(
-                color: primary.withValues(alpha: 0.28),
-                child: Text('今日行程',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: primary)),
-              ),
-              const Spacer(),
-              DoodleHeart(color: primary.withValues(alpha: 0.40), size: 10),
-              const SizedBox(width: 4),
-              Text('${dayOrdered.length} 個景點  長按可拖排',
-                style: TextStyle(fontSize: 10, color: primary.withValues(alpha: 0.55))),
-            ]),
-          ),
-
-          // ── 可拖排序的景點清單 ────────────────────────────
+          // 行程已完成提示與退回按鈕
+          if (_trip.isCompleted)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(14), border: Border.all(color: primary.withValues(alpha: 0.3))),
+              child: Row(children: [
+                Icon(Icons.check_circle_rounded, color: primary, size: 20),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('此行程已完成', style: TextStyle(fontWeight: FontWeight.w700))),
+                ElevatedButton.icon(
+                  onPressed: () => TripService.setCompleted(_trip.id, completed: false),
+                  icon: const Icon(Icons.edit_rounded, size: 14), label: const Text('退回編輯'),
+                  style: ElevatedButton.styleFrom(backgroundColor: primary, foregroundColor: Colors.white, minimumSize: const Size(0, 36), padding: const EdgeInsets.symmetric(horizontal: 12)),
+                ),
+              ]),
+            ),
+          
+          // 🌟 這裡換成 ReorderableListView 來支援跨天拖曳
           Expanded(
             child: ReorderableListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 120),
-              itemCount: dayOrdered.length,
-              onReorder: (o, n) {
-                if (n > o) n--;
-                // Collect global slots BEFORE touching dayOrdered
-                final slots = (dayOrdered
-                    .map((s) => _orderedSpots.indexOf(s))
-                    .toList()..sort());
-                setState(() {
-                  final moved = dayOrdered.removeAt(o);
-                  dayOrdered.insert(n, moved);
-                  // Write reordered items back to their global slots (no shift issues)
-                  for (var i = 0; i < dayOrdered.length; i++) {
-                    _orderedSpots[slots[i]] = dayOrdered[i];
-                  }
-                });
-                HapticFeedback.lightImpact();
-                TripService.updateSpotOrder(_trip.id, _orderedSpots);
+              scrollController: _scheduleScrollCtrl,
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
+              itemCount: items.length,
+              onReorder: (oldIndex, newIndex) {
+                final items = _getNormalizedSpots();
+                if (items[oldIndex].startsWith('__DAY_')) return;
+                if (newIndex > oldIndex) newIndex -= 1;
+                if (newIndex >= items.length || items[newIndex].startsWith('__DAY_')) return;
+
+                final item = items.removeAt(oldIndex);
+                items.insert(newIndex, item);
+                
+                // 🌟 當手動拖曳換位時，根據新順序自動推算時間！
+                _rippleTimesBasedOnOrder(items);
               },
-              itemBuilder: (_, i) {
-                final name = dayOrdered[i];
-                final time = _spotTimes[name] ?? defaultTimes[i % defaultTimes.length];
-                final img  = images[i % images.length];
-                return _buildScheduleItem(key: ValueKey(name),
-                  name: name, time: time, img: img, index: i, primary: primary);
+              itemBuilder: (context, index) {
+                final items = _getNormalizedSpots();
+                final spot = items[index];
+                if (spot.startsWith('__DAY_')) {
+                  final dayStr = spot.replaceAll('__DAY_', '').replaceAll('__', '');
+                  final dayInt = int.tryParse(dayStr) ?? 1;
+                  _dayKeys[dayInt] ??= GlobalKey(); // 確保每個天數都有獨立的 key
+
+                  return AlwaysKeepAliveWidget(
+                    key: ValueKey(spot),
+                    child: Row(
+                      key: _dayKeys[dayInt], // 🌟 將 key 綁定在這裡，讓系統可以定位
+                      children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+                        child: Text('第 $dayStr 天', style: TextStyle(fontWeight: FontWeight.w800, color: primary)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: Container(height: 1, color: primary.withValues(alpha: 0.1))),
+                    ]),
+                  );
+                }
+                return Container(
+                  key: ValueKey(spot),
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: _buildScheduleCard(spot, primary),
+                );
               },
             ),
           ),
-
-          // ── 候選待加入預覽 ───────────────────────────────
-          if (_pendingCandidates.isNotEmpty) ...[
-            JournalDivider(color: primary, label: '候選待加入'),
-            SizedBox(
-              height: 44.0 * _pendingCandidates.take(3).length.toDouble(),
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
-                children: [
-                  ..._pendingCandidates.take(3).map((item) {
-                    final nm = item['spotName']?.toString() ?? '';
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: primary.withValues(alpha: 0.04),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: primary.withValues(alpha: 0.18)),
-                        ),
-                        child: Row(children: [
-                          Icon(Icons.bookmark_border_rounded, size: 13, color: primary.withValues(alpha: 0.45)),
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(nm,
-                            style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.60),
-                                fontStyle: FontStyle.italic),
-                            maxLines: 1, overflow: TextOverflow.ellipsis)),
-                          Text('候選', style: TextStyle(fontSize: 9, color: primary.withValues(alpha: 0.40))),
-                        ]),
-                      ),
-                    );
-                  }),
-                  if (_pendingCandidates.length > 3)
-                    Text('…還有 ${_pendingCandidates.length - 3} 個',
-                      style: TextStyle(fontSize: 10, color: primary.withValues(alpha: 0.40))),
-                ],
-              ),
-            ),
-          ],
         ]),
       ]),
     );
+  }
+
+  // 3. 升級版景點卡片 (包含時間與停留時間)
+  Widget _buildScheduleCard(String spot, Color primary) {
+    // 解析隱藏在字串裡的停留時間 (格式： 10:00|120)
+    String rawTime = _trip.spotTimes[spot] ?? '';
+    String time = rawTime.isNotEmpty ? rawTime.split('|').first : '--:--';
+    String duration = rawTime.contains('|') ? rawTime.split('|').last : '60';
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 50,
+          child: Column(children: [
+            GestureDetector(
+              onTap: () async {
+                final cur = time == '--:--' ? TimeOfDay.now() : TimeOfDay(hour: int.parse(time.split(':')[0]), minute: int.parse(time.split(':')[1]));
+                final sel = await showTimePicker(context: context, initialTime: cur);
+                if (sel != null && mounted) {
+                  final newTime = '${sel.hour.toString().padLeft(2, '0')}:${sel.minute.toString().padLeft(2, '0')}';
+                  // 🌟 改呼叫智慧排序與推算
+                  _updateSpotTimeAndRipple(spot, newTime, duration); 
+                }
+              },
+              child: Text(time, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: primary)),
+            ),
+            const SizedBox(height: 4),
+            Container(width: 2, height: 50, color: primary.withValues(alpha: 0.15)),
+          ]),
+        ),
+        Expanded(
+          child: StitchedBox(
+            color: Colors.white, stitchColor: primary.withValues(alpha: 0.25),
+            radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
+            padding: const EdgeInsets.all(12),
+            child: Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(spot, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
+                const SizedBox(height: 6),
+                // 🌟 新增停留時間按鈕
+                GestureDetector(
+                  onTap: () => _showDurationPicker(spot, time, duration),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(6)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.timer_outlined, size: 12, color: AppColors.textHint),
+                      const SizedBox(width: 4),
+                      Text('停留 $duration 分鐘', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
+                ),
+              ])),
+              IconButton(icon: const Icon(Icons.more_vert_rounded, color: AppColors.textHint, size: 20), onPressed: () => _showSpotOptions(spot)),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 4. 停留時間選擇器
+  void _showDurationPicker(String spot, String time, String currentDuration) {
+    final options = [30, 60, 90, 120, 150, 180, 240];
+    showModalBottomSheet(
+      context: context, backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('選擇停留時間', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: options.map((mins) => ActionChip(
+              label: Text('$mins 分鐘'),
+              backgroundColor: currentDuration == mins.toString() ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2) : AppColors.surfaceMoss,
+              onPressed: () {
+                Navigator.pop(context);
+                // 🌟 改呼叫智慧排序與推算 (不用改 Time，只改 duration)
+                _updateSpotTimeAndRipple(spot, time, mins.toString());
+              }
+            )).toList()
+          )
+        ])
+      )
+    );
+  }
+
+  void _showSpotOptions(String spot) {
+    final primary = Theme.of(context).colorScheme.primary;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+        decoration: const BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(
+            leading: const Icon(Icons.payments_outlined),
+            title: const Text('設定預算'),
+            onTap: () {
+              Navigator.pop(context);
+              _showSpotBudgetSheet(spot, primary);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: AppColors.error),
+            title: const Text('從行程移除', style: TextStyle(color: AppColors.error)),
+            onTap: () {
+              Navigator.pop(context);
+              final newSpots = List<String>.from(_trip.spots)..remove(spot);
+              TripService.updateTrip(_trip.id, {'spots': newSpots});
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('已移除 $spot'),
+                behavior: SnackBarBehavior.floating,
+              ));
+            },
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // 🌟 核心功能 1：當設定特定時間/長度時，重新依時間排序，並產生漣漪推算
+  Future<void> _updateSpotTimeAndRipple(String targetSpot, String newTime, String duration) async {
+    Map<String, String> times = Map.from(_trip.spotTimes);
+    times[targetSpot] = '$newTime|$duration';
+
+    List<String> currentSpots = _getNormalizedSpots();
+    List<String> newSpots = [];
+    List<String> tempDaySpots = [];
+    
+    // 1. 將同一天的景點獨立出來，根據設定的時間排序
+    for (int i = 0; i < currentSpots.length; i++) {
+      final s = currentSpots[i];
+      if (s.startsWith('__DAY_')) {
+        if (tempDaySpots.isNotEmpty) {
+          tempDaySpots.sort((a, b) {
+            final timeA = times[a]?.split('|').first ?? '23:59';
+            final timeB = times[b]?.split('|').first ?? '23:59';
+            if (timeA == '--:--') return 1;
+            if (timeB == '--:--') return -1;
+            return timeA.compareTo(timeB);
+          });
+          newSpots.addAll(tempDaySpots);
+          tempDaySpots.clear();
+        }
+        newSpots.add(s);
+      } else {
+        tempDaySpots.add(s);
+      }
+    }
+    if (tempDaySpots.isNotEmpty) {
+      tempDaySpots.sort((a, b) {
+        final timeA = times[a]?.split('|').first ?? '23:59';
+        final timeB = times[b]?.split('|').first ?? '23:59';
+        if (timeA == '--:--') return 1;
+        if (timeB == '--:--') return -1;
+        return timeA.compareTo(timeB);
+      });
+      newSpots.addAll(tempDaySpots);
+    }
+
+    // 2. 執行漣漪推算 (Ripple Effect)
+    _rippleTimesBasedOnOrder(newSpots, timesToUse: times);
+  }
+
+  // 🌟 核心功能 2：根據現有排序（包含拖曳後），由上往下自動疊加時間
+  Future<void> _rippleTimesBasedOnOrder(List<String> orderedSpots, {Map<String, String>? timesToUse}) async {
+    Map<String, String> times = Map.from(timesToUse ?? _trip.spotTimes);
+    DateTime? calcTime;
+    
+    for (String s in orderedSpots) {
+      if (s.startsWith('__DAY_')) {
+        calcTime = null; // 換天重設
+        continue;
+      }
+      String raw = times[s] ?? '';
+      String tStr = raw.contains('|') ? raw.split('|').first : (raw.isNotEmpty ? raw : '--:--');
+      int dur = raw.contains('|') ? int.tryParse(raw.split('|').last) ?? 60 : 60;
+
+      // 如果前一個有時間，就自動覆蓋下一個的時間
+      if (calcTime != null) {
+        tStr = '${calcTime.hour.toString().padLeft(2, '0')}:${calcTime.minute.toString().padLeft(2, '0')}';
+        times[s] = '$tStr|$dur';
+      } else if (tStr != '--:--' && tStr.isNotEmpty) {
+        // 第一個有設定時間的景點，成為當天的基準點
+        calcTime = DateTime(2000, 1, 1, int.parse(tStr.split(':')[0]), int.parse(tStr.split(':')[1]));
+      }
+
+      // 將時間加上「停留分鐘數」給下一個景點
+      if (calcTime != null) {
+        calcTime = calcTime.add(Duration(minutes: dur));
+      }
+    }
+
+    setState(() {
+      _trip.spots.clear();
+      _trip.spots.addAll(orderedSpots);
+      _trip.spotTimes.addAll(times);
+    });
+
+    await TripService.updateTrip(_trip.id, {
+      'spots': orderedSpots,
+      'spotTimes': times,
+    });
   }
 
   Widget _buildScheduleItem({
@@ -3317,9 +3630,34 @@ class _TripDetailPageState extends State<_TripDetailPage>
             builder: (_, snap) {
               final items = snap.data ?? [];
               return GestureDetector(
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                  builder: (_) => AIPlannerScreen(
-                    candidateSpots: items.map((m) => m['spotName']?.toString() ?? '').where((s) => s.isNotEmpty).toList()))),
+                onTap: () {
+                  final candidateSpots = items.map((m) => m['spotName']?.toString() ?? '').where((s) => s.isNotEmpty).toList();
+                  final imported = {trip.title: trip.spots}; // 💡 傳入當前行程作為預設匯入
+                  
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => AIPlannerScreen(
+                      candidateSpots: candidateSpots,
+                      importedTrips: imported,
+                      // 🌟 同樣明確標示型別，並給第二個參數命名為 targetTitle
+                      onSaveTrip: (AiGeneratedTrip aiTrip, String? targetTitle) async {
+                        // 💡 修正：變數名稱是 _trip (有底線)
+                        await TripService.updateTrip(_trip.id, {
+                          'spots': aiTrip.spots,
+                          'isCompleted': false, 
+                        });
+                        
+                        // 將 AI 產生的時間自動匯入
+                        for (var d in aiTrip.schedule) {
+                          for (var item in d.items) {
+                            if (item.transport == null && !item.isMeal) {
+                              await TripService.setSpotTime(_trip.id, item.name, item.time);
+                            }
+                          }
+                        }
+                      }
+                    )
+                  ));
+                },
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
@@ -3410,8 +3748,21 @@ class _TripDetailPageState extends State<_TripDetailPage>
                             child: Text('Day ${d+1} (${dayDate.month}/${dayDate.day})'));
                         }),
                         onSelected: (d) async {
-                          await TripService.addSpotToTrip(trip.id, spotName);
+                          // 🌟 準確尋找對應天數的位置並安插
+                          List<String> currentSpots = _getNormalizedSpots();
+                          String nextDayMarker = '__DAY_${d + 2}__'; // 尋找下一天的標籤
+                          
+                          int insertIdx = currentSpots.length; // 預設放在最後
+                          if (currentSpots.contains(nextDayMarker)) {
+                             insertIdx = currentSpots.indexOf(nextDayMarker); // 放在下一天之前
+                          }
+                          
+                          currentSpots.insert(insertIdx, spotName);
+                          
+                          // 移除候選，並透過推算系統更新行程 (這樣時間才會立刻連動)
                           await TripService.removeTripCandidate(trip.id, item['spotId'].toString());
+                          await _rippleTimesBasedOnOrder(currentSpots);
+                          
                           if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text('「$spotName」已加入 Day ${d+1}'),
                             backgroundColor: primary, behavior: SnackBarBehavior.floating,
@@ -4191,4 +4542,26 @@ class _ReportWaveClipper extends CustomClipper<ui.Path> {
 
   @override
   bool shouldReclip(_ReportWaveClipper old) => false;
+}
+
+// ════════════════════════════════════════════════════════════════
+// Utility
+// ════════════════════════════════════════════════════════════════
+class AlwaysKeepAliveWidget extends StatefulWidget {
+  final Widget child;
+  const AlwaysKeepAliveWidget({super.key, required this.child});
+
+  @override
+  State<AlwaysKeepAliveWidget> createState() => _AlwaysKeepAliveWidgetState();
+}
+
+class _AlwaysKeepAliveWidgetState extends State<AlwaysKeepAliveWidget> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true; // 🌟 告訴 Flutter：永遠不要回收這個元件！
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // 必須呼叫
+    return widget.child;
+  }
 }

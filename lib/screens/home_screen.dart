@@ -844,7 +844,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _transportCard(IconData icon, String type, String line, String info, Color color, int tabIdx) {
     return TapFeedback(
-      onTap: () => Navigator.push(context, _goRoute(TransportScreen(initialTab: tabIdx))),
+      onTap: () {
+        if (tabIdx == 1) {
+          // YouBike → 跳到地圖頁並顯示 YouBike 站牌
+          MapScreen.focusNotifier.value = (lat: 23.4780, lng: 120.4407, catKey: MapScreen.catKeyYouBike);
+          widget.onSwitchTab?.call(2);
+        } else {
+          Navigator.push(context, _goRoute(TransportScreen(initialTab: tabIdx)));
+        }
+      },
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(color: color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(18), border: Border.all(color: color.withValues(alpha: 0.18))),

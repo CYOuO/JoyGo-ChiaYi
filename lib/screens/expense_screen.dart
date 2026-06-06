@@ -903,7 +903,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     color: AppColors.textHint),
               ),
               const SizedBox(height: 14),
-              if (settlements.isEmpty)
+              if (settlements.isEmpty && _expenses.isEmpty)
+                _noExpensesSettlement()
+              else if (settlements.isEmpty)
                 _emptySettlement()
               else
                 ...settlements.map((s) => _settlementRow(s)),
@@ -1133,6 +1135,24 @@ class _ExpenseScreenState extends State<ExpenseScreen>
               );
             }),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _noExpensesSettlement() {
+    final primary = Theme.of(context).colorScheme.primary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          Icon(Icons.receipt_long_rounded, size: 40, color: primary.withValues(alpha: 0.35)),
+          const SizedBox(height: 8),
+          Text('尚未新增任何消費',
+              style: TextStyle(fontWeight: FontWeight.w700, color: primary, fontSize: 15)),
+          const SizedBox(height: 4),
+          const Text('新增消費後即可計算最少轉帳方案',
+              style: TextStyle(color: AppColors.textHint, fontSize: 12)),
         ],
       ),
     );
@@ -1810,18 +1830,45 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     );
   }
 
-  void _markSettled(BuildContext context, Settlement s,
-      Member from, Member to) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+  Future<void> _markSettled(BuildContext context, Settlement s,
+      Member from, Member to) async {
+    final primary = Theme.of(context).colorScheme.primary;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('確認結清？', style: TextStyle(fontWeight: FontWeight.w800)),
         content: Text(
-            '已標記 ${from.name} 轉帳 NT\$${s.amount} 給 ${to.name}'),
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12)),
+          '確認「${from.name}」已轉帳 NT\$${s.amount} 給「${to.name}」嗎？',
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: primary,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('確認結清', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
+        ],
       ),
     );
+    if (confirm == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已標記 ${from.name} 轉帳 NT\$${s.amount} 給 ${to.name} ✓'),
+          backgroundColor: primary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
   }
 
   Future<bool> _confirmDelete(BuildContext context) async {
@@ -1905,10 +1952,14 @@ class _AddExpenseSheetState
   @override
   void initState() {
     super.initState();
-    _selectedPayerId =
-        widget.members.isNotEmpty ? widget.members[0].id : '';
-    _selectedSplitIds =
-        widget.members.map((m) => m.id).toSet();
+    
+    // 🌟 修正：讓預設付款人（代墊人）自動選擇「我」
+    final currentUserUid = FirebaseAuth.instance.currentUser?.uid;
+    final me = widget.members.where((m) => m.uid == currentUserUid).firstOrNull;
+    _selectedPayerId = me?.id ?? (widget.members.isNotEmpty ? widget.members[0].id : '');
+    
+    // 預設所有人一起平分
+    _selectedSplitIds = widget.members.map((m) => m.id).toSet();
     _selectedTripId = widget.initialTripId;
   }
 

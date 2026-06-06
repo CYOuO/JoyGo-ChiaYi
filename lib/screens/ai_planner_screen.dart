@@ -7,6 +7,7 @@ import '../config/app_config.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart'
     show StitchedBox, DoodleHeart, DoodleCloud, DoodleLightning;
+import 'news_transport_screens.dart' show TransportScreen;
 
 // ════════════════════════════════════════════════════════════════
 // Data Models
@@ -97,7 +98,7 @@ class _ChatMessage {
 class AIPlannerScreen extends StatefulWidget {
   final List<String> candidateSpots;
   final Map<String, List<String>>? importedTrips;
-  final void Function(AiGeneratedTrip trip)? onSaveTrip;
+  final void Function(AiGeneratedTrip trip, String? targetTripTitle)? onSaveTrip;
 
   const AIPlannerScreen({
     super.key,
@@ -115,6 +116,9 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 
   // ── Mode ─────────────────────────────────────────────────────
   String _mode = 'schedule';
+
+  // ── 可編輯的候選景點（本地副本，支援刪除）─────────────────────
+  late List<String> _localCandidates;
 
   // ── Transport modes ──────────────────────────────────────────
   final Set<TransportMode> _transportModes = {TransportMode.bus};
@@ -158,6 +162,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 2. 格式固定如下：
 {
   "replyText": "繁體中文口語回覆，語氣熱情親切",
+  "tripName": "根據行程特色命名，例如「奮起湖雲霧慢步兩日遊」「嘉義美食文青二日漫遊」（有 plan 時必填）",
   "plan": [
     {
       "day": 1,
@@ -179,9 +184,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     }
   ]
 }
-3. 只有在生成/修改行程時才包含 plan 欄位；純對話回覆可省略 plan。
-4. 景點之間加入交通段（isTransport:true，transport 填對應方式）。
-5. 午餐安排在 12:00-13:00（isMeal:true），晚餐在 18:00（isMeal:true）。
+3. 只有在生成/修改行程時才包含 plan 與 tripName 欄位；純對話回覆可省略。
+4. 景點之間加入交通段（isTransport:true，transport 填對應方式，stationName 填站名）。
+5. ⚠️ 地理順路原則：必須確保每天的景點安排「極度順路」。請先在腦中比對景點的實際地理位置（例如：市區、東區蘭潭、嘉義縣太保、阿里山），將位置相鄰的景點排在一起，絕對避免在地圖上來回折返跑。
+6. 午餐安排在 12:00-13:00（isMeal:true），晚餐在 18:00（isMeal:true）。
+7. 有交通段時 transportNote 填乘車資訊（如搭公車7229路）。
 
 【嘉義常識】
 - 推薦：雞肉飯、沙鍋魚頭、奮起湖便當、文化路夜市
@@ -192,6 +199,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   @override
   void initState() {
     super.initState();
+    _localCandidates = List.from(widget.candidateSpots);
     _sparkleCtrl =
         AnimationController(vsync: this, duration: const Duration(seconds: 3))
           ..repeat();
@@ -214,11 +222,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   // ════════════════════════════════════════════════════════════
   // Gemini 核心呼叫
   // ════════════════════════════════════════════════════════════
-  Future<({String reply, List<_DayPlan>? plan})> _callGemini(
+  Future<({String reply, List<_DayPlan>? plan, String? tripName})> _callGemini(
     String prompt, {bool clearHistory = false}
   ) async {
     if (_kApiKey.isEmpty) {
-      return (reply: '尚未設定 Gemini API Key，請在 local.env.json 填入 GEMINI_API_KEY 後以 --dart-define-from-file=local.env.json 重新執行。', plan: null);
+      return (reply: '尚未設定 Gemini API Key，請在 local.env.json 填入 GEMINI_API_KEY 後以 --dart-define-from-file=local.env.json 重新執行。', plan: null, tripName: null);
     }
     if (clearHistory) _history.clear();
     _history.add(Content.text(prompt));
@@ -234,13 +242,14 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       final data = jsonDecode(clean) as Map<String, dynamic>;
       final reply = data['replyText'] as String? ?? '好的，請稍候';
       final planData = data['plan'] as List?;
+      final tripName = data['tripName'] as String?;
       final primary = context.appPrimary;
       final accent  = context.appAccent;
       final plan = planData != null ? _parsePlan(planData, primary, accent) : null;
-      return (reply: reply, plan: plan);
+      return (reply: reply, plan: plan, tripName: tripName);
     } catch (e) {
       _history.removeLast(); // 失敗時移除未完成的 user message
-      return (reply: '抱歉，發生錯誤：$e', plan: null);
+      return (reply: '抱歉，發生錯誤：$e', plan: null, tripName: null);
     }
   }
 
@@ -286,23 +295,58 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   }
 
   // ── 智排行程 ─────────────────────────────────────────────────
+  String? _scheduleTripName;
+
   Future<void> _runSchedule() async {
     final spots = _activeSpots;
     if (spots.isEmpty) return;
-    setState(() { _scheduling = true; _schedulePlan = null; });
+    setState(() { _scheduling = true; _schedulePlan = null; _scheduleTripName = null; });
 
     final depLabel = _depTime == 'morning' ? '早上 9 點' : _depTime == 'afternoon' ? '下午 2 點' : '彈性出發';
     final transportStr = _transportModes.map((m) => m.label).join('、');
-    final prompt =
-        '請幫我安排 $_days 天的嘉義行程。'
-        '候選景點：${spots.join('、')}。'
-        '出發時間：$depLabel。'
-        '交通方式：$transportStr。'
-        '請考慮順路程度並加入交通段與用餐時間，生成完整 JSON。';
+    
+    // 🌟 升級版提示詞：加入天氣考量與安插舊行程的邏輯
+    // 🌟 升級版提示詞：加入天氣考量與安插舊行程的邏輯
+    String prompt = '請幫我安排 $_days 天的嘉義行程。\n';
+    
+    if (_selectedImportTrip != null && widget.importedTrips != null && widget.importedTrips!.containsKey(_selectedImportTrip)) {
+      final rawSpots = widget.importedTrips![_selectedImportTrip]!;
+      
+      // 🌟 計算原行程天數
+      int tripDays = 0;
+      final cleanSpots = <String>[];
+      for (var s in rawSpots) {
+        if (s.startsWith('__DAY_')) {
+          tripDays++;
+        } else {
+          cleanSpots.add(s);
+        }
+      }
+      if (tripDays > 0) _days = tripDays; // 強制將 UI 天數與原行程同步
+
+      prompt = '請幫我安排 $_days 天的嘉義行程。\n'; // 覆寫開頭的天數
+      prompt += '【既有行程名稱】：$_selectedImportTrip\n';
+      prompt += '【既有原景點】：${cleanSpots.join('、')}\n';
+      prompt += '🌟 重要任務：此為 $_days 天的行程，請務必排滿 $_days 天。\n';
+      if (_localCandidates.isNotEmpty) {
+        prompt += '【待安插的新景點】：${_localCandidates.join('、')}\n';
+        prompt += '任務要求：請將「待安插的新景點」巧妙加入「既有行程」中。請盡量保留既有行程的架構與順序，並考量順路程度。\n';
+      } else {
+        prompt += '任務要求：請幫我重新審視並優化這個行程的時間與交通。\n';
+      }
+    } else {
+      prompt += '需安排的景點：${spots.join('、')}。\n';
+    }
+    
+    prompt += '出發時間：$depLabel。\n交通方式：$transportStr。\n';
+    prompt += '請考慮「天氣狀況與交通時間」，將戶外景點盡量安排在白天避開降雨。\n';
+    prompt += '⚠️ 強烈要求：請務必根據嘉義的真實地圖方位來排序景點！每天的路線必須是一條順暢的線或環狀，【絕對不可以】安排東西南北來回折返的亂跑行程。\n';
+    prompt += '請考慮順路程度並加入交通段（含站名）與用餐時間，同時幫行程取一個有特色的 tripName，生成完整 JSON。';
 
     final result = await _callGemini(prompt, clearHistory: true);
     if (mounted) setState(() {
       _schedulePlan = result.plan;
+      _scheduleTripName = result.tripName;
       _scheduling = false;
     });
   }
@@ -310,15 +354,21 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   List<String> get _activeSpots {
     if (_selectedImportTrip != null &&
         widget.importedTrips?[_selectedImportTrip] != null) {
-      return widget.importedTrips![_selectedImportTrip]!;
+      // 🌟 過濾掉 __DAY_ 標籤，只保留純景點與候選景點合併
+      final rawSpots = widget.importedTrips![_selectedImportTrip]!;
+      final combined = Set<String>.from(rawSpots.where((s) => !s.startsWith('__DAY_')));
+      combined.addAll(_localCandidates);
+      return combined.toList();
     }
-    return widget.candidateSpots;
+    return _localCandidates;
   }
 
   void _saveScheduleAsTrip() {
     if (_schedulePlan == null) return;
+    // 🌟 優先使用匯入行程的原始名稱
+    final titleToUse = _selectedImportTrip ?? _scheduleTripName ?? 'AI 嘉義 $_days 日行程';
     final trip = AiGeneratedTrip(
-      title: 'AI 嘉義 $_days 日行程',
+      title: titleToUse,
       highlight: '由諸羅精靈智排，共 ${_activeSpots.length} 個景點',
       tips: '依照您的交通方式與出發時間最佳化安排',
       spots: _activeSpots,
@@ -326,7 +376,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       budget: '一般',
       schedule: _schedulePlan!,
     );
-    widget.onSaveTrip?.call(trip);
+    widget.onSaveTrip?.call(trip, _selectedImportTrip);
     _showSavedSnackbar(context, trip.title);
   }
 
@@ -345,7 +395,12 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 
   void _initChat(String mode) {
     final greeting = mode == 'chat_import'
-        ? '嗨！你想把哪個行程交給我來優化或重新規劃呢？請先選擇行程，然後告訴我你的需求 📝'
+        ? '嗨！請先選擇上方的行程，然後告訴我你的需求 📝\n\n'
+          '例如：\n'
+          '• 「幫我豐富行程，加入更多美食和景點」\n'
+          '• 「重新安排順序，讓景點更順路」\n'
+          '• 「加入交通資訊和站牌」\n\n'
+          '選好行程後，我會根據你現有的景點進行加強規劃！'
         : '嗨！我是諸羅精靈 🌟\n\n為了幫你量身規劃，先問幾個問題：\n\n'
           '① 幾天幾夜？\n'
           '② 幾個人同行？\n'
@@ -367,56 +422,57 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     });
     _scrollChatToBottom();
 
-    // 讓 AI 知道目前的交通偏好
     final transportStr = _transportModes.map((m) => m.label).join('、');
-    final contextNote = '（目前選擇的交通方式：$transportStr）';
+    String contextNote = '（目前選擇的交通方式：$transportStr）';
+
+    // 行程匯入模式：把已選行程的景點傳給 AI 做上下文
+    if (_mode == 'chat_import' && _selectedImportTrip != null &&
+        widget.importedTrips?[_selectedImportTrip] != null) {
+      final rawSpots = widget.importedTrips![_selectedImportTrip!]!;
+      
+      // 🌟 智慧計算原行程天數，並過濾出純景點
+      int tripDays = 0;
+      final cleanSpots = <String>[];
+      for (var s in rawSpots) {
+        if (s.startsWith('__DAY_')) {
+          tripDays++;
+        } else {
+          cleanSpots.add(s);
+        }
+      }
+      if (tripDays == 0) tripDays = 2; // 防呆預設
+
+      contextNote += '。【現有行程「$_selectedImportTrip」景點清單】：${cleanSpots.join('、')}。'
+                     '🌟 重要任務：這個現有行程原本是 $tripDays 天的規劃！請你務必輸出完整「$tripDays 天」的 plan。'
+                     '請在此基礎上豐富行程，主動在現有景點之間插入推薦的嘉義景點、特色餐廳、交通段（含站牌）。'
+                     '⚠️ 最重要：請務必根據真實地圖打散並重新排序所有景點，保證每天的路線「極度順路、絕對不折返跑」。'
+                     '無論使用者說什麼，只要他希望優化/豐富/加強/修改行程，你必須輸出包含 plan 和 tripName 的完整 JSON，';
+    }
 
     final result = await _callGemini(text + contextNote);
     if (mounted) {
+      // 🌟 如果是匯入行程模式，強制保留原行程名稱，拒絕使用 AI 新取的名字
+      final tripName = _selectedImportTrip ?? result.tripName;
+      final trip = result.plan != null ? _planToTrip(result.plan!, name: tripName) : null;
       setState(() {
         _chatMessages.add(_ChatMessage(
           isUser: false,
           text: result.reply,
-          generatedTrip: result.plan != null ? _planToTrip(result.plan!) : null,
-        ));
-        if (result.plan != null) _chatProposal = _planToTrip(result.plan!);
-        _chatThinking = false;
-      });
-      _scrollChatToBottom();
-    }
-  }
-
-  Future<void> _generateTripFromChat() async {
-    setState(() { _chatThinking = true; _chatProposal = null; _chatProposalSaved = false; });
-    _scrollChatToBottom();
-
-    final transportStr = _transportModes.map((m) => m.label).join('、');
-    final result = await _callGemini(
-      '請根據我們的對話，生成完整的嘉義行程 JSON。交通方式：$transportStr。',
-    );
-    if (mounted) {
-      final trip = result.plan != null ? _planToTrip(result.plan!) : null;
-      setState(() {
-        _chatThinking = false;
-        _chatProposal = trip;
-        _chatMessages.add(_ChatMessage(
-          isUser: false,
-          text: trip != null
-              ? '✨ 已為你生成完整行程「${trip.title}」！查看下方預覽，喜歡就按「加入行程列表」，不滿意繼續告訴我怎麼調整。'
-              : result.reply,
           generatedTrip: trip,
         ));
+        if (trip != null) _chatProposal = trip;
+        _chatThinking = false;
       });
       _scrollChatToBottom();
     }
   }
 
-  AiGeneratedTrip _planToTrip(List<_DayPlan> plan) {
+  AiGeneratedTrip _planToTrip(List<_DayPlan> plan, {String? name}) {
     final spots = plan.expand((d) => d.items
         .where((i) => i.transport == null && !i.isMeal)
         .map((i) => i.name)).toList();
     return AiGeneratedTrip(
-      title: 'AI 嘉義 ${plan.length} 日遊',
+      title: name?.isNotEmpty == true ? name! : 'AI 嘉義 ${plan.length} 日遊',
       highlight: '諸羅精靈為你規劃，共 ${spots.length} 個景點',
       tips: '依照你的交通方式與偏好最佳化安排',
       spots: spots,
@@ -428,9 +484,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 
   void _saveChatTrip() {
     if (_chatProposal == null) return;
-    widget.onSaveTrip?.call(_chatProposal!);
+    final titleToUse = _selectedImportTrip ?? _chatProposal!.title;
+    widget.onSaveTrip?.call(_chatProposal!, _selectedImportTrip);
     setState(() => _chatProposalSaved = true);
-    _showSavedSnackbar(context, _chatProposal!.title);
+    // 🌟 Snackbar 顯示原始名稱
+    _showSavedSnackbar(context, titleToUse);
   }
 
   void _scrollChatToBottom() {
@@ -448,7 +506,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       content: Row(children: [
         const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
         const SizedBox(width: 8),
-        Expanded(child: Text('「$title」已加入行程列表！')),
+        Expanded(child: Text('「$title」已成功套用！')),
       ]),
       backgroundColor: primary,
       behavior: SnackBarBehavior.floating,
@@ -733,42 +791,30 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         if (hasImported) ...[
           const Text('選擇景點來源', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
           const SizedBox(height: 8),
-          StitchedBox(
-            color: Colors.white, stitchColor: primary.withValues(alpha: 0.18),
-            radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                value: _selectedImportTrip,
-                isExpanded: true,
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: primary),
-                style: const TextStyle(fontSize: 14, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-                items: [
-                  DropdownMenuItem<String?>(
-                    value: null,
-                    child: Row(children: [
-                      Icon(Icons.checklist_rounded, size: 16, color: primary),
-                      const SizedBox(width: 8),
-                      Text('候選清單（${widget.candidateSpots.length} 個景點）'),
-                    ]),
-                  ),
-                  ...widget.importedTrips!.entries.map((e) => DropdownMenuItem<String?>(
-                    value: e.key,
-                    child: Row(children: [
-                      Icon(Icons.map_rounded, size: 16, color: primary),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text('${e.key}（${e.value.length} 個景點）', overflow: TextOverflow.ellipsis)),
-                    ]),
-                  )),
-                ],
-                onChanged: (v) => setState(() { _selectedImportTrip = v; _schedulePlan = null; }),
-              ),
+          GestureDetector(
+            onTap: _showTripPickerBottomSheet,
+            child: StitchedBox(
+              color: Colors.white, stitchColor: primary.withValues(alpha: 0.18),
+              radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(children: [
+                Icon(_selectedImportTrip == null ? Icons.checklist_rounded : Icons.map_rounded, size: 18, color: primary),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  _selectedImportTrip == null 
+                      ? '一般候選清單（${widget.candidateSpots.length} 個景點）' 
+                      : '$_selectedImportTrip（${widget.importedTrips![_selectedImportTrip!]!.length} 個景點）',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                )),
+                Icon(Icons.keyboard_arrow_down_rounded, color: primary),
+              ]),
             ),
           ),
           const SizedBox(height: 16),
         ],
 
-        // ── 候選景點預覽 ──
+        // ── 候選景點預覽（排程後隱藏）──
+        if (_schedulePlan == null) ...[
         if (activeSpots.isNotEmpty)
           StitchedBox(
             color: Colors.white, stitchColor: primary.withValues(alpha: 0.22),
@@ -779,17 +825,36 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
                 Icon(Icons.checklist_rounded, size: 15, color: primary),
                 const SizedBox(width: 6),
                 Text('${activeSpots.length} 個景點待排程', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: primary)),
+                const Spacer(),
+                if (_selectedImportTrip == null)
+                  Text('點 × 可移除', style: TextStyle(fontSize: 10, color: primary.withValues(alpha: 0.5))),
               ]),
               const SizedBox(height: 10),
               Wrap(spacing: 6, runSpacing: 6, children: activeSpots.asMap().entries.map((e) =>
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  // 🌟 同樣加上最大寬度限制
+                  constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                  padding: const EdgeInsets.fromLTRB(10, 5, 4, 5),
                   decoration: BoxDecoration(color: mist, borderRadius: BorderRadius.circular(8), border: Border.all(color: primary.withValues(alpha: 0.2))),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
                     Container(width: 16, height: 16, decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
                         child: Center(child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)))),
                     const SizedBox(width: 5),
-                    Text(e.value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+                    // 🌟 加入 Flexible 解決溢位
+                    Flexible(
+                      child: Text(e.value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    // 只有候選清單（非匯入行程）才顯示刪除按鈕
+                    if (_selectedImportTrip == null) ...[
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: () => setState(() {
+                          _localCandidates.removeAt(e.key);
+                          _schedulePlan = null;
+                        }),
+                        child: Icon(Icons.close_rounded, size: 13, color: primary.withValues(alpha: 0.55)),
+                      ),
+                    ],
                   ]),
                 )).toList()),
             ]),
@@ -804,6 +869,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
               const Expanded(child: Text('沒有候選景點？先到地圖加入景點，或選擇已有行程匯入', style: TextStyle(fontSize: 12, color: AppColors.textHint, height: 1.4))),
             ]),
           ),
+        ], // end if (_schedulePlan == null)
         const SizedBox(height: 16),
 
         // ── 天數選擇 ──
@@ -874,7 +940,8 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         if (_schedulePlan != null) ...[
           _buildScheduleResult(primary),
           const SizedBox(height: 12),
-          _buildSaveButton(label: '加入行程列表', icon: Icons.bookmark_add_rounded, primary: primary, onTap: _saveScheduleAsTrip),
+          // 📝 按鈕改名為套用行程
+          _buildSaveButton(label: '套用行程', icon: Icons.playlist_add_check_rounded, primary: primary, onTap: _saveScheduleAsTrip),
         ],
       ]),
     );
@@ -926,30 +993,26 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 
         // ── 匯入行程下拉選單（chat_import 模式）──
         if (isImport && widget.importedTrips?.isNotEmpty == true) ...[
-          StitchedBox(
-            color: Colors.white, stitchColor: primary.withValues(alpha: 0.18),
-            radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String?>(
-                value: _selectedImportTrip,
-                isExpanded: true,
-                hint: Row(children: [
-                  Icon(Icons.upload_rounded, size: 15, color: primary),
-                  const SizedBox(width: 8),
-                  Text('選擇要匯入的行程', style: TextStyle(color: primary, fontWeight: FontWeight.w700, fontSize: 13)),
-                ]),
-                icon: Icon(Icons.keyboard_arrow_down_rounded, color: primary),
-                items: widget.importedTrips!.entries.map((e) => DropdownMenuItem<String?>(
-                  value: e.key,
-                  child: Row(children: [
-                    Icon(Icons.map_rounded, size: 15, color: primary),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text('${e.key}（${e.value.length} 個景點）', overflow: TextOverflow.ellipsis)),
-                  ]),
-                )).toList(),
-                onChanged: (v) => setState(() => _selectedImportTrip = v),
-              ),
+          GestureDetector(
+            onTap: _showTripPickerBottomSheet,
+            child: StitchedBox(
+              color: Colors.white, stitchColor: primary.withValues(alpha: 0.18),
+              radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(children: [
+                Icon(Icons.upload_rounded, size: 18, color: primary),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  _selectedImportTrip == null 
+                      ? '點此選擇要匯入的行程...' 
+                      : '$_selectedImportTrip（${widget.importedTrips![_selectedImportTrip!]!.length} 個景點）',
+                  style: TextStyle(
+                      fontSize: 14, 
+                      fontWeight: FontWeight.w700, 
+                      color: _selectedImportTrip == null ? primary : AppColors.textPrimary),
+                )),
+                Icon(Icons.keyboard_arrow_down_rounded, color: primary),
+              ]),
             ),
           ),
           const SizedBox(height: 12),
@@ -1007,39 +1070,11 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
             ),
           ),
         ]),
-        const SizedBox(height: 12),
-
-        // ── 生成行程按鈕 ──
-        GestureDetector(
-          onTap: _chatThinking ? null : _generateTripFromChat,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 15),
-            decoration: BoxDecoration(
-              gradient: _chatThinking ? null : LinearGradient(colors: [primary, Color.lerp(primary, Colors.black, 0.2)!]),
-              color: _chatThinking ? primary.withValues(alpha: 0.08) : null,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: _chatThinking ? [] : [BoxShadow(color: primary.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 5))]),
-            child: _chatThinking
-                ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: primary)),
-                    const SizedBox(width: 10),
-                    Text('精靈思考中…', style: TextStyle(color: primary.withValues(alpha: 0.7), fontWeight: FontWeight.w700)),
-                  ])
-                : const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 16),
-                    SizedBox(width: 8),
-                    Text('生成完整行程', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
-                  ]),
-          ),
-        ),
-
         if (_chatProposal != null) ...[
           const SizedBox(height: 20),
-          _buildChatProposalCard(_chatProposal!, primary, accent),
-          const SizedBox(height: 12),
+          // 📝 按鈕改名為套用行程
           if (!_chatProposalSaved)
-            _buildSaveButton(label: '加入行程列表', icon: Icons.bookmark_add_rounded, primary: primary, onTap: _saveChatTrip)
+            _buildSaveButton(label: '套用行程', icon: Icons.playlist_add_check_rounded, primary: primary, onTap: _saveChatTrip)
           else
             _buildSavedBadge(primary),
         ],
@@ -1128,13 +1163,18 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         const SizedBox(height: 12),
         Wrap(spacing: 6, runSpacing: 6, children: trip.spots.asMap().entries.map((e) =>
           Container(
+            // 🌟 限制最大寬度為螢幕的 65%，避免超長文字溢位
+            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.65),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8), border: Border.all(color: primary.withValues(alpha: 0.2))),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Container(width: 16, height: 16, decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
                   child: Center(child: Text('${e.key + 1}', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)))),
               const SizedBox(width: 5),
-              Text(e.value, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary)),
+              // 🌟 加入 Flexible 與 TextOverflow.ellipsis，過長文字自動變 ...
+              Flexible(
+                child: Text(e.value, style: const TextStyle(fontSize: 12, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
             ]),
           )).toList()),
         const SizedBox(height: 12),
@@ -1216,20 +1256,41 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
                       color: isTransport ? AppColors.textHint : item.isMeal ? AppColors.textHint : AppColors.textPrimary)),
                   if (item.note.isNotEmpty)
                     Text(item.note, style: const TextStyle(fontSize: 11, color: AppColors.textHint, height: 1.4)),
-                  if (isTransport && item.stationName != null) ...[
-                    const SizedBox(height: 5),
+                  // 只有公車、火車、捷運等有站牌意義的交通段才顯示跳轉按鈕
+                  if (isTransport && (item.transport == TransportMode.bus ||
+                      item.transport == TransportMode.train ||
+                      item.transport == TransportMode.hsr)) ...[
+                    const SizedBox(height: 4),
                     GestureDetector(
                       onTap: () => _openStationMap(item),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(color: day.color.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8), border: Border.all(color: day.color.withValues(alpha: 0.25))),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.location_on_rounded, size: 12, color: day.color),
-                          const SizedBox(width: 4),
-                          Text(item.stationName!, style: TextStyle(fontSize: 11, color: day.color, fontWeight: FontWeight.w700)),
-                          const SizedBox(width: 4),
-                          Icon(Icons.open_in_new_rounded, size: 10, color: day.color.withValues(alpha: 0.7)),
-                        ]),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: day.color.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: day.color.withValues(alpha: 0.25)),
+                            ),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(item.transport!.icon, size: 11, color: day.color),
+                              const SizedBox(width: 4),
+                              // ConstrainedBox 限制最大寬度，避免 overflow
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 120),
+                                child: Text(
+                                  item.stationName ?? item.transportNote ?? '查看時刻表',
+                                  style: TextStyle(fontSize: 11, color: day.color, fontWeight: FontWeight.w700),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(Icons.arrow_forward_rounded, size: 10, color: day.color.withValues(alpha: 0.7)),
+                            ]),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -1243,13 +1304,30 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   }
 
   void _openStationMap(_ScheduleItem item) {
-    if (item.stationLat == null || item.stationLng == null) return;
     showModalBottomSheet(
       context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (_) => _StationMapSheet(
-        stationName: item.stationName!, lat: item.stationLat!, lng: item.stationLng!, transport: item.transport ?? TransportMode.bus,
+        stationName: item.stationName ?? item.name,
+        lat: item.stationLat ?? 23.4780,
+        lng: item.stationLng ?? 120.4407,
+        transport: item.transport ?? TransportMode.bus,
+        onGoTransport: () {
+          Navigator.pop(context); // 關掉 bottom sheet
+          final tab = _transportTabFor(item.transport ?? TransportMode.bus);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => TransportScreen(initialTab: tab)));
+        },
       ),
     );
+  }
+
+  static int _transportTabFor(TransportMode mode) {
+    switch (mode) {
+      case TransportMode.bus:   return 0;
+      case TransportMode.bike:  return 1;
+      case TransportMode.train: return 2;
+      default: return 0;
+    }
   }
 
   Widget _buildSaveButton({required String label, required IconData icon, required Color primary, required VoidCallback onTap}) {
@@ -1274,7 +1352,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(Icons.check_circle_rounded, color: primary, size: 18),
         const SizedBox(width: 8),
-        Text('已加入行程列表！', style: TextStyle(color: primary, fontSize: 15, fontWeight: FontWeight.w800)),
+        Text('已成功套用行程！', style: TextStyle(color: primary, fontSize: 15, fontWeight: FontWeight.w800)),
       ]),
     );
   }
@@ -1292,7 +1370,56 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       ]),
     );
   }
+
+  void _showTripPickerBottomSheet() {
+    final hasImported = widget.importedTrips != null && widget.importedTrips!.isNotEmpty;
+
+    final primary = Theme.of(context).colorScheme.primary;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, // 🌟 解決鍵盤擋住的關鍵
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)))),
+            Text('選擇要匯入的行程', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
+            const SizedBox(height: 16),
+
+            // 🌟 安全寫法：永遠顯示一般候選清單，不依賴 _mode 變數
+            ListTile(
+              leading: Icon(Icons.checklist_rounded, color: primary),
+              title: Text('一般候選清單（${widget.candidateSpots.length} 個景點）', style: const TextStyle(fontWeight: FontWeight.w700)),
+              onTap: () {
+                setState(() { _selectedImportTrip = null; });
+                Navigator.pop(context);
+              },
+            ),
+
+            if (hasImported)
+              ...widget.importedTrips!.entries.map((e) => ListTile(
+                leading: Icon(Icons.map_rounded, color: primary),
+                title: Text(e.key, style: const TextStyle(fontWeight: FontWeight.w700)),
+                subtitle: Text('${e.value.length} 個景點'),
+                onTap: () {
+                  setState(() { _selectedImportTrip = e.key; });
+                  Navigator.pop(context);
+                },
+              )),
+          ]),
+        ),
+      ),
+    );
+  }
 }
+
+
 
 // ════════════════════════════════════════════════════════════════
 // Station Map Bottom Sheet
@@ -1301,7 +1428,11 @@ class _StationMapSheet extends StatelessWidget {
   final String stationName;
   final double lat, lng;
   final TransportMode transport;
-  const _StationMapSheet({required this.stationName, required this.lat, required this.lng, required this.transport});
+  final VoidCallback? onGoTransport;
+  const _StationMapSheet({
+    required this.stationName, required this.lat, required this.lng,
+    required this.transport, this.onGoTransport,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1321,6 +1452,25 @@ class _StationMapSheet extends StatelessWidget {
               Text(stationName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.textPrimary)),
               Text('${transport.label} 站點', style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
             ])),
+            if (onGoTransport != null) ...[
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: onGoTransport,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.open_in_new_rounded, size: 13, color: primary),
+                    const SizedBox(width: 4),
+                    Text('時刻表', style: TextStyle(color: primary, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+              ),
+            ],
           ]),
         ),
         const SizedBox(height: 12),
@@ -1331,10 +1481,17 @@ class _StationMapSheet extends StatelessWidget {
             child: Container(
               color: primary.withValues(alpha: 0.05),
               child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.map_rounded, size: 48, color: primary.withValues(alpha: 0.3)),
+                Icon(transport.icon, size: 48, color: primary.withValues(alpha: 0.3)),
                 const SizedBox(height: 8),
                 Text('$stationName\n${lat.toStringAsFixed(4)}°N, ${lng.toStringAsFixed(4)}°E',
                     textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.5), height: 1.5)),
+                const SizedBox(height: 16),
+                if (onGoTransport != null)
+                  TextButton.icon(
+                    onPressed: onGoTransport,
+                    icon: Icon(Icons.open_in_new_rounded, size: 14, color: primary),
+                    label: Text('前往${transport.label}頁面查看時刻表', style: TextStyle(color: primary, fontSize: 12)),
+                  ),
               ])),
             ),
           ),

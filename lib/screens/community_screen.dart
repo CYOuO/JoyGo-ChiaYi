@@ -1479,8 +1479,9 @@ class _FirebasePostCardState extends State<_FirebasePostCard> {
       _saved = null;
       _loadState();
     } else if (old.post.likeCount != widget.post.likeCount) {
-      // stream 帶來新 likeCount，永遠以 Firebase 為準
+      // stream 帶來新 likeCount → 同步數字並重新拉 liked 狀態
       _localCount = widget.post.likeCount;
+      _loadState(); // 重新從 Firebase 確認 _liked / _saved
     }
   }
 
@@ -1513,7 +1514,8 @@ class _FirebasePostCardState extends State<_FirebasePostCard> {
 
     return GestureDetector(
       onTap: () => Navigator.push(context, MaterialPageRoute(
-          builder: (_) => FirebasePostDetailPage(post: post))),
+          builder: (_) => FirebasePostDetailPage(post: post)))
+          .then((_) => _loadState()), // 回來後重新拉 liked/saved 狀態
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
@@ -2445,6 +2447,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
   bool _liked = false;
   bool _saved = false;
   late int _localCount;
+  bool _stateLoaded = false; // 防止 _loadUserState 完成前按愛心產生 race condition
   bool _sending = false;
   double _lastKeyboardH = 0;
   String? _replyTarget; // name of comment being replied to
@@ -2502,14 +2505,14 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
     final liked = await CommunityService.isLiked(widget.post.id);
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
-      if (mounted) setState(() { _liked = liked; _saved = false; });
+      if (mounted) setState(() { _liked = liked; _saved = false; _stateLoaded = true; });
       return;
     }
     final savedSnap = await FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
         .collection('saved_posts').doc(widget.post.id).get();
-    if (mounted) setState(() { _liked = liked; _saved = savedSnap.exists; });
+    if (mounted) setState(() { _liked = liked; _saved = savedSnap.exists; _stateLoaded = true; });
   }
 
   @override
@@ -2695,6 +2698,7 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                 child: Row(children: [
                   GestureDetector(
                     onTap: () async {
+                      if (!_stateLoaded) return; // 狀態還沒載入完，忽略點擊
                       if (FirebaseAuth.instance.currentUser == null) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),

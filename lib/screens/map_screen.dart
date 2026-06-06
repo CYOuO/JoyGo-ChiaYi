@@ -2540,7 +2540,7 @@ class _TdxPlaceSheetState extends State<_TdxPlaceSheet> {
                 ),
                 // ── 評分與備註 ──────────────────────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
                   child: SpotRatingSection(placeId: widget.place.id),
                 ),
               ],

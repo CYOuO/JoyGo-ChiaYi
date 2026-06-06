@@ -512,6 +512,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
                     Row(children: [
                       GestureDetector(
                         onTap: () async {
+                          if (FirebaseAuth.instance.currentUser == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),
+                              behavior: SnackBarBehavior.floating));
+                            return;
+                          }
                           final now = await CommunityService.toggleLike(post.id);
                           setLocal(() => liked = now);
                         },
@@ -527,7 +533,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Text('${post.likeCount + (liked ? 1 : 0)}',
+                          Text('${post.likeCount}',
                             style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                         ]),
                       ),
@@ -537,11 +543,34 @@ class _CommunityScreenState extends State<CommunityScreen> {
                       Text('${post.commentCount}',
                         style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
-                      GestureDetector(
-                        onTap: () async {
-                          await CommunityService.toggleSave(post.id);
+                      FutureBuilder<bool>(
+                        future: () async {
+                          final uid = FirebaseAuth.instance.currentUser?.uid;
+                          if (uid == null) return false;
+                          final snap = await FirebaseFirestore.instance
+                              .collection('users').doc(uid).collection('saved_posts').doc(post.id).get();
+                          return snap.exists;
+                        }(),
+                        builder: (_, snap) {
+                          final isSaved = snap.data ?? false;
+                          return GestureDetector(
+                            onTap: () async {
+                              if (FirebaseAuth.instance.currentUser == null) {
+                                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                  content: Text(context.read<AppSettingsProvider>().l10n.commLoginToPost),
+                                  behavior: SnackBarBehavior.floating));
+                                return;
+                              }
+                              await CommunityService.toggleSave(post.id);
+                              setLocal(() {});
+                            },
+                            child: Icon(
+                              isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                              size: 18,
+                              color: isSaved ? primary : AppColors.textHint,
+                            ),
+                          );
                         },
-                        child: const Icon(Icons.bookmark_border_rounded, size: 18, color: AppColors.textHint),
                       ),
                       const SizedBox(width: 12),
                       GestureDetector(
@@ -1471,54 +1500,60 @@ class _CommunityScreenState extends State<CommunityScreen> {
 
   Widget _buildFollowingTab() {
     final primary = Theme.of(context).colorScheme.primary;
-    if (_followedIds.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.group_outlined, size: 60, color: AppColors.textHint),
-            const SizedBox(height: 16),
-            Text(context.read<AppSettingsProvider>().l10n.commNoFollowingPeople,
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.textPrimary)),
-            const SizedBox(height: 8),
-            Text(context.read<AppSettingsProvider>().l10n.commGoExplore,
-              style: TextStyle(color: AppColors.textHint)),
-            const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: () {
-                setState(() { _tabIndex = 2; _programmaticScroll = true; });
-                _pageController.animateToPage(0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut)
-                    .then((_) { if (mounted) _programmaticScroll = false; });
-              },
-              child: Text(context.read<AppSettingsProvider>().l10n.commExploreComm),
+    return StreamBuilder<Set<String>>(
+      stream: CommunityService.followingIdsStream(),
+      builder: (ctx, followSnap) {
+        final followedIds = followSnap.data ?? {};
+        if (followedIds.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.group_outlined, size: 60, color: AppColors.textHint),
+                const SizedBox(height: 16),
+                Text(context.read<AppSettingsProvider>().l10n.commNoFollowingPeople,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: AppColors.textPrimary)),
+                const SizedBox(height: 8),
+                Text(context.read<AppSettingsProvider>().l10n.commGoExplore,
+                  style: TextStyle(color: AppColors.textHint)),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() { _tabIndex = 2; _programmaticScroll = true; });
+                    _pageController.animateToPage(0,
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut)
+                        .then((_) { if (mounted) _programmaticScroll = false; });
+                  },
+                  child: Text(context.read<AppSettingsProvider>().l10n.commExploreComm),
+                ),
+              ],
             ),
-          ],
-        ),
-      );
-    }
-    return StreamBuilder<List<CommunityPost>>(
-      stream: CommunityService.followingPostsStream(_followedIds),
-      builder: (ctx, snap) {
-        final posts = snap.data ?? [];
-        final isLoading = snap.connectionState == ConnectionState.waiting && posts.isEmpty;
-        if (isLoading) return const Center(child: CircularProgressIndicator());
-        if (posts.isEmpty) {
-          return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.inbox_rounded, size: 52, color: AppColors.textHint),
-            const SizedBox(height: 12),
-            Text(context.read<AppSettingsProvider>().l10n.commFollowingNoPosts,
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
-            const SizedBox(height: 6),
-            Text(context.read<AppSettingsProvider>().l10n.commFollowingWait,
-              style: TextStyle(color: AppColors.textHint)),
-          ]));
+          );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
-          itemCount: posts.length,
-          itemBuilder: (_, i) => _firebasePostCard(posts[i], primary),
+        return StreamBuilder<List<CommunityPost>>(
+          stream: CommunityService.followingPostsStream(followedIds),
+          builder: (ctx, snap) {
+            final posts = snap.data ?? [];
+            final isLoading = snap.connectionState == ConnectionState.waiting && posts.isEmpty;
+            if (isLoading) return const Center(child: CircularProgressIndicator());
+            if (posts.isEmpty) {
+              return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.inbox_rounded, size: 52, color: AppColors.textHint),
+                const SizedBox(height: 12),
+                Text(context.read<AppSettingsProvider>().l10n.commFollowingNoPosts,
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: AppColors.textPrimary)),
+                const SizedBox(height: 6),
+                Text(context.read<AppSettingsProvider>().l10n.commFollowingWait,
+                  style: TextStyle(color: AppColors.textHint)),
+              ]));
+            }
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
+              itemCount: posts.length,
+              itemBuilder: (_, i) => _firebasePostCard(posts[i], primary),
+            );
+          },
         );
       },
     );

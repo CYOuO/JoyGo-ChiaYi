@@ -1166,9 +1166,10 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               height: 42,
               decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.07),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(21),
-                border: Border.all(color: primary.withValues(alpha: 0.25), width: 1),
+                border: Border.all(color: primary.withValues(alpha: 0.35), width: 1.2),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
               ),
               child: TextField(
                 controller: _searchCtrl,
@@ -1177,15 +1178,13 @@ class _MapScreenState extends State<MapScreen> {
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: '搜尋名稱或地址（跳至最近地點）',
-                  hintStyle: TextStyle(
-                      color: primary.withValues(alpha: 0.45), fontSize: 13),
-                  prefixIcon: Icon(Icons.search,
-                      color: primary.withValues(alpha: 0.6), size: 20),
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  prefixIcon: Icon(Icons.search, color: primary, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? GestureDetector(
                           onTap: () => _searchCtrl.clear(),
                           child: Icon(Icons.cancel_rounded,
-                              size: 18, color: primary.withValues(alpha: 0.5)),
+                              size: 18, color: Colors.grey.shade400),
                         )
                       : null,
                   border: InputBorder.none,
@@ -1199,9 +1198,10 @@ class _MapScreenState extends State<MapScreen> {
           Container(
             height: 42,
             decoration: BoxDecoration(
-              color: primary.withValues(alpha: 0.07),
+              color: Colors.white,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: primary.withValues(alpha: 0.25), width: 1),
+              border: Border.all(color: primary.withValues(alpha: 0.35), width: 1.2),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 4, offset: const Offset(0, 1))],
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               _viewToggleBtn(

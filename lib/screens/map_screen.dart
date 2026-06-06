@@ -1175,6 +1175,8 @@ class _MapScreenState extends State<MapScreen> {
                 textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   isDense: true,
+                  filled: true,
+                  fillColor: primary.withValues(alpha: 0.12),
                   hintText: '搜尋名稱或地址（跳至最近地點）',
                   hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                   prefixIcon: Icon(Icons.search, color: primary, size: 20),

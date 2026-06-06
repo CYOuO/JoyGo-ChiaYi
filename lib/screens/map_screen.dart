@@ -22,8 +22,8 @@ import '../widgets/spot_save_button.dart';
 // ═══════════════════════════════════════════════════════════
 
 const _kCacheTTL    = Duration(hours: 6);
-const _kCacheKey    = 'map_places_v7';   // bumped → clears old stale cache
-const _kCacheTsKey  = 'map_places_ts_v7';
+const _kCacheKey    = 'map_places_v8';   // bumped → clears old stale cache
+const _kCacheTsKey  = 'map_places_ts_v8';
 
 // ═══════════════════════════════════════════════════════════
 //  資料模型
@@ -1148,6 +1148,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Widget _buildTopBar(double top) {
+    final primary = context.appPrimary;
     return Container(
       padding: EdgeInsets.fromLTRB(12, top + 8, 12, 10),
       decoration: BoxDecoration(
@@ -1165,8 +1166,9 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               height: 42,
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: primary.withValues(alpha: 0.07),
                 borderRadius: BorderRadius.circular(21),
+                border: Border.all(color: primary.withValues(alpha: 0.25), width: 1),
               ),
               child: TextField(
                 controller: _searchCtrl,
@@ -1176,14 +1178,14 @@ class _MapScreenState extends State<MapScreen> {
                   isDense: true,
                   hintText: '搜尋名稱或地址（跳至最近地點）',
                   hintStyle: TextStyle(
-                      color: Colors.grey.shade400, fontSize: 13),
+                      color: primary.withValues(alpha: 0.45), fontSize: 13),
                   prefixIcon: Icon(Icons.search,
-                      color: Colors.grey.shade400, size: 20),
+                      color: primary.withValues(alpha: 0.6), size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? GestureDetector(
                           onTap: () => _searchCtrl.clear(),
                           child: Icon(Icons.cancel_rounded,
-                              size: 18, color: Colors.grey.shade400),
+                              size: 18, color: primary.withValues(alpha: 0.5)),
                         )
                       : null,
                   border: InputBorder.none,
@@ -1197,8 +1199,9 @@ class _MapScreenState extends State<MapScreen> {
           Container(
             height: 42,
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: primary.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: primary.withValues(alpha: 0.25), width: 1),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               _viewToggleBtn(

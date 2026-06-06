@@ -34,6 +34,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show SectionHeader, SpotRatingSection, TapFeedback, WashiTapeDivider, PolaroidCard, TranslatedText;
 import '../services/translation_service.dart';
+import 'stamp_screen.dart';
 
 
 Map<String, dynamic> _govItemToJson(_GovItem n) => {
@@ -795,7 +796,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _QuickItem(HugeIcons.strokeRoundedUserGroup,  l10n.homeCommunityNav, const Color(0xFFEBEFF2), () => widget.onSwitchTab?.call(3)),
       _QuickItem(HugeIcons.strokeRoundedTicket01,   l10n.homeEventCal,     const Color(0xFFF0EBF5), () => widget.onGoToTripCalendar?.call()),
       _QuickItem(HugeIcons.strokeRoundedBus01,      l10n.homeTransport,    const Color(0xFFE8F0F5), () => Navigator.push(context, _goRoute(TransportScreen(onSwitchTab: (idx) => widget.onSwitchTab?.call(idx == 1 ? 2 : idx))))),
-      _QuickItem(HugeIcons.strokeRoundedStar,       l10n.homeStamps,       const Color(0xFFF5F0E8), () => widget.onSwitchTab?.call(4)),
+      _QuickItem(HugeIcons.strokeRoundedStar,       l10n.homeStamps,       const Color(0xFFF5F0E8), () => Navigator.push(context, _goRoute(const StampScreen()))),
       _QuickItem(HugeIcons.strokeRoundedCamera01,   l10n.homeCamera,       const Color(0xFFF0EDF5), () => Navigator.push(context, _goRoute(const CameraScreen()))),
     ];
     return Padding(

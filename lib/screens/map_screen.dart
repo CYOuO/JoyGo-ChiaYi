@@ -1166,7 +1166,7 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               height: 42,
               decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.12),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(21),
               ),
               child: TextField(
@@ -1176,7 +1176,7 @@ class _MapScreenState extends State<MapScreen> {
                 decoration: InputDecoration(
                   isDense: true,
                   filled: true,
-                  fillColor: primary.withValues(alpha: 0.12),
+                  fillColor: Colors.white,
                   hintText: '搜尋名稱或地址（跳至最近地點）',
                   hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
                   prefixIcon: Icon(Icons.search, color: primary, size: 20),

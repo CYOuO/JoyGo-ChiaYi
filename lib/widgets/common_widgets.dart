@@ -620,17 +620,17 @@ class _SpotRatingSectionState extends State<SpotRatingSection> {
         // ── 備註輸入框
         TextField(
           controller: _noteCtrl,
-          maxLines: 5,
-          minLines: 3,
+          maxLines: 8,
+          minLines: 4,
+          style: const TextStyle(fontSize: 14, height: 1.6),
           onChanged: (_) { if (_saved) setState(() => _saved = false); },
           decoration: InputDecoration(
             hintText: context.read<AppSettingsProvider>().l10n.widgetNoteHint,
-            hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint),
+            hintStyle: const TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.6),
             filled: true,
-            fillColor: primary.withValues(alpha: 0.06), // 跟主題色搭配
-            isDense: false,
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            fillColor: primary.withValues(alpha: 0.06),
+            isDense: true,
+            contentPadding: const EdgeInsets.all(16),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.divider),

@@ -374,8 +374,8 @@ Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 2)))),
     (Icons.map_outlined, l10n.profileFootprint, const Color(0xFFE8EFF8),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 4)))),
-    (Icons.bookmark_border_rounded, l10n.profileSavedSpotsNav, const Color(0xFFF8EAF0),
-      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const _GuestSavedSpotsPage()))),
+    (Icons.favorite_border_rounded, l10n.profileMyCollection, const Color(0xFFF8EAF0),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavedPostsPage()))),
   ];
 
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -741,14 +741,18 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
 
   Future<void> _loadCounts() async {
     try {
-      // Firestore：行程數 + 收藏數
+      // Firestore：行程數
       final doc = await FirebaseFirestore.instance
           .collection('users').doc(widget.user.uid).get();
       final d = doc.data() ?? {};
+      // 收藏貼文數：直接從 subcollection 計算（準確）
+      final savedSnap = await FirebaseFirestore.instance
+          .collection('users').doc(widget.user.uid)
+          .collection('saved_posts').count().get();
       if (!mounted) return;
       setState(() {
         _tripCount  = (d['tripCount']  as num?)?.toInt() ?? 0;
-        _savedCount = (d['savedCount'] as num?)?.toInt() ?? 0;
+        _savedCount = savedSnap.count ?? 0;
       });
       // SharedPreferences：打卡數（stamp data 存在本地）
       final prefs = await SharedPreferences.getInstance();

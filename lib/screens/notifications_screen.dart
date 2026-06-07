@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
 import '../theme/fabric_textures.dart';
+import '../widgets/user_profile_sheet.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -154,6 +155,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         time: _formatTime(data['createdAt']),
                         isRead: isReadFb || _readIds.contains(d.id),
                         fromUid: data['fromUid'] as String?,
+                        fromPhotoUrl: data['fromPhotoUrl'] as String?,
+                        fromName: data['fromName'] as String?,
                       );
                     })
                     .toList();
@@ -202,54 +205,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   void _handleNotifTap(_NotifItem n, BuildContext ctx) {
-    // 根據通知類型跳轉到對應頁面
     switch (n.type) {
       case 'follow':
-        // 跳轉到對方的社群貼文頁（用 fromUid 篩選）
         if (n.fromUid != null && n.fromUid!.isNotEmpty) {
-          _showUserProfile(ctx, n.fromUid!);
+          final primary = Theme.of(ctx).colorScheme.primary;
+          showUserProfileSheet(ctx,
+            uid: n.fromUid!,
+            primary: primary,
+            knownName: n.fromName,
+            knownPhoto: n.fromPhotoUrl,
+          );
         }
         break;
-      // 未來可擴充：like → 貼文頁, achievement → 成就頁 等
       default:
         break;
     }
-  }
-
-  void _showUserProfile(BuildContext ctx, String uid) async {
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      if (!mounted) return;
-      final data = doc.data() ?? {};
-      final name = data['nickname'] ?? data['displayName'] ?? '使用者';
-      final photo = data['photoURL'] ?? data['photoUrl'] ?? '';
-      if (!ctx.mounted) return;
-      showDialog(
-        context: ctx,
-        builder: (_) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          contentPadding: const EdgeInsets.all(24),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            CircleAvatar(
-              radius: 36,
-              backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
-              child: photo.isEmpty ? const Icon(Icons.person_rounded, size: 36) : null,
-            ),
-            const SizedBox(height: 12),
-            Text(name.toString(),
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 4),
-            Text('追蹤了你', style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
-          ]),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('關閉'),
-            ),
-          ],
-        ),
-      );
-    } catch (_) {}
   }
 
   Widget _buildNotifTile(_NotifItem n, Color primary, BuildContext ctx) {
@@ -275,14 +245,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               : Color.lerp(primary, Colors.white, 0.88)!.withValues(alpha: 0.4),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            DoodleCircle(
-              size: 44,
-              color: color.withValues(alpha: 0.35),
-              child: Container(
-                decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-                child: Center(child: Icon(_typeIconData(n.type), size: 20, color: color)),
+            // follow 型通知：顯示對方頭貼；其他通知：顯示圖示
+            if (n.type == 'follow' && n.fromPhotoUrl != null && n.fromPhotoUrl!.isNotEmpty)
+              DoodleCircle(
+                size: 44,
+                color: color.withValues(alpha: 0.35),
+                child: ClipOval(child: Image.network(n.fromPhotoUrl!, width: 44, height: 44, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: color.withValues(alpha: 0.12),
+                    child: Center(child: Icon(Icons.person_rounded, size: 20, color: color))))),
+              )
+            else if (n.type == 'follow' && n.fromUid != null)
+              _FutureAvatar(uid: n.fromUid!, fallbackColor: color)
+            else
+              DoodleCircle(
+                size: 44,
+                color: color.withValues(alpha: 0.35),
+                child: Container(
+                  decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+                  child: Center(child: Icon(_typeIconData(n.type), size: 20, color: color)),
+                ),
               ),
-            ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [
@@ -348,10 +330,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 class _NotifItem {
   final String id, title, body, type, time;
   final bool isRead;
-  final String? fromUid; // 觸發通知的使用者 uid（follow/like 等）
+  final String? fromUid;      // 觸發通知的使用者 uid
+  final String? fromPhotoUrl; // 對方頭貼（follow 通知用）
+  final String? fromName;     // 對方名稱（快取用）
   const _NotifItem({
     required this.id, required this.title, required this.body,
     required this.type, required this.time, required this.isRead,
-    this.fromUid,
+    this.fromUid, this.fromPhotoUrl, this.fromName,
   });
+}
+
+// 當通知文件沒有 fromPhotoUrl 時，lazy 從 Firestore 取頭貼
+class _FutureAvatar extends StatefulWidget {
+  final String uid;
+  final Color fallbackColor;
+  const _FutureAvatar({required this.uid, required this.fallbackColor});
+  @override State<_FutureAvatar> createState() => _FutureAvatarState();
+}
+class _FutureAvatarState extends State<_FutureAvatar> {
+  String? _photoUrl;
+  @override
+  void initState() {
+    super.initState();
+    FirebaseFirestore.instance.collection('users').doc(widget.uid).get().then((d) {
+      if (mounted) setState(() {
+        _photoUrl = d.data()?['photoURL'] as String? ?? d.data()?['photoUrl'] as String?;
+      });
+    }).catchError((_) {});
+  }
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.fallbackColor;
+    return DoodleCircle(size: 44, color: c.withValues(alpha: 0.35),
+      child: ClipOval(child: _photoUrl != null && _photoUrl!.isNotEmpty
+        ? Image.network(_photoUrl!, width: 44, height: 44, fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _fallback(c))
+        : _fallback(c)),
+    );
+  }
+  Widget _fallback(Color c) => Container(color: c.withValues(alpha: 0.12),
+    child: Center(child: Icon(Icons.person_rounded, size: 20, color: c)));
 }

@@ -14,6 +14,7 @@ import '../services/spot_service.dart';
 import '../services/trip_service.dart';
 import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show WashiTapeDivider;
+import '../widgets/user_profile_sheet.dart';
 
 // Map trip icon key (emoji or named) → IconData
 IconData _tripIconFromKey(String key) {
@@ -1025,7 +1026,12 @@ class _CommunityScreenState extends State<CommunityScreen> {
   }
 
   void _showAuthorProfile(BuildContext context, CommunityPost post, Color primary) =>
-      _showFollowProfile(context, post.authorId, post.authorName, post.authorPhoto, primary);
+      showUserProfileSheet(context,
+        uid: post.authorId,
+        primary: primary,
+        knownName: post.authorName,
+        knownPhoto: post.authorPhoto,
+      );
 
   Future<Map<String, int>> _loadAuthorStats(String uid) async {
     try {

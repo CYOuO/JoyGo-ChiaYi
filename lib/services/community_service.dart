@@ -119,6 +119,7 @@ class CommunityService {
   static final _storage = FirebaseStorage.instance;
 
   static String? get _uid => _auth.currentUser?.uid;
+  static String? get currentUid => _auth.currentUser?.uid;
 
   // ── 貼文集合 ──────────────────────────────────────────────────
   static CollectionReference<Map<String, dynamic>> get _posts =>
@@ -380,6 +381,7 @@ class CommunityService {
         // ── 追蹤 ───────────────────────────────────────────
         final myDoc = await myRef.get();
         final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '';
+        final myPhoto = _auth.currentUser?.photoURL ?? myDoc.data()?['photoURL'] ?? '';
 
         await followRef.set({
           'userId': targetUserId,
@@ -406,10 +408,12 @@ class CommunityService {
         try {
           await targetRef.collection('notifications').add({
             'title': '$myName 開始追蹤你',
-            'body':  '點擊通知可查看對方資訊',
+            'body':  '點擊查看對方的個人頁面和貼文',
             'type':  'follow',
             'isRead': false,
             'fromUid': uid,
+            'fromPhotoUrl': myPhoto,
+            'fromName': myName,
             'createdAt': FieldValue.serverTimestamp(),
           });
         } catch (_) {}

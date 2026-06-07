@@ -60,6 +60,7 @@ class _StampScreenState extends State<StampScreen>
 
   static const _kCheckinRadius = 100.0;
   static const _kCheckinCooldown = Duration(hours: 1); // 同一景點 1 小時內不重複打卡
+  static const _kCheckinTimeKey = 'stamp_checkin_times_v1'; // 持久化冷卻時間
 
   // 涵蓋嘉義縣市 + 鄰近雲林、台南部分區域
   static final _chiayiBounds = LatLngBounds(
@@ -107,6 +108,14 @@ class _StampScreenState extends State<StampScreen>
     _lastCheckinDate = prefs.getString(_kLastDateKey) ?? '';
     final allDatesRaw = prefs.getStringList(_kAllDatesKey) ?? [];
     _allCheckinDates = allDatesRaw.toSet();
+    // 載入打卡冷卻時間（避免重新進頁面後冷卻重置）
+    final timesRaw = prefs.getString(_kCheckinTimeKey);
+    if (timesRaw != null && timesRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(timesRaw) as Map<String, dynamic>;
+        _lastCheckinTime.addAll(decoded.map((k, v) => MapEntry(k, DateTime.parse(v as String))));
+      } catch (_) {}
+    }
     if (mounted) setState(() {});
   }
 
@@ -116,6 +125,9 @@ class _StampScreenState extends State<StampScreen>
     await prefs.setInt(_kStreakKey, _streak);
     await prefs.setString(_kLastDateKey, _lastCheckinDate);
     await prefs.setStringList(_kAllDatesKey, _allCheckinDates.toList());
+    // 持久化打卡冷卻時間
+    await prefs.setString(_kCheckinTimeKey,
+      jsonEncode(_lastCheckinTime.map((k, v) => MapEntry(k, v.toIso8601String()))));
     _syncLeaderboard();
   }
 

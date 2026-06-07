@@ -376,7 +376,7 @@ class AppL10n {
   String get profileTripCount    => _t({'zh':'旅行次數', 'en':'Trips',            'ja':'旅行回数'});
   String get profileSavedSpots   => _t({'zh':'收藏景點', 'en':'Saved Spots',      'ja':'お気に入り'});
   String get profileStampCount   => _t({'zh':'集章數',   'en':'Stamps',           'ja':'スタンプ数'});
-  String get profileMyCollection => _t({'zh':'我的收藏', 'en':'My Saved',         'ja':'保存済み'});
+  String get profileMyCollection => _t({'zh':'收藏貼文', 'en':'Saved Posts',      'ja':'保存済み投稿'});
   String get profileCoupons      => _t({'zh':'優惠券',   'en':'Coupons',          'ja':'クーポン'});
   String get profileStats        => _t({'zh':'旅行統計', 'en':'Travel Stats',     'ja':'旅行統計'});
   String get profileCheckIn      => _t({'zh':'打卡景點', 'en':'Check-ins',        'ja':'チェックイン'});

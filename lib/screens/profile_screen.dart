@@ -836,7 +836,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                   Row(children: [
                     _statBox('$_tripCount', context.watch<AppSettingsProvider>().l10n.profileTripCount),
                     _statDivider(),
-                    _statBox('$_savedCount', context.watch<AppSettingsProvider>().l10n.profileSavedSpots),
+                    _statBox('$_savedCount', context.watch<AppSettingsProvider>().l10n.profileMyCollection),
                     _statDivider(),
                     _statBox('$_stampCount', context.watch<AppSettingsProvider>().l10n.profileStampCount),
                   ]),

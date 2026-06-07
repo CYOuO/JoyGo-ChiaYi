@@ -321,84 +321,133 @@ class _StampScreenState extends State<StampScreen>
       return const Center(child: CircularProgressIndicator());
     }
     if (_photoPaths.isEmpty) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 80, height: 80,
-            decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), shape: BoxShape.circle),
-            child: Icon(Icons.camera_alt_rounded, size: 38, color: primary.withValues(alpha: 0.5)),
-          ),
-          const SizedBox(height: 16),
-          const Text('還沒有打卡照片', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
-          const SizedBox(height: 6),
-          const Text('拍下你的探索瞬間\n儲存後就會出現在這裡！',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.6)),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
-                .then((_) => _loadPhotos()),
-            icon: const Icon(Icons.camera_alt_rounded, size: 18),
-            label: const Text('開啟相機'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: primary, foregroundColor: Colors.white,
-              elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      return NotebookBackground(
+        lineColor: primary.withValues(alpha: 0.06),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            DoodleCircle(color: primary.withValues(alpha: 0.12), size: 90,
+              child: Icon(Icons.camera_alt_rounded, size: 40, color: primary.withValues(alpha: 0.5))),
+            const SizedBox(height: 8),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              DoodleHeart(color: primary.withValues(alpha: 0.4), size: 12),
+              const SizedBox(width: 6),
+              DoodleHeart(color: primary.withValues(alpha: 0.3), size: 9),
+            ]),
+            const SizedBox(height: 12),
+            const Text('還沒有打卡照片', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(height: 6),
+            const Text('拍下你的探索瞬間\n儲存後就會出現在這裡！',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: AppColors.textHint, height: 1.6)),
+            const SizedBox(height: 20),
+            StitchedBox(
+              color: primary.withValues(alpha: 0.08),
+              stitchColor: primary.withValues(alpha: 0.30),
+              radius: 20, inset: 4, dashWidth: 4, dashGap: 3,
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              child: GestureDetector(
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
+                    .then((_) => _loadPhotos()),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.camera_alt_rounded, size: 18, color: primary),
+                  const SizedBox(width: 8),
+                  Text('開啟相機', style: TextStyle(color: primary, fontWeight: FontWeight.w800, fontSize: 14)),
+                ]),
+              ),
             ),
-          ),
-        ]),
+          ]),
+        ),
       );
     }
 
-    return Column(children: [
-      // Header
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-        child: Row(children: [
-          Text('共 ${_photoPaths.length} 張照片',
-            style: TextStyle(fontSize: 13, color: primary, fontWeight: FontWeight.w700)),
-          const Spacer(),
-          GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
-                .then((_) => _loadPhotos()),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: primary.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(20)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.add_a_photo_rounded, size: 14, color: primary),
-                const SizedBox(width: 4),
-                Text('拍照', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
-              ]),
-            ),
-          ),
-        ]),
-      ),
-      Expanded(
-        child: GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, crossAxisSpacing: 4, mainAxisSpacing: 4,
-          ),
-          itemCount: _photoPaths.length,
-          itemBuilder: (ctx, i) {
-            final path = _photoPaths[i];
-            final file = File(path);
-            return GestureDetector(
-              onTap: () => _showPhotoDetail(ctx, path),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: file.existsSync()
-                    ? Image.file(file, fit: BoxFit.cover)
-                    : Container(
-                        color: primary.withValues(alpha: 0.08),
-                        child: Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 24),
-                      ),
+    return NotebookBackground(
+      lineColor: primary.withValues(alpha: 0.06),
+      child: Column(children: [
+        // ── 手帳風標題 ──────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+          child: Row(children: [
+            DoodleCircle(color: primary.withValues(alpha: 0.15), size: 30,
+              child: Icon(Icons.photo_camera_rounded, size: 16, color: primary)),
+            const SizedBox(width: 8),
+            Text('打卡回憶 ${_photoPaths.length} 張',
+              style: TextStyle(fontSize: 13, color: primary, fontWeight: FontWeight.w800)),
+            const SizedBox(width: 4),
+            DoodleHeart(color: primary.withValues(alpha: 0.45), size: 11),
+            const Spacer(),
+            GestureDetector(
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CameraScreen()))
+                  .then((_) => _loadPhotos()),
+              child: StitchedBox(
+                color: primary.withValues(alpha: 0.08),
+                stitchColor: primary.withValues(alpha: 0.25),
+                radius: 20, inset: 3, dashWidth: 4, dashGap: 3, stitchStrokeWidth: 1.0,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.add_a_photo_rounded, size: 14, color: primary),
+                  const SizedBox(width: 4),
+                  Text('拍照', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
+                ]),
               ),
-            );
-          },
+            ),
+          ]),
         ),
-      ),
-    ]);
+        const SizedBox(height: 10),
+        JournalDivider(color: primary.withValues(alpha: 0.18)),
+        const SizedBox(height: 4),
+        // ── 拍立得風格照片牆 ────────────────────────────────
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8,
+              childAspectRatio: 0.78,
+            ),
+            itemCount: _photoPaths.length,
+            itemBuilder: (ctx, i) {
+              final path = _photoPaths[i];
+              final file = File(path);
+              // 每張略微隨機旋轉，模擬拍立得散落
+              final angle = (i % 5 == 0 ? -0.03 : i % 5 == 1 ? 0.025 : i % 5 == 2 ? -0.015 : i % 5 == 3 ? 0.03 : -0.02);
+              return SlideUpFadeIn(
+                index: i, staggerDelay: const Duration(milliseconds: 30),
+                child: GestureDetector(
+                  onTap: () => _showPhotoDetail(ctx, path),
+                  child: Transform.rotate(
+                    angle: angle,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 3))],
+                      ),
+                      child: Column(children: [
+                        // 照片區
+                        Expanded(child: ClipRRect(
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                          child: file.existsSync()
+                              ? Image.file(file, fit: BoxFit.cover, width: double.infinity)
+                              : Container(color: primary.withValues(alpha: 0.08),
+                                  child: Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 24)),
+                        )),
+                        // 拍立得白邊底部
+                        Container(
+                          height: 22,
+                          alignment: Alignment.center,
+                          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                            DoodleHeart(color: primary.withValues(alpha: 0.40), size: 9),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ]),
+    );
   }
 
   void _showPhotoDetail(BuildContext ctx, String path) {
@@ -434,68 +483,72 @@ class _StampScreenState extends State<StampScreen>
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
                     colors: [Theme.of(context).colorScheme.primary,
-                             Color.lerp(Theme.of(context).colorScheme.primary, Colors.white, 0.35)!],
+                             Color.lerp(Theme.of(context).colorScheme.primary, const Color(0xFF90CAF9), 0.45)!],
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [BoxShadow(color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.30), blurRadius: 14, offset: const Offset(0, 5))],
                 ),
-                child: Column(
+                child: Stack(children: [
+                  // 右上角裝飾
+                  Positioned(top: -6, right: -6,
+                    child: DoodleHeart(color: Colors.white.withValues(alpha: 0.18), size: 40)),
+                  Positioned(bottom: 0, right: 20,
+                    child: DoodleCircle(color: Colors.white.withValues(alpha: 0.10), size: 30, child: const SizedBox())),
+                  Column(
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.map_rounded, size: 32, color: Colors.white),
-                        const SizedBox(width: 16),
+                        DoodleCircle(color: Colors.white.withValues(alpha: 0.22), size: 50,
+                          child: const Icon(Icons.map_rounded, size: 26, color: Colors.white)),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                '嘉義探索進度',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
-                              ),
+                              Row(children: [
+                                const Text('嘉義探索進度',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                                const SizedBox(width: 6),
+                                DoodleHeart(color: Colors.white.withValues(alpha: 0.7), size: 12),
+                              ]),
                               const SizedBox(height: 4),
                               Text(
                                 '$visitedCount / $total 個景點已踩點',
-                                style: TextStyle(
-                                  color: Colors.white.withOpacity(0.85),
-                                  fontSize: 13,
-                                ),
+                                style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
+                        DoodleCircle(
+                          color: Colors.white.withValues(alpha: 0.22),
+                          size: 52,
                           child: Text(
-                            '${((visitedCount / total) * 100).toInt()}%',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
+                            '${((visitedCount / total.clamp(1, 9999)) * 100).toInt()}%',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: LinearProgressIndicator(
-                        value: total > 0 ? visitedCount / total : 0,
-                        backgroundColor: Colors.white.withOpacity(0.3),
-                        valueColor:
-                            const AlwaysStoppedAnimation<Color>(Colors.white),
-                        minHeight: 8,
+                    // 手繪感進度條
+                    Stack(children: [
+                      Container(height: 10,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(6),
+                        )),
+                      FractionallySizedBox(
+                        widthFactor: total > 0 ? (visitedCount / total).clamp(0.0, 1.0) : 0,
+                        child: Container(height: 10,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.90),
+                            borderRadius: BorderRadius.circular(6),
+                            boxShadow: [BoxShadow(color: Colors.white.withValues(alpha: 0.5), blurRadius: 6)],
+                          )),
                       ),
-                    ),
+                    ]),
                     const SizedBox(height: 12),
                     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       // 連續打卡
@@ -530,8 +583,9 @@ class _StampScreenState extends State<StampScreen>
                       ),
                     ]),
                   ],
-                ),
-              ),
+                ),  // Column
+                ]), // Stack children
+              ),    // Container
             ],
           ),
         ),
@@ -970,114 +1024,209 @@ class _StampScreenState extends State<StampScreen>
   }
 
   Widget _buildLeaderboardTab() {
+    final primary = Theme.of(context).colorScheme.primary;
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance.collection('leaderboard')
           .orderBy('stampCount', descending: true).limit(20).snapshots(),
       builder: (ctx, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         final docs = snap.data!.docs;
-        if (docs.isEmpty) return const Center(child: Text('還沒有人上榜！快去集章吧', style: TextStyle(color: AppColors.textHint)));
+        if (docs.isEmpty) return NotebookBackground(
+          lineColor: primary.withValues(alpha: 0.06),
+          child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            DoodleCircle(color: primary.withValues(alpha: 0.12), size: 72,
+              child: Icon(Icons.emoji_events_rounded, size: 36, color: primary.withValues(alpha: 0.5))),
+            const SizedBox(height: 16),
+            const Text('還沒有人上榜！', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+            const SizedBox(height: 6),
+            const Text('快去集章吧 ✨', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+          ])),
+        );
         final myUid = FirebaseAuth.instance.currentUser?.uid;
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (_, i) {
-            final d = docs[i].data();
-            final isMe = docs[i].id == myUid;
-            final count = d['stampCount'] as int? ?? 0;
-            final streak = d['streak'] as int? ?? 0;
-            final name = d['displayName'] as String? ?? '匿名';
-            final photo = d['photoURL'] as String? ?? '';
-            final medal = i == 0 ? Icons.emoji_events_rounded : i == 1 ? Icons.workspace_premium_rounded : i == 2 ? Icons.military_tech_rounded : null;
-            final medalColor = i == 0 ? const Color(0xFFC09848) : i == 1 ? const Color(0xFF8878B0) : const Color(0xFFAA7860);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isMe ? Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.08) : AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: isMe ? Border.all(color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.3)) : null,
-              ),
-              child: Row(children: [
-                SizedBox(width: 28, child: medal != null
-                    ? Icon(medal, color: medalColor, size: 22)
-                    : Text('${i + 1}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textHint))),
-                const SizedBox(width: 12),
-                CircleAvatar(
-                  radius: 18,
-                  backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
-                  backgroundColor: AppColors.surfaceMoss,
-                  child: photo.isEmpty ? const Icon(Icons.person_rounded, size: 18, color: AppColors.textHint) : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: isMe ? Theme.of(ctx).colorScheme.primary : AppColors.textPrimary)),
-                  if (streak > 0) Text('連續 $streak 天', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                ])),
-                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text('$count', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: i < 3 ? medalColor : AppColors.textPrimary)),
-                  const Text('景點', style: TextStyle(fontSize: 10, color: AppColors.textHint)),
-                ]),
-              ]),
-            );
-          },
+
+        // top-3 顏色 & 圖示
+        const podiumColors = [Color(0xFFC09848), Color(0xFF8878B0), Color(0xFFAA7860)];
+        const podiumIcons  = [Icons.emoji_events_rounded, Icons.workspace_premium_rounded, Icons.military_tech_rounded];
+        const podiumBg     = [Color(0xFFFFF8E6), Color(0xFFF2EFF8), Color(0xFFFFF0EC)];
+        const podiumLabel  = ['🥇 第一', '🥈 第二', '🥉 第三'];
+
+        return NotebookBackground(
+          lineColor: primary.withValues(alpha: 0.06),
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            children: [
+              JournalPageHeader(title: '探索排行榜 — 嘉義旅人競技場', color: primary),
+              const SizedBox(height: 14),
+              JournalDivider(color: primary.withValues(alpha: 0.20)),
+              const SizedBox(height: 12),
+
+              ...docs.asMap().entries.map((e) {
+                final i = e.key;
+                final d = e.value.data();
+                final isMe = e.value.id == myUid;
+                final count = d['stampCount'] as int? ?? 0;
+                final streak = d['streak'] as int? ?? 0;
+                final name = d['displayName'] as String? ?? '匿名旅人';
+                final photo = d['photoURL'] as String? ?? '';
+                final isTop3 = i < 3;
+
+                return SlideUpFadeIn(
+                  index: i,
+                  staggerDelay: const Duration(milliseconds: 50),
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: isTop3
+                      ? StitchedBox(
+                          color: podiumBg[i],
+                          stitchColor: podiumColors[i].withValues(alpha: 0.35),
+                          radius: 18, inset: 4, dashWidth: 4, dashGap: 3,
+                          padding: const EdgeInsets.all(14),
+                          child: _leaderRow(ctx, i, d, isMe, isTop3: true,
+                            medalIcon: podiumIcons[i], medalColor: podiumColors[i],
+                            podiumLabel: podiumLabel[i], name: name, photo: photo,
+                            count: count, streak: streak, primary: primary),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isMe ? primary.withValues(alpha: 0.07) : Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: isMe ? Border.all(color: primary.withValues(alpha: 0.25)) : null,
+                            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
+                          ),
+                          child: _leaderRow(ctx, i, d, isMe, isTop3: false,
+                            name: name, photo: photo, count: count, streak: streak, primary: primary),
+                        ),
+                  ),
+                );
+              }),
+            ],
+          ),
         );
       },
     );
   }
 
+  Widget _leaderRow(BuildContext ctx, int i, Map<String, dynamic> d, bool isMe, {
+    required bool isTop3, required String name, required String photo,
+    required int count, required int streak, required Color primary,
+    IconData? medalIcon, Color? medalColor, String? podiumLabel,
+  }) {
+    final mc = medalColor ?? AppColors.textHint;
+    return Row(children: [
+      // 排名
+      SizedBox(width: 36, child: isTop3
+          ? Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(medalIcon!, color: mc, size: 24),
+              Text(podiumLabel!, style: TextStyle(fontSize: 9, color: mc, fontWeight: FontWeight.w700)),
+            ])
+          : Text('${i + 1}', textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textHint))),
+      const SizedBox(width: 10),
+      // 頭貼
+      DoodleCircle(
+        color: (isTop3 ? mc : primary).withValues(alpha: 0.18),
+        size: isTop3 ? 48 : 40,
+        child: ClipOval(
+          child: photo.isNotEmpty
+              ? Image.network(photo, width: isTop3 ? 48 : 40, height: isTop3 ? 48 : 40, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Icon(Icons.person_rounded, size: 20, color: AppColors.textHint))
+              : Icon(Icons.person_rounded, size: 20, color: AppColors.textHint),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(name, style: TextStyle(
+            fontWeight: FontWeight.w800, fontSize: isTop3 ? 15 : 14,
+            color: isMe ? primary : AppColors.textPrimary))),
+          if (isMe) Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8)),
+            child: Text('我', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w800)),
+          ),
+        ]),
+        if (streak > 0) Row(children: [
+          Icon(Icons.local_fire_department_rounded, size: 11,
+              color: streak >= 7 ? const Color(0xFFFF6B2B) : AppColors.textHint),
+          const SizedBox(width: 2),
+          Text('連續 $streak 天', style: TextStyle(
+            fontSize: 11,
+            color: streak >= 7 ? const Color(0xFFFF6B2B) : AppColors.textHint)),
+        ]),
+      ])),
+      // 景點數
+      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        Text('$count', style: TextStyle(
+          fontSize: isTop3 ? 22 : 18, fontWeight: FontWeight.w900,
+          color: isTop3 ? mc : (isMe ? primary : AppColors.textPrimary))),
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          const Text('景點', style: TextStyle(fontSize: 10, color: AppColors.textHint)),
+          if (isTop3) ...[
+            const SizedBox(width: 2),
+            DoodleHeart(color: mc.withValues(alpha: 0.6), size: 10),
+          ],
+        ]),
+      ]),
+    ]);
+  }
+
   Widget _buildMiniMapTab() {
     final spots = _realSpots;
+    final primary = Theme.of(context).colorScheme.primary;
+    final visitedCount = _visitedSpots.keys.where((k) => (_visitedSpots[k] ?? 0) > 0).length;
 
     // 嘉義市中心作為初始中心
     const center = LatLng(23.4801, 120.4515);
 
     return Column(
       children: [
-        // ── 圖例 ──────────────────────────────────────────
+        // ── 手帳風圖例 bar ──────────────────────────────────
         Container(
           color: AppColors.surface,
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: Row(children: [
-            _legendItem(Colors.grey.shade400, '未踩點'),
-            const SizedBox(width: 12),
-            _legendItem(AppColors.stampBronze, '1-2次'),
-            const SizedBox(width: 12),
-            _legendItem(AppColors.stampSilver, '3-4次'),
-            const SizedBox(width: 12),
-            _legendItem(AppColors.stampGold, '5次+'),
-            const Spacer(),
-            // GPS 狀態（點擊跳到自己位置）
-            GestureDetector(
-              onTap: _stampPos != null
-                  ? () => _miniMapCtrl.move(
-                      LatLng(_stampPos!.latitude, _stampPos!.longitude),
-                      15.5)
-                  : null,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(
-                  _stampPos != null
-                      ? Icons.gps_fixed_rounded
-                      : Icons.gps_not_fixed_rounded,
-                  size: 14,
-                  color: _stampPos != null
-                      ? Theme.of(context).colorScheme.primary
-                      : AppColors.textHint,
-                ),
-                const SizedBox(width: 3),
-                Text(
-                  _stampPos != null ? '定位' : '...',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: _stampPos != null
-                        ? Theme.of(context).colorScheme.primary
-                        : AppColors.textHint,
-                    fontWeight: FontWeight.w600,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: StitchedBox(
+            color: primary.withValues(alpha: 0.04),
+            stitchColor: primary.withValues(alpha: 0.18),
+            radius: 14, inset: 3, dashWidth: 4, dashGap: 3.5, stitchStrokeWidth: 1.0,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(children: [
+              // 踩點進度
+              DoodleCircle(color: primary.withValues(alpha: 0.15), size: 28,
+                child: Icon(Icons.map_rounded, size: 14, color: primary)),
+              const SizedBox(width: 8),
+              Text('$visitedCount/${spots.length}', style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
+              const SizedBox(width: 4),
+              const Text('踩點', style: TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+              const SizedBox(width: 12),
+              _legendItem(Colors.grey.shade400, '未踩'),
+              const SizedBox(width: 8),
+              _legendItem(AppColors.stampBronze, '1-2次'),
+              const SizedBox(width: 8),
+              _legendItem(AppColors.stampSilver, '3-4次'),
+              const SizedBox(width: 8),
+              _legendItem(AppColors.stampGold, '5+'),
+              const Spacer(),
+              // GPS 狀態
+              GestureDetector(
+                onTap: _stampPos != null
+                    ? () => _miniMapCtrl.move(
+                        LatLng(_stampPos!.latitude, _stampPos!.longitude), 15.5)
+                    : null,
+                child: DoodleCircle(
+                  color: (_stampPos != null ? primary : AppColors.textHint).withValues(alpha: 0.15),
+                  size: 28,
+                  child: Icon(
+                    _stampPos != null ? Icons.gps_fixed_rounded : Icons.gps_not_fixed_rounded,
+                    size: 14,
+                    color: _stampPos != null ? primary : AppColors.textHint,
                   ),
                 ),
-              ]),
-            ),
-          ]),
+              ),
+            ]),
+          ),
         ),
 
         // ── 可互動集章地圖（可愛色調）────────────────────────
@@ -1112,15 +1261,15 @@ class _StampScreenState extends State<StampScreen>
                         ),
                       ),
                       children: [
-                        // CartoDB Light — 淡白清爽風格（與 YouBike/公車地圖一致）
+                        // CartoDB Voyager — 有黃綠藍的普通彩色地圖（好看且有細節）
                         TileLayer(
                           urlTemplate:
-                              'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+                              'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
                           userAgentPackageName:
                               'com.chiayicity.explore_chiayi',
                           maxZoom: 19,
                         ),
-                        // 打卡景點輕柔光暈圈（低透明度，不遮蓋地圖）
+                        // 打卡景點光暈（較大範圍、柔光提示已打卡）
                         CircleLayer(
                           circles: spots
                               .where((s) => (_visitedSpots[s.id] ?? 0) > 0)
@@ -1129,11 +1278,11 @@ class _StampScreenState extends State<StampScreen>
                             final color = _getStampColor(count);
                             return CircleMarker(
                               point: LatLng(spot.lat, spot.lng),
-                              radius: count >= 5 ? 180 : count >= 3 ? 140 : 100,
+                              radius: count >= 5 ? 500 : count >= 3 ? 380 : 260,
                               useRadiusInMeter: true,
-                              color: color.withValues(alpha: 0.10),
-                              borderColor: color.withValues(alpha: 0.28),
-                              borderStrokeWidth: 1.0,
+                              color: color.withValues(alpha: 0.13),
+                              borderColor: color.withValues(alpha: 0.35),
+                              borderStrokeWidth: 1.5,
                             );
                           }).toList(),
                         ),

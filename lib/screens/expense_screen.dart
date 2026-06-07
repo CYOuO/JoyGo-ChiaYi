@@ -1112,7 +1112,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           // Mark done
           const SizedBox(width: 10),
           GestureDetector(
-            onTap: () => _markSettled(context, s, from, to),
+            onTap: () async => await _markSettled(context, s, from, to),
             child: Builder(builder: (bCtx) {
               final p = Theme.of(bCtx).colorScheme.primary;
               return Container(

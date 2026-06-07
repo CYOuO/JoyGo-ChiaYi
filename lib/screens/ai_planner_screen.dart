@@ -322,7 +322,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
           cleanSpots.add(s);
         }
       }
-      if (tripDays > 0) _days = tripDays; // 強制將 UI 天數與原行程同步
+      if (tripDays > 0) setState(() => _days = tripDays); // 強制將 UI 天數與原行程同步
 
       prompt = '請幫我安排 $_days 天的嘉義行程。\n'; // 覆寫開頭的天數
       prompt += '【既有行程名稱】：$_selectedImportTrip\n';
@@ -1072,7 +1072,8 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         ]),
         if (_chatProposal != null) ...[
           const SizedBox(height: 20),
-          // 📝 按鈕改名為套用行程
+          _buildChatProposalCard(_chatProposal!, primary, accent),
+          const SizedBox(height: 12),
           if (!_chatProposalSaved)
             _buildSaveButton(label: '套用行程', icon: Icons.playlist_add_check_rounded, primary: primary, onTap: _saveChatTrip)
           else

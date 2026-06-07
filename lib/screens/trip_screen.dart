@@ -2272,11 +2272,15 @@ class _TripDetailPageState extends State<_TripDetailPage>
     final days = trip.days.clamp(1, 99);
     final spotsPerDay = totalSpots == 0 ? 1
         : (totalSpots / days).ceil().clamp(1, totalSpots);
+    // 過濾掉天數標籤，只保留真實景點名稱給地圖/概覽用
+    final cleanSpots = trip.spots.where((s) => !s.startsWith('__DAY_')).toList();
+    final totalClean = cleanSpots.length;
+    final spotsPerDayClean = totalClean == 0 ? 1 : (totalClean / days).ceil().clamp(1, totalClean);
     final daySpots = List.generate(days, (d) {
-      if (totalSpots == 0) return <String>[];
-      final start = (d * spotsPerDay).clamp(0, totalSpots);
-      final end   = ((d + 1) * spotsPerDay).clamp(0, totalSpots);
-      return trip.spots.sublist(start, end);
+      if (totalClean == 0) return <String>[];
+      final start = (d * spotsPerDayClean).clamp(0, totalClean);
+      final end   = ((d + 1) * spotsPerDayClean).clamp(0, totalClean);
+      return cleanSpots.sublist(start, end);
     });
 
     // Build the user's real avatar
@@ -2781,41 +2785,11 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   void _showInviteSheet(BuildContext ctx, FirebaseTrip trip, Color primary) {
-    final shareText = '加入我的行程「${trip.title}」！\n${trip.dateDisplay}\n\n透過「探索諸羅」App 一起規劃旅行！';
     showModalBottomSheet(
-      context: ctx, backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
-          Text('邀請加入行程', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
-          const SizedBox(height: 6),
-          Text('「${trip.title}」', style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
-          const SizedBox(height: 20),
-          Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _inviteOpt(Icons.qr_code_rounded, 'QR Code', primary, () {
-              Navigator.pop(ctx);
-              _showQRDialog(ctx, shareText, primary);
-            }),
-            _inviteOpt(Icons.link_rounded, '複製連結', primary, () {
-              Navigator.pop(ctx);
-              Clipboard.setData(ClipboardData(text: shareText));
-              ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                content: const Text('已複製邀請連結'),
-                behavior: SnackBarBehavior.floating, backgroundColor: primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
-            }),
-            _inviteOpt(Icons.ios_share_rounded, '系統分享', primary, () {
-              Navigator.pop(ctx);
-              Share.share(shareText);
-            }),
-          ]),
-        ]),
-      ),
+      context: ctx,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _InviteSheet(trip: trip, primary: primary),
     );
   }
 
@@ -2857,6 +2831,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
     ));
   }
 
+  // ══════════════════════════════════════════════════════════════
   // 1. 自動補齊天數標籤的輔助函式 (🌟 升級版：保證天數完整)
   List<String> _getNormalizedSpots() {
     final spots = _trip.spots;
@@ -2895,7 +2870,10 @@ class _TripDetailPageState extends State<_TripDetailPage>
     }
 
     if (modified) {
-      TripService.updateTrip(_trip.id, {'spots': current});
+      // 延後到 build 結束後再寫，避免在 build 流程中觸發 setState/rebuild 迴圈
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        TripService.updateTrip(_trip.id, {'spots': current});
+      });
     }
     return current;
   }
@@ -2981,12 +2959,11 @@ class _TripDetailPageState extends State<_TripDetailPage>
     );
   }
 
-  // 3. 升級版景點卡片 (包含時間與停留時間)
+  // 3. 景點卡片
   Widget _buildScheduleCard(String spot, Color primary) {
-    // 解析隱藏在字串裡的停留時間 (格式： 10:00|120)
     String rawTime = _trip.spotTimes[spot] ?? '';
     String time = rawTime.isNotEmpty ? rawTime.split('|').first : '--:--';
-    String duration = rawTime.contains('|') ? rawTime.split('|').last : '60';
+    const String duration = '60'; // 固定預設，不顯示在 UI
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3018,54 +2995,12 @@ class _TripDetailPageState extends State<_TripDetailPage>
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(spot, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
-                const SizedBox(height: 6),
-                // 🌟 新增停留時間按鈕
-                GestureDetector(
-                  onTap: () => _showDurationPicker(spot, time, duration),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(color: AppColors.surfaceMoss, borderRadius: BorderRadius.circular(6)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.timer_outlined, size: 12, color: AppColors.textHint),
-                      const SizedBox(width: 4),
-                      Text('停留 $duration 分鐘', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                ),
               ])),
               IconButton(icon: const Icon(Icons.more_vert_rounded, color: AppColors.textHint, size: 20), onPressed: () => _showSpotOptions(spot)),
             ]),
           ),
         ),
       ],
-    );
-  }
-
-  // 4. 停留時間選擇器
-  void _showDurationPicker(String spot, String time, String currentDuration) {
-    final options = [30, 60, 90, 120, 150, 180, 240];
-    showModalBottomSheet(
-      context: context, backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('選擇停留時間', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: options.map((mins) => ActionChip(
-              label: Text('$mins 分鐘'),
-              backgroundColor: currentDuration == mins.toString() ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2) : AppColors.surfaceMoss,
-              onPressed: () {
-                Navigator.pop(context);
-                // 🌟 改呼叫智慧排序與推算 (不用改 Time，只改 duration)
-                _updateSpotTimeAndRipple(spot, time, mins.toString());
-              }
-            )).toList()
-          )
-        ])
-      )
     );
   }
 
@@ -3165,17 +3100,20 @@ class _TripDetailPageState extends State<_TripDetailPage>
       String tStr = raw.contains('|') ? raw.split('|').first : (raw.isNotEmpty ? raw : '--:--');
       int dur = raw.contains('|') ? int.tryParse(raw.split('|').last) ?? 60 : 60;
 
-      // 如果前一個有時間，就自動覆蓋下一個的時間
       if (calcTime != null) {
-        tStr = '${calcTime.hour.toString().padLeft(2, '0')}:${calcTime.minute.toString().padLeft(2, '0')}';
-        times[s] = '$tStr|$dur';
+        if (tStr == '--:--' || tStr.isEmpty) {
+          // 沒有手動設定時間 → 用漣漪推算填入
+          tStr = '${calcTime.hour.toString().padLeft(2, '0')}:${calcTime.minute.toString().padLeft(2, '0')}';
+          times[s] = '$tStr|$dur';
+          calcTime = calcTime.add(Duration(minutes: dur));
+        } else {
+          // 有手動設定時間 → 保留使用者設定，以此為新基準往後推
+          final spotDt = DateTime(2000, 1, 1, int.parse(tStr.split(':')[0]), int.parse(tStr.split(':')[1]));
+          calcTime = spotDt.add(Duration(minutes: dur));
+        }
       } else if (tStr != '--:--' && tStr.isNotEmpty) {
         // 第一個有設定時間的景點，成為當天的基準點
         calcTime = DateTime(2000, 1, 1, int.parse(tStr.split(':')[0]), int.parse(tStr.split(':')[1]));
-      }
-
-      // 將時間加上「停留分鐘數」給下一個景點
-      if (calcTime != null) {
         calcTime = calcTime.add(Duration(minutes: dur));
       }
     }
@@ -4251,6 +4189,346 @@ class _DatePickerTile extends StatelessWidget {
             const SizedBox(height: 2),
             Text(subtitle!, style: const TextStyle(fontSize: 9, color: AppColors.textHint)),
           ],
+        ]),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// 邀請旅伴 Sheet（Email 搜尋 + 已邀成員列表）
+// ════════════════════════════════════════════════════════════════
+class _InviteSheet extends StatefulWidget {
+  final FirebaseTrip trip;
+  final Color primary;
+  const _InviteSheet({required this.trip, required this.primary});
+  @override
+  State<_InviteSheet> createState() => _InviteSheetState();
+}
+
+class _InviteSheetState extends State<_InviteSheet> {
+  final _emailCtrl = TextEditingController();
+  final _dummyNameCtrl = TextEditingController();
+  bool _searching = false;
+  bool _notFound = false;
+  Map<String, dynamic>? _foundUser;
+  bool _adding = false;
+  bool _addingDummy = false;
+
+  FirebaseFirestore get _db => FirebaseFirestore.instance;
+  String get _tripId => widget.trip.id;
+  Color get _primary => widget.primary;
+
+  Future<void> _search() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) return;
+    setState(() { _searching = true; _notFound = false; _foundUser = null; });
+    try {
+      var q = await _db.collection('users').where('email', isEqualTo: email).limit(1).get();
+      if (q.docs.isEmpty) {
+        q = await _db.collection('users').where('emailAddress', isEqualTo: email).limit(1).get();
+      }
+      if (q.docs.isEmpty) {
+        setState(() { _searching = false; _notFound = true; });
+      } else {
+        final d = q.docs.first.data();
+        setState(() { _searching = false; _foundUser = {...d, 'uid': q.docs.first.id}; });
+      }
+    } catch (_) {
+      setState(() { _searching = false; _notFound = true; });
+    }
+  }
+
+  Future<void> _invite() async {
+    if (_adding || _foundUser == null) return;
+    setState(() => _adding = true);
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final foundUid = _foundUser!['uid'] as String;
+    final name = (_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? _foundUser!['name'] ?? '').toString();
+    final email = (_foundUser!['email'] ?? _foundUser!['emailAddress'] ?? '').toString();
+    final photo = (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] ?? '').toString();
+
+    final docRef = await _db.collection('trips').doc(_tripId).collection('companions').add({
+      'name': name, 'email': email, 'uid': foundUid, 'photoURL': photo,
+      'status': 'pending', 'addedBy': myUid, 'addedAt': FieldValue.serverTimestamp(),
+    });
+    // 通知對方
+    final myDoc = await _db.collection('users').doc(myUid).get();
+    final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '旅伴';
+    try {
+      await _db.collection('users').doc(foundUid).collection('invitations').doc(docRef.id).set({
+        'tripId': _tripId, 'companionId': docRef.id, 'fromUid': myUid,
+        'fromName': myName, 'tripTitle': widget.trip.title,
+        'status': 'pending', 'sentAt': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
+
+    setState(() { _adding = false; _foundUser = null; _emailCtrl.clear(); _notFound = false; });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('已送出邀請給 $name'),
+      backgroundColor: _primary, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  Future<void> _remove(String companionId, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('移除旅伴', style: TextStyle(fontWeight: FontWeight.w800)),
+        content: Text('確定移除「$name」嗎？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('移除', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await _db.collection('trips').doc(_tripId).collection('companions').doc(companionId).delete();
+    }
+  }
+
+  Future<void> _addDummy() async {
+    final name = _dummyNameCtrl.text.trim();
+    if (name.isEmpty || _addingDummy) return;
+    setState(() => _addingDummy = true);
+    final myUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    await _db.collection('trips').doc(_tripId).collection('companions').add({
+      'name': name, 'email': '', 'uid': '', 'photoURL': '',
+      'status': 'dummy', 'addedBy': myUid, 'addedAt': FieldValue.serverTimestamp(),
+    });
+    _dummyNameCtrl.clear();
+    setState(() => _addingDummy = false);
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('已新增虛擬旅伴「$name」'),
+      backgroundColor: _primary, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  @override
+  void dispose() { _emailCtrl.dispose(); _dummyNameCtrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).viewInsets.bottom + 24),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      child: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 把手
+          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(color: const Color(0xFFE0E0E0), borderRadius: BorderRadius.circular(2)))),
+          // 標題
+          Row(children: [
+            Icon(Icons.group_add_rounded, color: _primary, size: 22),
+            const SizedBox(width: 8),
+            Text('邀請旅伴加入', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: _primary)),
+          ]),
+          const SizedBox(height: 4),
+          Text('「${widget.trip.title}」', style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+          const SizedBox(height: 20),
+
+          // Email 輸入列
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: InputDecoration(
+                  hintText: '輸入旅伴的 Email',
+                  prefixIcon: const Icon(Icons.email_outlined, size: 18),
+                  filled: true, fillColor: const Color(0xFFF5F5F5),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                onSubmitted: (_) => _search(),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _searching ? null : _search,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: _searching
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('搜尋', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+
+          // 搜尋結果
+          if (_notFound) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: const Color(0xFFFFF3E0), borderRadius: BorderRadius.circular(10)),
+              child: const Row(children: [
+                Icon(Icons.info_outline_rounded, size: 16, color: Colors.orange),
+                SizedBox(width: 8),
+                Expanded(child: Text('找不到此 Email 的使用者', style: TextStyle(fontSize: 13, color: Colors.orange))),
+              ]),
+            ),
+          ],
+          if (_foundUser != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _primary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _primary.withValues(alpha: 0.2)),
+              ),
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: _primary.withValues(alpha: 0.15),
+                  backgroundImage: (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] ?? '').toString().isNotEmpty
+                      ? NetworkImage((_foundUser!['photoURL'] ?? _foundUser!['photoUrl']).toString()) : null,
+                  child: (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] ?? '').toString().isEmpty
+                      ? Text(
+                          ((_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? '?').toString()).isNotEmpty
+                              ? (_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? '?').toString()[0]
+                              : '?',
+                          style: TextStyle(color: _primary, fontWeight: FontWeight.w800))
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? '未知').toString(),
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                  Text((_foundUser!['email'] ?? _foundUser!['emailAddress'] ?? '').toString(),
+                      style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
+                ])),
+                ElevatedButton(
+                  onPressed: _adding ? null : _invite,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primary,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                  child: _adding
+                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('邀請', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ]),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 12),
+
+          // 虛擬旅伴（沒有 App 帳號）
+          Text('新增虛擬旅伴', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _primary)),
+          const SizedBox(height: 4),
+          const Text('沒有 App 帳號的同伴，輸入名字即可加入', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: TextField(
+                controller: _dummyNameCtrl,
+                decoration: InputDecoration(
+                  hintText: '例如：小明、阿強',
+                  prefixIcon: const Icon(Icons.person_outline_rounded, size: 18),
+                  filled: true, fillColor: const Color(0xFFF5F5F5),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                ),
+                onSubmitted: (_) => _addDummy(),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              height: 48,
+              child: ElevatedButton(
+                onPressed: _addingDummy ? null : _addDummy,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+                child: _addingDummy
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('新增', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ]),
+
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 8),
+          Text('目前旅伴', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _primary)),
+          const SizedBox(height: 8),
+
+          // 旅伴列表
+          StreamBuilder<QuerySnapshot>(
+            stream: _db.collection('trips').doc(_tripId).collection('companions').orderBy('addedAt').snapshots(),
+            builder: (ctx, snap) {
+              if (!snap.hasData || snap.data!.docs.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(children: [
+                    Icon(Icons.person_outline_rounded, size: 18, color: _primary.withValues(alpha: 0.4)),
+                    const SizedBox(width: 8),
+                    Text('尚未邀請任何旅伴', style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+                  ]),
+                );
+              }
+              return Column(
+                children: snap.data!.docs.map((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final name = (d['name'] ?? '').toString();
+                  final email = (d['email'] ?? '').toString();
+                  final photo = (d['photoURL'] ?? d['photoUrl'] ?? '').toString();
+                  final status = (d['status'] ?? 'manual').toString();
+                  final statusLabel = status == 'pending' ? '待確認' : status == 'confirmed' ? '已加入' : '外部';
+                  final statusColor = status == 'pending' ? Colors.orange : status == 'confirmed' ? Colors.green : AppColors.textHint;
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: _primary.withValues(alpha: 0.12),
+                      backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                      child: photo.isEmpty
+                          ? Text(name.isNotEmpty ? name[0] : '?',
+                              style: TextStyle(color: _primary, fontWeight: FontWeight.w800, fontSize: 13))
+                          : null,
+                    ),
+                    title: Row(children: [
+                      Flexible(child: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
+                        child: Text(statusLabel, style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                    subtitle: email.isNotEmpty
+                        ? Text(email, style: const TextStyle(fontSize: 11, color: AppColors.textHint))
+                        : null,
+                    trailing: IconButton(
+                      icon: const Icon(Icons.remove_circle_outline_rounded, color: AppColors.error, size: 20),
+                      onPressed: () => _remove(doc.id, name),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
         ]),
       ),
     );

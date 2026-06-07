@@ -8,6 +8,9 @@ import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart'
     show StitchedBox, DoodleHeart, DoodleCloud, DoodleLightning;
 import 'news_transport_screens.dart' show TransportScreen;
+import 'package:latlong2/latlong.dart' hide Path;
+import '../services/spot_service.dart';
+import '../services/rail_service.dart';
 
 // ════════════════════════════════════════════════════════════════
 // Data Models
@@ -51,6 +54,7 @@ class _ScheduleItem {
   final String time, name, duration, note;
   final IconData icon;
   final bool isMeal;
+  final bool isTransportItem; // true = 交通段，不存入景點清單
   final TransportMode? transport;
   final String? transportNote;
   final String? stationName;
@@ -61,6 +65,7 @@ class _ScheduleItem {
     required this.time, required this.name,
     required this.duration, required this.note,
     required this.icon, this.isMeal = false,
+    this.isTransportItem = false,
     this.transport, this.transportNote,
     this.stationName, this.stationLat, this.stationLng,
   });
@@ -162,38 +167,28 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
 2. 格式固定如下：
 {
   "replyText": "繁體中文口語回覆，語氣熱情親切",
-  "tripName": "根據行程特色命名，例如「奮起湖雲霧慢步兩日遊」「嘉義美食文青二日漫遊」（有 plan 時必填）",
+  "tripName": "根據行程特色命名",
   "plan": [
     {
       "day": 1,
       "items": [
         {
           "time": "09:00",
-          "name": "景點/餐廳/活動名稱",
+          "name": "景點/餐廳/飯店名稱",
           "duration": "90 分鐘",
           "note": "建議說明",
           "isMeal": false,
-          "isTransport": false,
-          "transport": null,
-          "transportNote": null,
-          "stationName": null,
-          "lat": 23.4780,
-          "lng": 120.4407
+          "transport": "bus",
+          "transportNote": "搭乘 7322 號公車前往"
         }
       ]
     }
   ]
 }
 3. 只有在生成/修改行程時才包含 plan 與 tripName 欄位；純對話回覆可省略。
-4. 景點之間加入交通段（isTransport:true，transport 填對應方式，stationName 填站名）。
-5. ⚠️ 地理順路原則：必須確保每天的景點安排「極度順路」。請先在腦中比對景點的實際地理位置（例如：市區、東區蘭潭、嘉義縣太保、阿里山），將位置相鄰的景點排在一起，絕對避免在地圖上來回折返跑。
+4. ⚠️ 格式嚴格要求：【絕對不可以】將交通方式寫成獨立的景點！name 欄位只能是真實的景點名稱（絕對不可包含"前往"、"搭乘"等動詞）。到達該地的交通方式請填入 transport 欄位（只能填寫 walk, bike, bus, train, hsr, car, taxi 其一），並將詳細班次填寫於 transportNote。
+5. ⚠️ 住宿優先原則：如果提供的景點中包含飯店或民宿，請務必將其安排為每天的「起點」與「終點」（若隔天還有行程，隔天早上由該住宿點出發）。
 6. 午餐安排在 12:00-13:00（isMeal:true），晚餐在 18:00（isMeal:true）。
-7. 有交通段時 transportNote 填乘車資訊（如搭公車7229路）。
-
-【嘉義常識】
-- 推薦：雞肉飯、沙鍋魚頭、奮起湖便當、文化路夜市
-- 常用座標：嘉義市區(23.4780,120.4407)、阿里山(23.5083,120.8034)、故宮南院(23.4372,120.3698)、檜意森活村(23.4793,120.4434)、嘉義公園(23.4855,120.4517)
-- 公車：7229路連嘉義站與故宮南院，市區公車覆蓋中正路一帶
 ''';
 
   @override
@@ -260,19 +255,32 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
       final day = (d['day'] as num?)?.toInt() ?? (dayEntry.key + 1);
       final color = colors[day % colors.length];
       final rawItems = (d['items'] as List? ?? []);
-      final items = rawItems.map((raw) {
+
+      // 🌟 新增過濾器：直接擋掉不合理的名稱
+      final validItems = rawItems.where((raw) {
+        final m = raw as Map<String, dynamic>;
+        final name = m['name'] as String? ?? '';
+        return name.isNotEmpty && 
+               name != '交通' && 
+               !name.startsWith('前往') && 
+               !name.startsWith('搭乘') && 
+               !name.startsWith('步行') && 
+               !name.startsWith('抵達') && 
+               !name.startsWith('返回');
+      });
+
+      final items = validItems.map((raw) {
         final m = raw as Map<String, dynamic>;
         final transport = TransportModeExt.fromString(m['transport'] as String?);
         final isMeal = m['isMeal'] as bool? ?? false;
-        final isTransport = m['isTransport'] as bool? ?? (transport != null);
         return _ScheduleItem(
           time: m['time'] as String? ?? '--:--',
           name: m['name'] as String? ?? '',
           duration: m['duration'] as String? ?? '',
           note: m['note'] as String? ?? '',
-          icon: _iconFor(m['name'] as String? ?? '', isMeal, isTransport, transport),
+          icon: _iconFor(m['name'] as String? ?? '', isMeal, false, null),
           isMeal: isMeal,
-          transport: isTransport ? transport : null,
+          transport: transport,
           transportNote: m['transportNote'] as String?,
           stationName: m['stationName'] as String?,
           stationLat: (m['lat'] as num?)?.toDouble(),
@@ -302,46 +310,93 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
     if (spots.isEmpty) return;
     setState(() { _scheduling = true; _schedulePlan = null; _scheduleTripName = null; });
 
+    // 🌟 1. 抓取嘉義未來天氣預報
+    String weatherStr = '未知';
+    try {
+      final weather = await RailService.getWeather('Chiayi');
+      weatherStr = weather.take(3).map((w) => '${w['desc']}(降雨${w['rain']}%)').join('、');
+    } catch(_) {}
+
+    // 🌟 2. 判斷住宿與 TSP 最短路徑演算法 (修復繞路 Bug 與增強座標比對)
+    List<String> hotels = [];
+    List<String> attractions = [];
+    for (var s in spots) {
+      if (s.contains('飯店') || s.contains('民宿') || s.contains('旅館') || s.contains('酒店') || s.contains('行館') || s.contains('住宿') || s.contains('青旅')) {
+        hotels.add(s);
+      } else {
+        attractions.add(s);
+      }
+    }
+
+    List<String> toSort = List.from(attractions);
+    List<String> sortedSpots = [];
+    if (toSort.isNotEmpty) {
+      String current = toSort.first;
+      sortedSpots.add(current);
+      toSort.remove(current);
+      final distance = const Distance();
+      
+      while(toSort.isNotEmpty) {
+        String? nearest;
+        double minD = double.infinity;
+        
+        // 使用 contains 放寬比對，避免 AI 擅自加字導致找不到座標
+        final cSpot = SpotService.cached.where((s) => current.contains(s.name) || s.name.contains(current)).firstOrNull;
+        
+        for (var cand in toSort) {
+          final candSpot = SpotService.cached.where((s) => cand.contains(s.name) || s.name.contains(cand)).firstOrNull;
+          if (cSpot != null && candSpot != null) {
+            final d = distance.as(LengthUnit.Meter, LatLng(cSpot.lat, cSpot.lng), LatLng(candSpot.lat, candSpot.lng));
+            if (d < minD) { 
+              minD = d; 
+              nearest = cand; 
+            }
+          }
+        }
+        
+        // 如果迴圈跑完還是找不到最近的點（通常是座標遺失），就依序拿取第一個
+        current = nearest ?? toSort.first;
+        sortedSpots.add(current);
+        toSort.remove(current);
+      }
+    }
+
     final depLabel = _depTime == 'morning' ? '早上 9 點' : _depTime == 'afternoon' ? '下午 2 點' : '彈性出發';
     final transportStr = _transportModes.map((m) => m.label).join('、');
     
-    // 🌟 升級版提示詞：加入天氣考量與安插舊行程的邏輯
-    // 🌟 升級版提示詞：加入天氣考量與安插舊行程的邏輯
     String prompt = '請幫我安排 $_days 天的嘉義行程。\n';
     
     if (_selectedImportTrip != null && widget.importedTrips != null && widget.importedTrips!.containsKey(_selectedImportTrip)) {
       final rawSpots = widget.importedTrips![_selectedImportTrip]!;
-      
-      // 🌟 計算原行程天數
       int tripDays = 0;
       final cleanSpots = <String>[];
       for (var s in rawSpots) {
-        if (s.startsWith('__DAY_')) {
-          tripDays++;
-        } else {
-          cleanSpots.add(s);
-        }
+        if (s.startsWith('__DAY_')) tripDays++;
+        else cleanSpots.add(s);
       }
-      if (tripDays > 0) setState(() => _days = tripDays); // 強制將 UI 天數與原行程同步
+      if (tripDays > 0) _days = tripDays; 
 
-      prompt = '請幫我安排 $_days 天的嘉義行程。\n'; // 覆寫開頭的天數
+      prompt = '請幫我安排 $_days 天的嘉義行程。\n'; 
       prompt += '【既有行程名稱】：$_selectedImportTrip\n';
       prompt += '【既有原景點】：${cleanSpots.join('、')}\n';
       prompt += '🌟 重要任務：此為 $_days 天的行程，請務必排滿 $_days 天。\n';
-      if (_localCandidates.isNotEmpty) {
-        prompt += '【待安插的新景點】：${_localCandidates.join('、')}\n';
-        prompt += '任務要求：請將「待安插的新景點」巧妙加入「既有行程」中。請盡量保留既有行程的架構與順序，並考量順路程度。\n';
-      } else {
-        prompt += '任務要求：請幫我重新審視並優化這個行程的時間與交通。\n';
-      }
-    } else {
-      prompt += '需安排的景點：${spots.join('、')}。\n';
-    }
+    } 
     
     prompt += '出發時間：$depLabel。\n交通方式：$transportStr。\n';
-    prompt += '請考慮「天氣狀況與交通時間」，將戶外景點盡量安排在白天避開降雨。\n';
-    prompt += '⚠️ 強烈要求：請務必根據嘉義的真實地圖方位來排序景點！每天的路線必須是一條順暢的線或環狀，【絕對不可以】安排東西南北來回折返的亂跑行程。\n';
-    prompt += '請考慮順路程度並加入交通段（含站名）與用餐時間，同時幫行程取一個有特色的 tripName，生成完整 JSON。';
+    prompt += '【未來三天天氣預報】：$weatherStr\n請依照天氣狀況，將戶外景點盡量安排在降雨機率低的日子。\n';
+    prompt += '⚠️ 交通合理性要求：請根據嘉義真實地理距離評估 transport！若兩地距離超過 1 公里，【絕對不可】全部填寫 walk，必須替換為 bus、taxi 或 car！\n';
+    
+    // 🌟 將演算法結果餵給 AI
+    if (hotels.isNotEmpty) {
+      prompt += '【住宿地點】：${hotels.join('、')}\n';
+      prompt += '⚠️ 行程要求：請將「住宿地點」安排為每天的起點與終點（如果明天還有行程，隔天早上從住宿點出發，晚上回到住宿點）。\n';
+    }
+    if (sortedSpots.isNotEmpty) {
+      prompt += '【系統計算之最佳順序】：${sortedSpots.join(' -> ')}\n';
+      prompt += '⚠️ 強烈要求：請依循上述順序安排每日的中間行程，絕對不要在地圖上來回折返。\n';
+    }
+    prompt += '請幫行程取一個有特色的 tripName，生成完整 JSON。';
+    
 
     final result = await _callGemini(prompt, clearHistory: true);
     if (mounted) setState(() {
@@ -352,15 +407,20 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
   }
 
   List<String> get _activeSpots {
+    List<String> list = [];
     if (_selectedImportTrip != null &&
         widget.importedTrips?[_selectedImportTrip] != null) {
-      // 🌟 過濾掉 __DAY_ 標籤，只保留純景點與候選景點合併
       final rawSpots = widget.importedTrips![_selectedImportTrip]!;
-      final combined = Set<String>.from(rawSpots.where((s) => !s.startsWith('__DAY_')));
-      combined.addAll(_localCandidates);
-      return combined.toList();
+      list = rawSpots.where((s) => !s.startsWith('__DAY_')).toList();
+      list.addAll(_localCandidates);
+    } else {
+      list = List.from(_localCandidates);
     }
-    return _localCandidates;
+    
+    // 🌟 嚴格過濾髒資料：把之前不小心加進來的「交通動詞」全部擋掉，避免 AI 當成景點
+    return list.toSet().where((s) => 
+      !s.startsWith('前往') && !s.startsWith('搭乘') && !s.startsWith('步行') && !s.startsWith('交通')
+    ).toList();
   }
 
   void _saveScheduleAsTrip() {

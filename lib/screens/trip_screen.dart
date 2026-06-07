@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -495,7 +496,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
               Row(children: [
                 const Icon(Icons.place_rounded, size: 11, color: Colors.white60),
                 const SizedBox(width: 3),
-                Text('${trip.spots.length} 個景點 · ${trip.days} 天',
+                Text('${trip.spots.where((s) => !s.startsWith('__DAY_')).length} 個景點 · ${trip.days} 天',
                   style: const TextStyle(color: Colors.white70, fontSize: 11)),
                 const SizedBox(width: 8),
                 const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: Colors.white60),
@@ -695,7 +696,7 @@ class _TripScreenState extends State<TripScreen> with SingleTickerProviderStateM
                     const SizedBox(width: 4),
                     Text(trip.dateDisplay, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                     const Spacer(),
-                    Text('${trip.days}天 · ${trip.spots.length}個景點',
+                    Text('${trip.days}天 · ${trip.spots.where((s) => !s.startsWith('__DAY_')).length} 個景點',
                       style: TextStyle(color: Theme.of(context).colorScheme.primary, fontSize: 12, fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 10),
@@ -2740,7 +2741,9 @@ class _TripDetailPageState extends State<_TripDetailPage>
   void _showMembersSheet(BuildContext ctx, FirebaseTrip trip, Color primary) {
     final user = FirebaseAuth.instance.currentUser;
     showModalBottomSheet(
-      context: ctx, backgroundColor: Colors.transparent,
+      context: ctx, 
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true, // 允許內容變多時可以滾動
       builder: (_) => Container(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         decoration: const BoxDecoration(
@@ -2751,7 +2754,10 @@ class _TripDetailPageState extends State<_TripDetailPage>
             decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
           Text('行程成員', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
           const SizedBox(height: 16),
+          
+          // 1. 顯示行程建立者 (自己)
           ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: CircleAvatar(radius: 20,
               backgroundImage: user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
               backgroundColor: primary.withValues(alpha: 0.15),
@@ -2759,17 +2765,52 @@ class _TripDetailPageState extends State<_TripDetailPage>
                   ? Text(user?.displayName?.isNotEmpty == true ? user!.displayName![0] : '?',
                       style: TextStyle(fontSize: 16, color: primary, fontWeight: FontWeight.w800))
                   : null),
-            title: Text(user?.displayName ?? '我',
-              style: const TextStyle(fontWeight: FontWeight.w700)),
+            title: Text(user?.displayName ?? '我', style: const TextStyle(fontWeight: FontWeight.w700)),
             subtitle: const Text('行程建立者', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8)),
+              decoration: BoxDecoration(color: primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
               child: Text('管理員', style: TextStyle(fontSize: 10, color: primary, fontWeight: FontWeight.w700)),
             ),
           ),
+
+          // 2. 從資料庫即時拉取其他已加入的旅伴
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('trips').doc(trip.id).collection('companions').orderBy('addedAt').snapshots(),
+            builder: (context, snap) {
+              if (!snap.hasData) return const SizedBox.shrink();
+              return Column(
+                children: snap.data!.docs.map((doc) {
+                  final d = doc.data() as Map<String, dynamic>;
+                  final name = (d['name'] ?? '').toString();
+                  final photo = (d['photoURL'] ?? d['photoUrl'] ?? '').toString();
+                  final status = (d['status'] ?? 'manual').toString();
+                  
+                  // 顯示狀態標籤
+                  final statusLabel = status == 'pending' ? '待確認' : status == 'dummy' ? '虛擬成員' : '同行旅伴';
+                  final statusColor = status == 'pending' ? Colors.orange : status == 'dummy' ? Colors.grey : primary;
+
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(radius: 20,
+                      backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+                      backgroundColor: primary.withValues(alpha: 0.15),
+                      child: photo.isEmpty && name.isNotEmpty
+                          ? Text(name[0], style: TextStyle(fontSize: 16, color: primary, fontWeight: FontWeight.w800))
+                          : Icon(Icons.person_outline, color: primary)),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text(statusLabel, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                    trailing: status == 'pending' || status == 'dummy' ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Text(statusLabel, style: TextStyle(fontSize: 10, color: statusColor, fontWeight: FontWeight.w700)),
+                    ) : null,
+                  );
+                }).toList(),
+              );
+            },
+          ),
+
           const Divider(height: 24),
           SizedBox(width: double.infinity, child: OutlinedButton.icon(
             onPressed: () { Navigator.pop(ctx); _showInviteSheet(ctx, trip, primary); },
@@ -2838,6 +2879,13 @@ class _TripDetailPageState extends State<_TripDetailPage>
     if (spots.isEmpty) return [];
 
     List<String> current = List.from(spots);
+
+    // 🌟 強制過濾掉過去不小心存入的無效景點
+    current.removeWhere((s) => 
+      s == '交通' || s.startsWith('前往') || s.startsWith('搭乘') || 
+      s.startsWith('步行') || s.startsWith('抵達') || s.startsWith('返回')
+    );
+
     bool modified = false;
 
     // 如果完全沒有任何 __DAY_ 標籤，先進行平均分配
@@ -2878,6 +2926,135 @@ class _TripDetailPageState extends State<_TripDetailPage>
     return current;
   }
 
+  // ─── TSP 最短路徑排序 ──────────────────────────────────────────
+  static double _haversineKm(double lat1, double lng1, double lat2, double lng2) {
+    const r = 6371.0;
+    final dLat = (lat2 - lat1) * math.pi / 180;
+    final dLng = (lng2 - lng1) * math.pi / 180;
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(lat1 * math.pi / 180) *
+            math.cos(lat2 * math.pi / 180) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  /// 最近鄰 TSP：從 [startLat/Lng] 出發，依序找最近未訪問景點
+  /// 最近鄰 TSP：改用模糊比對，避免因字串不完全一致導致排序破裂
+  static List<String> _nearestNeighborOrder(
+    List<String> spots,
+    double startLat,
+    double startLng,
+  ) {
+    final mapped = <String>[];
+    final unmapped = <String>[];
+
+    // 分流：找得到座標的去排 TSP，找不到的（可能是自訂文字）排到最後
+    for (var s in spots) {
+      if (_lookupSpot(s) != null) mapped.add(s); else unmapped.add(s);
+    }
+
+    final result = <String>[];
+    double curLat = startLat, curLng = startLng;
+    final remaining = List<String>.from(mapped);
+
+    while (remaining.isNotEmpty) {
+      int bestIdx = 0;
+      double bestDist = double.infinity;
+      for (int i = 0; i < remaining.length; i++) {
+        final s = _lookupSpot(remaining[i]);
+        if (s != null) {
+          final d = _haversineKm(curLat, curLng, s.lat, s.lng);
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+      }
+      final chosen = remaining.removeAt(bestIdx);
+      result.add(chosen);
+      final cs = _lookupSpot(chosen);
+      if (cs != null) { curLat = cs.lat; curLng = cs.lng; }
+    }
+    result.addAll(unmapped);
+    return result;
+  }
+
+  bool _tspLoading = false;
+
+  Future<void> _tspReorder() async {
+    if (_tspLoading) return;
+    setState(() => _tspLoading = true);
+    try {
+      final items = _getNormalizedSpots();
+      // 取得乾淨景點（去掉 __DAY_X__ 標籤）
+      final cleanSpots = items.where((s) => !s.startsWith('__DAY_')).toList();
+      if (cleanSpots.isEmpty) return;
+
+      final allSpots = SpotService.cached;
+      final spotMap = <String, Spot>{for (final s in allSpots) s.name: s};
+
+      // 找住宿景點（作為每天起終點）
+      Spot? hotel;
+      for (final name in cleanSpots) {
+        final s = spotMap[name];
+        if (s != null) {
+          final cat = s.category.toLowerCase();
+          final n = s.name;
+          if (cat.contains('hotel') || cat.contains('hostel') ||
+              n.contains('飯店') || n.contains('旅館') || n.contains('民宿') ||
+              n.contains('旅店') || n.contains('酒店') || n.contains('青年旅') ||
+              n.contains('villa') || n.contains('Villa') || n.contains('休閒農場')) {
+            hotel = s;
+            break;
+          }
+        }
+      }
+
+      // 去掉住宿，只對景點排序
+      final visitSpots = cleanSpots.where((s) => s != hotel?.name).toList();
+
+      // 起始座標（飯店 或 嘉義市中心）
+      final startLat = hotel?.lat ?? 23.4780;
+      final startLng = hotel?.lng ?? 120.4407;
+
+      // 全域 TSP 排序
+      final ordered = _nearestNeighborOrder(visitSpots, startLat, startLng);
+
+      // 按天分組並插入 __DAY_X__ 標籤
+      final days = _trip.days.clamp(1, 99);
+      final perDay = (ordered.length / days).ceil().clamp(1, ordered.length);
+      final result = <String>[];
+      for (int d = 0; d < days; d++) {
+        result.add('__DAY_${d + 1}__');
+        final start = d * perDay;
+        final end = ((d + 1) * perDay).clamp(0, ordered.length);
+        if (start < ordered.length) result.addAll(ordered.sublist(start, end));
+      }
+      // 若有住宿，加回第一天開頭與最後一天結尾
+      // (user 可自行拖曳，這裡不強制加入)
+
+      await _rippleTimesBasedOnOrder(result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('✅ 已依最短路徑重新排序！'), duration: Duration(seconds: 2)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _tspLoading = false);
+    }
+  }
+
+  // ─── 距離輔助：兩景點間距離(km) ──────────────────────────────
+  double _distBetweenSpots(String a, String b) {
+    final cached = SpotService.cached;
+    final sa = cached.firstWhere((s) => s.name == a, orElse: () => cached.first);
+    final sb = cached.firstWhere((s) => s.name == b, orElse: () => cached.first);
+    // 若 cached 空，預設 0
+    if (SpotService.cached.isEmpty) return 0;
+    return _haversineKm(sa.lat, sa.lng, sb.lat, sb.lng);
+  }
+
   // 2. 全新支援拖曳的行程列表
   Widget _buildScheduleList(Color primary) {
     final items = _getNormalizedSpots();
@@ -2887,6 +3064,35 @@ class _TripDetailPageState extends State<_TripDetailPage>
       child: Stack(children: [
         const ScatteredDoodles(),
         Column(children: [
+          // ── 智慧排序按鈕 ────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(children: [
+              const Spacer(),
+              GestureDetector(
+                onTap: _tspLoading ? null : _tspReorder,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: _tspLoading ? 0.05 : 0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: primary.withValues(alpha: 0.25)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (_tspLoading)
+                      SizedBox(width: 12, height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: primary))
+                    else
+                      Icon(Icons.route_rounded, size: 14, color: primary),
+                    const SizedBox(width: 6),
+                    Text('智慧排序', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: primary)),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+
           // 行程已完成提示與退回按鈕
           if (_trip.isCompleted)
             Container(
@@ -2910,7 +3116,7 @@ class _TripDetailPageState extends State<_TripDetailPage>
             child: ReorderableListView.builder(
               scrollController: _scheduleScrollCtrl,
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 120),
-              itemCount: items.length,
+              itemCount: items.length + 1,
               onReorder: (oldIndex, newIndex) {
                 final items = _getNormalizedSpots();
                 if (items[oldIndex].startsWith('__DAY_')) return;
@@ -2925,6 +3131,11 @@ class _TripDetailPageState extends State<_TripDetailPage>
               },
               itemBuilder: (context, index) {
                 final items = _getNormalizedSpots();
+                // 🌟 如果是最後一項，產生底部大空白，確保不管景點多短，天數都能順利置頂
+                if (index == items.length) {
+                  return SizedBox(key: const ValueKey('bottom_spacer'), height: MediaQuery.of(context).size.height * 0.75);
+                }
+                
                 final spot = items[index];
                 if (spot.startsWith('__DAY_')) {
                   final dayStr = spot.replaceAll('__DAY_', '').replaceAll('__', '');
@@ -2933,23 +3144,31 @@ class _TripDetailPageState extends State<_TripDetailPage>
 
                   return AlwaysKeepAliveWidget(
                     key: ValueKey(spot),
-                    child: Row(
-                      key: _dayKeys[dayInt], // 🌟 將 key 綁定在這裡，讓系統可以定位
-                      children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(color: primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
-                        child: Text('第 $dayStr 天', style: TextStyle(fontWeight: FontWeight.w800, color: primary)),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Container(height: 1, color: primary.withValues(alpha: 0.1))),
-                    ]),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12, bottom: 10),
+                      child: Row(
+                        key: _dayKeys[dayInt], // 🌟 將 key 綁定在這裡，讓系統可以定位
+                        children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(color: primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(12)),
+                          child: Text('第 $dayStr 天', style: TextStyle(fontWeight: FontWeight.w800, color: primary)),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Container(height: 1, color: primary.withValues(alpha: 0.1))),
+                      ]),
+                    ),
                   );
                 }
+                // 判斷下一個 item 是否在同一天（用於顯示交通連結）
+                final nextIdx = index + 1;
+                final items2 = _getNormalizedSpots();
+                final String? nextSpot = (nextIdx < items2.length && !items2[nextIdx].startsWith('__DAY_'))
+                    ? items2[nextIdx] : null;
                 return Container(
                   key: ValueKey(spot),
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: _buildScheduleCard(spot, primary),
+                  margin: const EdgeInsets.only(bottom: 4),
+                  child: _buildScheduleCard(spot, primary, nextSpot: nextSpot),
                 );
               },
             ),
@@ -2960,47 +3179,241 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   // 3. 景點卡片
-  Widget _buildScheduleCard(String spot, Color primary) {
+  // 3. 景點卡片
+  Widget _buildScheduleCard(String spot, Color primary, {String? nextSpot}) {
     String rawTime = _trip.spotTimes[spot] ?? '';
-    String time = rawTime.isNotEmpty ? rawTime.split('|').first : '--:--';
-    const String duration = '60'; // 固定預設，不顯示在 UI
+    final parts = rawTime.split('|');
+    String time = parts.isNotEmpty && parts[0].isNotEmpty ? parts[0] : '--:--';
+    String duration = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : '60';
+    String tMode = parts.length > 2 ? parts[2] : '';
+    String tNote = parts.length > 3 ? parts[3] : '';
+    final bool hasNext = nextSpot != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 50,
+              child: Column(children: [
+                GestureDetector(
+                  onTap: () async {
+                    final cur = time == '--:--' ? TimeOfDay.now() : TimeOfDay(hour: int.parse(time.split(':')[0]), minute: int.parse(time.split(':')[1]));
+                    final sel = await showTimePicker(context: context, initialTime: cur);
+                    if (sel != null && mounted) {
+                      final newTime = '${sel.hour.toString().padLeft(2, '0')}:${sel.minute.toString().padLeft(2, '0')}';
+                      _updateSpotTimeAndRipple(spot, newTime, duration);
+                    }
+                  },
+                  child: Text(time, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: primary)),
+                ),
+                const SizedBox(height: 6),
+                Container(width: 2, height: 52, color: primary.withValues(alpha: 0.15)),
+              ]),
+            ),
+            Expanded(
+              child: StitchedBox(
+                color: Colors.white, stitchColor: primary.withValues(alpha: 0.25),
+                radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                child: Row(children: [
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(spot, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
+                  ])),
+                  IconButton(icon: const Icon(Icons.more_vert_rounded, color: AppColors.textHint, size: 20), onPressed: () => _showSpotOptions(spot)),
+                ]),
+              ),
+            ),
+          ],
+        ),
+        // ── 交通連結標籤（兩景點之間） ────────────────────
+        if (hasNext) _buildTransportConnector(spot, nextSpot, primary, time, duration, tMode, tNote),
+        if (!hasNext) const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// 景點間的交通連結小標籤
+  Widget _buildTransportConnector(String from, String to, Color primary, String time, String duration, String tMode, String tNote) {
+    IconData icon;
+    String label;
+    
+    if (tMode.isNotEmpty || tNote.isNotEmpty) {
+      icon = _getTransportIcon(tMode);
+      label = tNote.isNotEmpty ? tNote : _getTransportLabel(tMode);
+    } else {
+      // 🌟 自動距離估算與待選填備案
+      double dist = 0;
+      bool foundCoord = false;
+      
+      if (SpotService.cached.isNotEmpty) {
+        try { 
+           final sa = _lookupSpot(from);
+           final sb = _lookupSpot(to);
+           if (sa != null && sb != null) {
+              dist = _haversineKm(sa.lat, sa.lng, sb.lat, sb.lng);
+              foundCoord = true;
+           }
+        } catch (_) {}
+      }
+
+      if (!foundCoord) {
+        icon = Icons.help_outline_rounded;
+        label = '交通方式待選填 (點此設定)';
+      } else if (dist < 0.5) {
+        icon = Icons.directions_walk_rounded;
+        label = dist < 0.05 ? '步行前往' : '步行約 ${(dist * 1000).round()} 公尺';
+      } else if (dist < 3.5) {
+        icon = Icons.directions_bike_rounded;
+        label = '騎車約 ${dist.toStringAsFixed(1)} 公里';
+      } else {
+        icon = Icons.directions_car_rounded;
+        label = '車程約 ${dist.toStringAsFixed(1)} 公里';
+      }
+    }
 
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           width: 50,
           child: Column(children: [
-            GestureDetector(
-              onTap: () async {
-                final cur = time == '--:--' ? TimeOfDay.now() : TimeOfDay(hour: int.parse(time.split(':')[0]), minute: int.parse(time.split(':')[1]));
-                final sel = await showTimePicker(context: context, initialTime: cur);
-                if (sel != null && mounted) {
-                  final newTime = '${sel.hour.toString().padLeft(2, '0')}:${sel.minute.toString().padLeft(2, '0')}';
-                  // 🌟 改呼叫智慧排序與推算
-                  _updateSpotTimeAndRipple(spot, newTime, duration); 
-                }
-              },
-              child: Text(time, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: primary)),
-            ),
-            const SizedBox(height: 4),
-            Container(width: 2, height: 50, color: primary.withValues(alpha: 0.15)),
+            Container(width: 2, height: 10, color: primary.withValues(alpha: 0.15)),
+            Icon(icon, size: 13, color: primary.withValues(alpha: 0.55)),
+            Container(width: 2, height: 10, color: primary.withValues(alpha: 0.15)),
           ]),
         ),
-        Expanded(
-          child: StitchedBox(
-            color: Colors.white, stitchColor: primary.withValues(alpha: 0.25),
-            radius: 16, inset: 4, dashWidth: 4, dashGap: 3.5,
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(spot, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.textPrimary)),
-              ])),
-              IconButton(icon: const Icon(Icons.more_vert_rounded, color: AppColors.textHint, size: 20), onPressed: () => _showSpotOptions(spot)),
-            ]),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: () => _showTransportEditSheet(from, time, duration, tMode, tNote),
+          child: Container(
+            margin: const EdgeInsets.symmetric(vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: primary.withValues(alpha: 0.07),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: primary.withValues(alpha: 0.18)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: primary.withValues(alpha: 0.75)), overflow: TextOverflow.ellipsis, maxLines: 1)),
+                const SizedBox(width: 4),
+                Icon(Icons.edit_rounded, size: 10, color: primary.withValues(alpha: 0.5)),
+              ],
+            ),
           ),
         ),
       ],
+    );
+  }
+
+  IconData _getTransportIcon(String mode) {
+    switch (mode) {
+      case 'walk': return Icons.directions_walk_rounded;
+      case 'bike': return Icons.directions_bike_rounded;
+      case 'bus': return Icons.directions_bus_rounded;
+      case 'train': return Icons.train_rounded;
+      case 'hsr': return Icons.speed_rounded;
+      case 'car': return Icons.directions_car_rounded;
+      case 'taxi': return Icons.local_taxi_rounded;
+      default: return Icons.directions_car_rounded;
+    }
+  }
+
+  String _getTransportLabel(String mode) {
+    switch (mode) {
+      case 'walk': return '步行';
+      case 'bike': return '腳踏車';
+      case 'bus': return '公車';
+      case 'train': return '火車';
+      case 'hsr': return '高鐵';
+      case 'car': return '自駕';
+      case 'taxi': return '計程車';
+      default: return '交通方式';
+    }
+  }
+
+  void _showTransportEditSheet(String spot, String time, String duration, String currentMode, String currentNote) {
+    String selectedMode = currentMode.isEmpty ? 'car' : currentMode;
+    final noteCtrl = TextEditingController(text: currentNote);
+    final primary = Theme.of(context).colorScheme.primary;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(child: Container(width: 36, height: 4, decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 16),
+                  const Text('編輯前往下一站的交通', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8, runSpacing: 8,
+                    children: ['walk', 'bike', 'bus', 'train', 'car', 'taxi'].map((m) {
+                      final isSel = selectedMode == m;
+                      return ChoiceChip(
+                        label: Text(_getTransportLabel(m)),
+                        avatar: Icon(_getTransportIcon(m), size: 16, color: isSel ? Colors.white : primary),
+                        selected: isSel,
+                        selectedColor: primary,
+                        backgroundColor: AppColors.surfaceMoss,
+                        labelStyle: TextStyle(color: isSel ? Colors.white : AppColors.textSecondary, fontWeight: FontWeight.w600),
+                        onSelected: (v) => setModalState(() => selectedMode = m),
+                        showCheckmark: false,
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: noteCtrl,
+                    decoration: InputDecoration(
+                      labelText: '交通備註 (如：搭乘 7322 號公車)',
+                      prefixIcon: const Icon(Icons.edit_note_rounded, size: 18),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(child: OutlinedButton(
+                        onPressed: () {
+                          TripService.setSpotTime(_trip.id, spot, '$time|$duration||');
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('恢復自動估算'),
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(child: ElevatedButton(
+                        onPressed: () {
+                          TripService.setSpotTime(_trip.id, spot, '$time|$duration|$selectedMode|${noteCtrl.text.trim()}');
+                          Navigator.pop(ctx);
+                        },
+                        style: ElevatedButton.styleFrom(backgroundColor: primary),
+                        child: const Text('儲存', style: TextStyle(color: Colors.white)),
+                      )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      ),
     );
   }
 
@@ -3043,15 +3456,20 @@ class _TripDetailPageState extends State<_TripDetailPage>
   }
 
   // 🌟 核心功能 1：當設定特定時間/長度時，重新依時間排序，並產生漣漪推算
+  // 🌟 核心功能 1：當設定特定時間/長度時，重新依時間排序，並產生漣漪推算
   Future<void> _updateSpotTimeAndRipple(String targetSpot, String newTime, String duration) async {
     Map<String, String> times = Map.from(_trip.spotTimes);
-    times[targetSpot] = '$newTime|$duration';
+    // 🌟 保護原有的交通資料不被洗掉
+    String oldRaw = times[targetSpot] ?? '';
+    final parts = oldRaw.split('|');
+    String tMode = parts.length > 2 ? parts[2] : '';
+    String tNote = parts.length > 3 ? parts[3] : '';
+    times[targetSpot] = '$newTime|$duration|$tMode|$tNote';
 
     List<String> currentSpots = _getNormalizedSpots();
     List<String> newSpots = [];
     List<String> tempDaySpots = [];
     
-    // 1. 將同一天的景點獨立出來，根據設定的時間排序
     for (int i = 0; i < currentSpots.length; i++) {
       final s = currentSpots[i];
       if (s.startsWith('__DAY_')) {
@@ -3082,7 +3500,6 @@ class _TripDetailPageState extends State<_TripDetailPage>
       newSpots.addAll(tempDaySpots);
     }
 
-    // 2. 執行漣漪推算 (Ripple Effect)
     _rippleTimesBasedOnOrder(newSpots, timesToUse: times);
   }
 
@@ -3097,14 +3514,18 @@ class _TripDetailPageState extends State<_TripDetailPage>
         continue;
       }
       String raw = times[s] ?? '';
-      String tStr = raw.contains('|') ? raw.split('|').first : (raw.isNotEmpty ? raw : '--:--');
-      int dur = raw.contains('|') ? int.tryParse(raw.split('|').last) ?? 60 : 60;
+      final parts = raw.split('|');
+      String tStr = parts.isNotEmpty && parts[0].isNotEmpty ? parts[0] : '--:--';
+      int dur = parts.length > 1 && parts[1].isNotEmpty ? int.tryParse(parts[1]) ?? 60 : 60;
+      // 🌟 保護原有的交通資料不被洗掉
+      String tMode = parts.length > 2 ? parts[2] : '';
+      String tNote = parts.length > 3 ? parts[3] : '';
 
       if (calcTime != null) {
         if (tStr == '--:--' || tStr.isEmpty) {
           // 沒有手動設定時間 → 用漣漪推算填入
           tStr = '${calcTime.hour.toString().padLeft(2, '0')}:${calcTime.minute.toString().padLeft(2, '0')}';
-          times[s] = '$tStr|$dur';
+          times[s] = '$tStr|$dur|$tMode|$tNote';
           calcTime = calcTime.add(Duration(minutes: dur));
         } else {
           // 有手動設定時間 → 保留使用者設定，以此為新基準往後推
@@ -4683,7 +5104,7 @@ class _TripReportPageState extends State<_TripReportPage> {
                     child: Row(children: [
                       _statSticker(Icons.calendar_today_rounded, '${trip.days}', '天', const Color(0xFFCB9E5A)),
                       const SizedBox(width: 10),
-                      _statSticker(Icons.place_rounded, '${trip.spots.length}', '景點', const Color(0xFF8AAEC4)),
+                      _statSticker(Icons.place_rounded, '${trip.spots.where((s) => !s.startsWith('__DAY_')).length}', '景點', const Color(0xFF8AAEC4)),
                       const SizedBox(width: 10),
                       _statSticker(
                         trip.isCompleted ? Icons.check_circle_rounded : Icons.pending_rounded,

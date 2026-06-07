@@ -623,6 +623,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   int _tripCount  = 0;
   int _savedCount = 0;
   int _stampCount = 0;
+  String? _nickname; // 本地暫存，修改後立刻反映
   // 頭貼上傳狀態
   File? _localPhoto;
   bool _uploading = false;
@@ -631,6 +632,21 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   void initState() {
     super.initState();
     _loadCounts();
+    _loadNickname();
+  }
+
+  Future<void> _loadNickname() async {
+    // 優先從 Firestore 讀取 nickname，確保最新
+    final uid = widget.user.uid;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final n = doc.data()?['nickname'] as String?;
+      if (mounted && n != null && n.isNotEmpty) setState(() => _nickname = n);
+    } catch (_) {}
+    // 若 Firestore 沒有，fallback 到 Auth displayName
+    if (_nickname == null && mounted) {
+      setState(() => _nickname = widget.user.displayName);
+    }
   }
 
   Future<void> _showEditNameDialog(BuildContext context, Color primary, String currentName) async {
@@ -662,7 +678,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
         if (uid != null) {
           await FirebaseFirestore.instance.collection('users').doc(uid).update({'nickname': newName});
         }
-        if (mounted) setState(() {});
+        if (mounted) setState(() => _nickname = newName); // 立刻更新畫面
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.profileNameUpdated), behavior: SnackBarBehavior.floating));
       } catch (e) {
@@ -750,7 +766,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     final user    = widget.user;
-    final name    = user.displayName ?? '旅行家';
+    final name    = _nickname ?? user.displayName ?? '旅行家';
     final photo   = user.photoURL;
 
     return Scaffold(

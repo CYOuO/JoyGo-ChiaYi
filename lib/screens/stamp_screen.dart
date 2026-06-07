@@ -43,6 +43,9 @@ class _StampScreenState extends State<StampScreen>
   String _lastCheckinDate = '';
   static const _kStreakKey = 'stamp_streak_v1';
   static const _kLastDateKey = 'stamp_last_date_v1';
+  // 總打卡天數（所有有打卡的不重複日期）
+  Set<String> _allCheckinDates = {};
+  static const _kAllDatesKey = 'stamp_all_dates_v1';
 
   // GPS auto check-in
   StreamSubscription<Position>? _posStream;
@@ -101,6 +104,8 @@ class _StampScreenState extends State<StampScreen>
     }
     _streak = prefs.getInt(_kStreakKey) ?? 0;
     _lastCheckinDate = prefs.getString(_kLastDateKey) ?? '';
+    final allDatesRaw = prefs.getStringList(_kAllDatesKey) ?? [];
+    _allCheckinDates = allDatesRaw.toSet();
     if (mounted) setState(() {});
   }
 
@@ -109,6 +114,7 @@ class _StampScreenState extends State<StampScreen>
     await prefs.setString(_kVisitedKey, jsonEncode(_visitedSpots));
     await prefs.setInt(_kStreakKey, _streak);
     await prefs.setString(_kLastDateKey, _lastCheckinDate);
+    await prefs.setStringList(_kAllDatesKey, _allCheckinDates.toList());
     _syncLeaderboard();
   }
 
@@ -116,6 +122,7 @@ class _StampScreenState extends State<StampScreen>
     final now = DateTime.now();
     final today = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     if (_lastCheckinDate == today) return;
+    _allCheckinDates.add(today); // 記錄這天有打卡
     final yesterday = now.subtract(const Duration(days: 1));
     final yStr = '${yesterday.year}-${yesterday.month.toString().padLeft(2, '0')}-${yesterday.day.toString().padLeft(2, '0')}';
     if (_lastCheckinDate == yStr) {
@@ -224,6 +231,8 @@ class _StampScreenState extends State<StampScreen>
           labelColor: primary,
           unselectedLabelColor: AppColors.textHint,
           indicatorColor: primary,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
           tabs: const [
             Tab(text: '景點印章'),
             Tab(text: '打卡照片'),
@@ -467,9 +476,10 @@ class _StampScreenState extends State<StampScreen>
                         minHeight: 8,
                       ),
                     ),
-                    if (_streak > 0) ...[
-                      const SizedBox(height: 12),
-                      Container(
+                    const SizedBox(height: 12),
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      // 連續打卡
+                      if (_streak > 0) Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
@@ -479,11 +489,26 @@ class _StampScreenState extends State<StampScreen>
                           Icon(_streak >= 7 ? Icons.local_fire_department_rounded : Icons.trending_up_rounded,
                               size: 16, color: Colors.white),
                           const SizedBox(width: 6),
-                          Text('連續打卡 $_streak 天${_streak >= 30 ? ' — 傳說級！' : _streak >= 14 ? ' — 超級！' : _streak >= 7 ? ' — 厲害！' : _streak >= 3 ? ' — 加油！' : ''}',
+                          Text('連續 $_streak 天${_streak >= 30 ? ' 傳說！' : _streak >= 7 ? ' 厲害！' : ''}',
                             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
                         ]),
                       ),
-                    ],
+                      if (_streak > 0 && _allCheckinDates.isNotEmpty) const SizedBox(width: 8),
+                      // 累計打卡天數
+                      if (_allCheckinDates.isNotEmpty) Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.calendar_today_rounded, size: 14, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text('累計 ${_allCheckinDates.length} 天打卡',
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ]),
                   ],
                 ),
               ),
@@ -714,54 +739,197 @@ class _StampScreenState extends State<StampScreen>
 
   Widget _buildAchievementTab() {
     final achievements = _computeAchievements();
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        // Achievement stats
-        Row(
-          children: [
-            _achieveStat('已解鎖', '${achievements.where((a) => a.isUnlocked).length}', const Color(0xFFC09848)),
-            const SizedBox(width: 12),
-            _achieveStat('進行中', '${achievements.where((a) => !a.isUnlocked).length}', const Color(0xFF8878B0)),
-            const SizedBox(width: 12),
-            _achieveStat('總成就', '${achievements.length}', const Color(0xFF6A9888)),
-          ],
-        ),
-        const SizedBox(height: 20),
-        // Achievement list
-        ...achievements.map((achievement) => _buildAchievementCard(achievement)),
-      ],
+    final unlocked = achievements.where((a) => a.isUnlocked).length;
+    final primary = Theme.of(context).colorScheme.primary;
+
+    return NotebookBackground(
+      lineColor: primary.withValues(alpha: 0.07),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+        children: [
+          // ── 手帳風標題頁首 ──────────────────────────────
+          JournalPageHeader(
+            title: '成就徽章 — 探索嘉義的旅行紀錄',
+            color: primary,
+          ),
+          const SizedBox(height: 12),
+
+          // ── 三格統計（紙條貼紙風格）──────────────────────
+          Row(children: [
+            _achieveStatJournal('$unlocked', '已解鎖', const Color(0xFFC09848), Icons.star_rounded),
+            const SizedBox(width: 10),
+            _achieveStatJournal('${achievements.length - unlocked}', '進行中', const Color(0xFF8878B0), Icons.hourglass_top_rounded),
+            const SizedBox(width: 10),
+            _achieveStatJournal('${achievements.length}', '全部', const Color(0xFF6A9888), Icons.emoji_events_rounded),
+          ]),
+          const SizedBox(height: 8),
+
+          JournalDivider(color: primary.withValues(alpha: 0.25)),
+          const SizedBox(height: 12),
+
+          // ── 成就清單 ────────────────────────────────────
+          ...achievements.map((a) => _buildAchievementCardJournal(a)),
+        ],
+      ),
     );
   }
 
-  Widget _achieveStat(String label, String value, Color color) {
+  Widget _achieveStatJournal(String value, String label, Color color, IconData icon) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: color,
+      child: StitchedBox(
+        color: color.withValues(alpha: 0.08),
+        stitchColor: color.withValues(alpha: 0.30),
+        radius: 14, inset: 4, dashWidth: 4, dashGap: 3,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Column(children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(height: 4),
+          Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: color)),
+          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildAchievementCardJournal(Achievement achievement) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final iconColor = achievement.isUnlocked
+        ? _achievementIconColor(achievement)
+        : AppColors.textHint.withValues(alpha: 0.5);
+
+    Color rarityColor;
+    String rarityLabel;
+    String raritySticker;
+    switch (achievement.rarity) {
+      case 'gold':
+        rarityColor = const Color(0xFFC09848); rarityLabel = '黃金'; raritySticker = '✦';
+        break;
+      case 'silver':
+        rarityColor = const Color(0xFF8878B0); rarityLabel = '白銀'; raritySticker = '◈';
+        break;
+      case 'special':
+        rarityColor = const Color(0xFFB86878); rarityLabel = '特別'; raritySticker = '★';
+        break;
+      default:
+        rarityColor = const Color(0xFFAA7860); rarityLabel = '青銅'; raritySticker = '◆';
+    }
+
+    return SlideUpFadeIn(
+      child: StitchedBox(
+        color: achievement.isUnlocked
+            ? iconColor.withValues(alpha: 0.06)
+            : AppColors.surface,
+        stitchColor: achievement.isUnlocked
+            ? iconColor.withValues(alpha: 0.35)
+            : AppColors.textHint.withValues(alpha: 0.15),
+        radius: 16, inset: 5, dashWidth: 5, dashGap: 3,
+        padding: const EdgeInsets.all(14),
+        child: Stack(children: [
+          // 右上角稀有度貼紙
+          Positioned(
+            top: 0, right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: rarityColor.withValues(alpha: achievement.isUnlocked ? 0.18 : 0.08),
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(10),
+                  bottomLeft: Radius.circular(10),
+                ),
+              ),
+              child: Text(
+                '$raritySticker $rarityLabel',
+                style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w800,
+                  color: achievement.isUnlocked ? rarityColor : AppColors.textHint,
+                ),
               ),
             ),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
+          ),
+
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // 圖示印章
+            DoodleCircle(
+              color: achievement.isUnlocked
+                  ? iconColor.withValues(alpha: 0.15)
+                  : AppColors.surfaceMoss,
+              size: 56,
+              child: achievement.isUnlocked
+                  ? Text(achievement.icon, style: const TextStyle(fontSize: 26))
+                  : Stack(alignment: Alignment.center, children: [
+                      Text(achievement.icon,
+                          style: TextStyle(fontSize: 22,
+                              color: Colors.black.withValues(alpha: 0.08))),
+                      const Icon(Icons.lock_rounded, size: 20, color: AppColors.textHint),
+                    ]),
+            ),
+            const SizedBox(width: 12),
+
+            // 文字區
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2, right: 48),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    achievement.title,
+                    style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w800,
+                      color: achievement.isUnlocked ? AppColors.textPrimary : AppColors.textHint,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    achievement.description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: achievement.isUnlocked
+                          ? AppColors.textSecondary
+                          : AppColors.textHint.withValues(alpha: 0.7),
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 進度條（手繪感）
+                  Stack(children: [
+                    Container(
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceMoss,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: (achievement.progress / achievement.total).clamp(0.0, 1.0),
+                      child: Container(
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: achievement.isUnlocked ? rarityColor : primary.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 5),
+
+                  Row(children: [
+                    Text(
+                      achievement.isUnlocked ? '✓ 已解鎖！' : '${achievement.progress} / ${achievement.total}',
+                      style: TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700,
+                        color: achievement.isUnlocked ? rarityColor : AppColors.textHint,
+                      ),
+                    ),
+                    if (achievement.isUnlocked) ...[
+                      const SizedBox(width: 6),
+                      DoodleHeart(color: rarityColor.withValues(alpha: 0.7), size: 14),
+                    ],
+                  ]),
+                ]),
               ),
             ),
-          ],
-        ),
+          ]),
+        ]),
       ),
     );
   }
@@ -779,158 +947,6 @@ class _StampScreenState extends State<StampScreen>
       case Icons.lunch_dining_rounded:   return const Color(0xFFD4784A);
       default:                           return const Color(0xFF8A9CC5);
     }
-  }
-
-  Widget _buildAchievementCard(Achievement achievement) {
-    final iconColor = achievement.isUnlocked
-        ? _achievementIconColor(achievement)
-        : AppColors.textHint;
-    Color rarityColor;
-    String rarityLabel;
-
-    switch (achievement.rarity) {
-      case 'gold':
-        rarityColor = const Color(0xFFC09848);  // 沉穩焦糖金
-        rarityLabel = '黃金';
-        break;
-      case 'silver':
-        rarityColor = const Color(0xFF8878B0);  // 煙燻薰衣草
-        rarityLabel = '白銀';
-        break;
-      case 'special':
-        rarityColor = const Color(0xFFB86878);  // 玫瑰深粉
-        rarityLabel = '特別';
-        break;
-      default:
-        rarityColor = const Color(0xFFAA7860);  // 赤陶棕
-        rarityLabel = '青銅';
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: achievement.isUnlocked
-              ? iconColor.withOpacity(0.35)
-              : AppColors.surfaceMoss,
-          width: achievement.isUnlocked ? 1.5 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: achievement.isUnlocked
-                ? iconColor.withOpacity(0.12)
-                : AppColors.cardShadow,
-            blurRadius: 8,
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: achievement.isUnlocked
-                  ? iconColor.withOpacity(0.12)
-                  : AppColors.surfaceMoss,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: achievement.isUnlocked ? iconColor.withOpacity(0.6) : AppColors.textHint.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: Center(
-              child: achievement.isUnlocked
-                  ? Icon(achievement.iconData, size: 26, color: iconColor)
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Icon(achievement.iconData, size: 26, color: Colors.black.withOpacity(0.12)),
-                        const Icon(Icons.lock_rounded,
-                            color: AppColors.textHint, size: 20),
-                      ],
-                    ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        achievement.title,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 15,
-                          color: achievement.isUnlocked
-                              ? AppColors.textPrimary
-                              : AppColors.textHint,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: rarityColor.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        rarityLabel,
-                        style: TextStyle(
-                          color: rarityColor,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  achievement.description,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                // Progress bar
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: achievement.progress / achievement.total,
-                    backgroundColor: AppColors.surfaceMoss,
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                      achievement.isUnlocked ? rarityColor : Theme.of(context).colorScheme.primary,
-                    ),
-                    minHeight: 6,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  achievement.isUnlocked
-                      ? '已完成！'
-                      : '${achievement.progress} / ${achievement.total}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: achievement.isUnlocked ? rarityColor : AppColors.textHint,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   void _showStampDetail(BuildContext context, Spot spot, int visitCount) {
@@ -1188,6 +1204,23 @@ class _StampScreenState extends State<StampScreen>
                           userAgentPackageName:
                               'com.chiayicity.explore_chiayi',
                           maxZoom: 19,
+                        ),
+                        // 打卡景點半透明光暈圈（讓地圖有顏色感）
+                        CircleLayer(
+                          circles: spots
+                              .where((s) => (_visitedSpots[s.id] ?? 0) > 0)
+                              .map((spot) {
+                            final count = _visitedSpots[spot.id] ?? 0;
+                            final color = _getStampColor(count);
+                            return CircleMarker(
+                              point: LatLng(spot.lat, spot.lng),
+                              radius: count >= 5 ? 320 : count >= 3 ? 260 : 200,
+                              useRadiusInMeter: true,
+                              color: color.withValues(alpha: 0.18),
+                              borderColor: color.withValues(alpha: 0.40),
+                              borderStrokeWidth: 1.5,
+                            );
+                          }).toList(),
                         ),
                         // 景點 Markers
                         MarkerLayer(

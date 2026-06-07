@@ -332,7 +332,7 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
             const SizedBox(width: 8),
             _statTile(p, Icons.map_rounded, '$_trips', context.read<AppSettingsProvider>().l10n.profileTripStat),
             const SizedBox(width: 8),
-            _statTile(p, Icons.bookmark_rounded, '$_saved', context.read<AppSettingsProvider>().l10n.profileSavedCount),
+            _statTile(p, Icons.bookmark_rounded, '$_saved', '收藏貼文'),
           ]),
         const SizedBox(height: 16),
         // 激勵文字

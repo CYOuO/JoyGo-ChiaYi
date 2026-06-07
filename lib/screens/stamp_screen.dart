@@ -59,11 +59,12 @@ class _StampScreenState extends State<StampScreen>
   Offset _cameraFabOffset = const Offset(16, 16);
 
   static const _kCheckinRadius = 100.0;
-  static const _kCheckinCooldown = Duration(minutes: 5);
+  static const _kCheckinCooldown = Duration(hours: 1); // 同一景點 1 小時內不重複打卡
 
+  // 涵蓋嘉義縣市 + 鄰近雲林、台南部分區域
   static final _chiayiBounds = LatLngBounds(
-    const LatLng(23.25, 120.10),
-    const LatLng(23.75, 121.00),
+    const LatLng(22.85, 120.05), // 南至台南北邊
+    const LatLng(23.90, 121.10), // 北至雲林南邊 + 阿里山區
   );
 
   @override
@@ -1186,8 +1187,8 @@ class _StampScreenState extends State<StampScreen>
                       mapController: _miniMapCtrl,
                       options: MapOptions(
                         initialCenter: center,
-                        initialZoom: 12.5,
-                        minZoom: 10.0,
+                        initialZoom: 11.0,
+                        minZoom: 9.0,
                         maxZoom: 18.0,
                         cameraConstraint: CameraConstraint.containCenter(
                           bounds: _chiayiBounds,

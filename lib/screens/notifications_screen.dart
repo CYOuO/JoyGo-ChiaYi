@@ -153,6 +153,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         type: data['type'] as String? ?? 'event',
                         time: _formatTime(data['createdAt']),
                         isRead: isReadFb || _readIds.contains(d.id),
+                        fromUid: data['fromUid'] as String?,
                       );
                     })
                     .toList();
@@ -200,6 +201,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
+  void _handleNotifTap(_NotifItem n, BuildContext ctx) {
+    // 根據通知類型跳轉到對應頁面
+    switch (n.type) {
+      case 'follow':
+        // 跳轉到對方的社群貼文頁（用 fromUid 篩選）
+        if (n.fromUid != null && n.fromUid!.isNotEmpty) {
+          _showUserProfile(ctx, n.fromUid!);
+        }
+        break;
+      // 未來可擴充：like → 貼文頁, achievement → 成就頁 等
+      default:
+        break;
+    }
+  }
+
+  void _showUserProfile(BuildContext ctx, String uid) async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!mounted) return;
+      final data = doc.data() ?? {};
+      final name = data['nickname'] ?? data['displayName'] ?? '使用者';
+      final photo = data['photoURL'] ?? data['photoUrl'] ?? '';
+      if (!ctx.mounted) return;
+      showDialog(
+        context: ctx,
+        builder: (_) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          contentPadding: const EdgeInsets.all(24),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            CircleAvatar(
+              radius: 36,
+              backgroundImage: photo.isNotEmpty ? NetworkImage(photo) : null,
+              child: photo.isEmpty ? const Icon(Icons.person_rounded, size: 36) : null,
+            ),
+            const SizedBox(height: 12),
+            Text(name.toString(),
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text('追蹤了你', style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
+          ]),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('關閉'),
+            ),
+          ],
+        ),
+      );
+    } catch (_) {}
+  }
+
   Widget _buildNotifTile(_NotifItem n, Color primary, BuildContext ctx) {
     final color = _typeColor[n.type] ?? AppColors.textHint;
     return Dismissible(
@@ -213,7 +265,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
       onDismissed: (_) => _dismiss(n.id),
       child: InkWell(
-        onTap: () => _markRead(n.id),
+        onTap: () {
+          _markRead(n.id);
+          _handleNotifTap(n, ctx);
+        },
         child: Container(
           color: n.isRead
               ? Colors.transparent
@@ -293,8 +348,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 class _NotifItem {
   final String id, title, body, type, time;
   final bool isRead;
+  final String? fromUid; // 觸發通知的使用者 uid（follow/like 等）
   const _NotifItem({
     required this.id, required this.title, required this.body,
     required this.type, required this.time, required this.isRead,
+    this.fromUid,
   });
 }

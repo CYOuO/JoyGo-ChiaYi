@@ -406,7 +406,7 @@ class CommunityService {
         try {
           await targetRef.collection('notifications').add({
             'title': '$myName 開始追蹤你',
-            'body':  '點擊查看 $myName 的個人頁面',
+            'body':  '點擊通知可查看對方資訊',
             'type':  'follow',
             'isRead': false,
             'fromUid': uid,

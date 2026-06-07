@@ -217,10 +217,17 @@ class _StampScreenState extends State<StampScreen>
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.surface,
-        title: const Text(
-          '集章成就',
-          style: TextStyle(fontWeight: FontWeight.w800),
-        ),
+        title: Builder(builder: (bCtx) {
+          final p = Theme.of(bCtx).colorScheme.primary;
+          return Row(mainAxisSize: MainAxisSize.min, children: [
+            DoodleCircle(color: p.withValues(alpha: 0.18), size: 18,
+              child: Icon(Icons.star_rounded, size: 11, color: p)),
+            const SizedBox(width: 6),
+            const Text('集章成就', style: TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(width: 6),
+            DoodleHeart(color: p.withValues(alpha: 0.55), size: 10),
+          ]);
+        }),
         actions: [
           IconButton(
             icon: const Icon(Icons.info_outline_rounded, color: AppColors.textSecondary),
@@ -803,134 +810,29 @@ class _StampScreenState extends State<StampScreen>
     String raritySticker;
     switch (achievement.rarity) {
       case 'gold':
-        rarityColor = const Color(0xFFC09848); rarityLabel = '黃金'; raritySticker = '✦';
+        rarityColor = const Color(0xFFC09848); rarityLabel = '珍稀'; raritySticker = '✦';
         break;
       case 'silver':
-        rarityColor = const Color(0xFF8878B0); rarityLabel = '白銀'; raritySticker = '◈';
+        rarityColor = const Color(0xFF8878B0); rarityLabel = '稀有'; raritySticker = '◈';
         break;
       case 'special':
-        rarityColor = const Color(0xFFB86878); rarityLabel = '特別'; raritySticker = '★';
+        rarityColor = const Color(0xFFB86878); rarityLabel = '限定'; raritySticker = '★';
         break;
       default:
-        rarityColor = const Color(0xFFAA7860); rarityLabel = '青銅'; raritySticker = '◆';
+        rarityColor = const Color(0xFFAA7860); rarityLabel = '收藏'; raritySticker = '◆';
     }
 
-    return SlideUpFadeIn(
-      child: StitchedBox(
-        color: achievement.isUnlocked
-            ? iconColor.withValues(alpha: 0.06)
-            : AppColors.surface,
-        stitchColor: achievement.isUnlocked
-            ? iconColor.withValues(alpha: 0.35)
-            : AppColors.textHint.withValues(alpha: 0.15),
-        radius: 16, inset: 5, dashWidth: 5, dashGap: 3,
-        padding: const EdgeInsets.all(14),
-        child: Stack(children: [
-          // 右上角稀有度貼紙
-          Positioned(
-            top: 0, right: 0,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: rarityColor.withValues(alpha: achievement.isUnlocked ? 0.18 : 0.08),
-                borderRadius: const BorderRadius.only(
-                  topRight: Radius.circular(10),
-                  bottomLeft: Radius.circular(10),
-                ),
-              ),
-              child: Text(
-                '$raritySticker $rarityLabel',
-                style: TextStyle(
-                  fontSize: 10, fontWeight: FontWeight.w800,
-                  color: achievement.isUnlocked ? rarityColor : AppColors.textHint,
-                ),
-              ),
-            ),
-          ),
-
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // 圖示印章
-            DoodleCircle(
-              color: achievement.isUnlocked
-                  ? iconColor.withValues(alpha: 0.15)
-                  : AppColors.surfaceMoss,
-              size: 56,
-              child: achievement.isUnlocked
-                  ? Text(achievement.icon, style: const TextStyle(fontSize: 26))
-                  : Stack(alignment: Alignment.center, children: [
-                      Text(achievement.icon,
-                          style: TextStyle(fontSize: 22,
-                              color: Colors.black.withValues(alpha: 0.08))),
-                      const Icon(Icons.lock_rounded, size: 20, color: AppColors.textHint),
-                    ]),
-            ),
-            const SizedBox(width: 12),
-
-            // 文字區
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 2, right: 48),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    achievement.title,
-                    style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800,
-                      color: achievement.isUnlocked ? AppColors.textPrimary : AppColors.textHint,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    achievement.description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: achievement.isUnlocked
-                          ? AppColors.textSecondary
-                          : AppColors.textHint.withValues(alpha: 0.7),
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // 進度條（手繪感）
-                  Stack(children: [
-                    Container(
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceMoss,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: (achievement.progress / achievement.total).clamp(0.0, 1.0),
-                      child: Container(
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: achievement.isUnlocked ? rarityColor : primary.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                  ]),
-                  const SizedBox(height: 5),
-
-                  Row(children: [
-                    Text(
-                      achievement.isUnlocked ? '✓ 已解鎖！' : '${achievement.progress} / ${achievement.total}',
-                      style: TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w700,
-                        color: achievement.isUnlocked ? rarityColor : AppColors.textHint,
-                      ),
-                    ),
-                    if (achievement.isUnlocked) ...[
-                      const SizedBox(width: 6),
-                      DoodleHeart(color: rarityColor.withValues(alpha: 0.7), size: 14),
-                    ],
-                  ]),
-                ]),
-              ),
-            ),
-          ]),
-        ]),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: SlideUpFadeIn(
+        child: _AchievementCardAnimated(
+          achievement: achievement,
+          rarityColor: rarityColor,
+          rarityLabel: rarityLabel,
+          raritySticker: raritySticker,
+          iconColor: iconColor,
+          primary: primary,
+        ),
       ),
     );
   }
@@ -1206,7 +1108,7 @@ class _StampScreenState extends State<StampScreen>
                               'com.chiayicity.explore_chiayi',
                           maxZoom: 19,
                         ),
-                        // 打卡景點半透明光暈圈（讓地圖有顏色感）
+                        // 打卡景點輕柔光暈圈（低透明度，不遮蓋地圖）
                         CircleLayer(
                           circles: spots
                               .where((s) => (_visitedSpots[s.id] ?? 0) > 0)
@@ -1215,11 +1117,11 @@ class _StampScreenState extends State<StampScreen>
                             final color = _getStampColor(count);
                             return CircleMarker(
                               point: LatLng(spot.lat, spot.lng),
-                              radius: count >= 5 ? 320 : count >= 3 ? 260 : 200,
+                              radius: count >= 5 ? 180 : count >= 3 ? 140 : 100,
                               useRadiusInMeter: true,
-                              color: color.withValues(alpha: 0.18),
-                              borderColor: color.withValues(alpha: 0.40),
-                              borderStrokeWidth: 1.5,
+                              color: color.withValues(alpha: 0.10),
+                              borderColor: color.withValues(alpha: 0.28),
+                              borderStrokeWidth: 1.0,
                             );
                           }).toList(),
                         ),
@@ -1414,6 +1316,235 @@ class _StampScreenState extends State<StampScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── 成就卡片（帶動畫）──────────────────────────────────────
+class _AchievementCardAnimated extends StatefulWidget {
+  final Achievement achievement;
+  final Color rarityColor;
+  final String rarityLabel;
+  final String raritySticker;
+  final Color iconColor;
+  final Color primary;
+
+  const _AchievementCardAnimated({
+    required this.achievement,
+    required this.rarityColor,
+    required this.rarityLabel,
+    required this.raritySticker,
+    required this.iconColor,
+    required this.primary,
+  });
+
+  @override
+  State<_AchievementCardAnimated> createState() => _AchievementCardAnimatedState();
+}
+
+class _AchievementCardAnimatedState extends State<_AchievementCardAnimated>
+    with TickerProviderStateMixin {
+  late final AnimationController _iconCtrl;
+  late final AnimationController _barCtrl;
+  late final AnimationController _pulseCtrl;
+  late final Animation<double> _iconScale;
+  late final Animation<double> _barFill;
+  late final Animation<double> _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    // Icon bounce
+    _iconCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _iconScale = TweenSequence([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.18).chain(CurveTween(curve: Curves.easeOut)), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.18, end: 0.92).chain(CurveTween(curve: Curves.easeInOut)), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.92, end: 1.0).chain(CurveTween(curve: Curves.elasticOut)), weight: 30),
+    ]).animate(_iconCtrl);
+
+    // Animated progress bar fill
+    _barCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
+    _barFill = Tween<double>(
+      begin: 0,
+      end: (widget.achievement.progress / widget.achievement.total).clamp(0.0, 1.0),
+    ).animate(CurvedAnimation(parent: _barCtrl, curve: Curves.easeOutCubic));
+
+    // Pulse for rarity sticker on unlocked
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat(reverse: true);
+    _pulse = Tween<double>(begin: 0.85, end: 1.0).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+
+    // Delay by stagger based on achievement index
+    Future.delayed(const Duration(milliseconds: 120), () {
+      if (mounted) {
+        _barCtrl.forward();
+        if (widget.achievement.isUnlocked) _iconCtrl.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _iconCtrl.dispose();
+    _barCtrl.dispose();
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = widget.achievement;
+    final rc = widget.rarityColor;
+    final ic = widget.iconColor;
+    final p = widget.primary;
+
+    return StitchedBox(
+      color: a.isUnlocked ? ic.withValues(alpha: 0.06) : AppColors.surface,
+      stitchColor: a.isUnlocked ? ic.withValues(alpha: 0.32) : AppColors.textHint.withValues(alpha: 0.12),
+      radius: 18, inset: 5, dashWidth: 5, dashGap: 3,
+      padding: const EdgeInsets.all(14),
+      child: Stack(children: [
+        // 右上角稀有度貼紙（解鎖後會脈衝）
+        Positioned(
+          top: 0, right: 0,
+          child: a.isUnlocked
+              ? AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (_, __) => Transform.scale(
+                    scale: _pulse.value,
+                    child: _rarityBadge(a, rc, true),
+                  ),
+                )
+              : _rarityBadge(a, rc, false),
+        ),
+
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 圖示印章（解鎖後有彈跳）
+          AnimatedBuilder(
+            animation: _iconScale,
+            builder: (_, child) => Transform.scale(
+              scale: a.isUnlocked ? _iconScale.value : 1.0,
+              child: child,
+            ),
+            child: DoodleCircle(
+              color: a.isUnlocked ? ic.withValues(alpha: 0.18) : AppColors.surfaceMoss,
+              size: 60,
+              child: a.isUnlocked
+                  ? Text(a.icon, style: const TextStyle(fontSize: 28))
+                  : Stack(alignment: Alignment.center, children: [
+                      Text(a.icon,
+                          style: TextStyle(fontSize: 22,
+                              color: Colors.black.withValues(alpha: 0.07))),
+                      Icon(Icons.lock_rounded, size: 22,
+                          color: AppColors.textHint.withValues(alpha: 0.5)),
+                    ]),
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // 文字區
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 2, right: 50),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(a.title,
+                  style: TextStyle(
+                    fontSize: 15, fontWeight: FontWeight.w800,
+                    color: a.isUnlocked ? AppColors.textPrimary : AppColors.textHint,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(a.description,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: a.isUnlocked ? AppColors.textSecondary : AppColors.textHint.withValues(alpha: 0.7),
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // 手繪感進度條（動畫填充）
+                Stack(children: [
+                  Container(
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceMoss,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                  ),
+                  AnimatedBuilder(
+                    animation: _barFill,
+                    builder: (_, __) => FractionallySizedBox(
+                      widthFactor: _barFill.value,
+                      child: Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(colors: [
+                            a.isUnlocked ? rc : p.withValues(alpha: 0.5),
+                            a.isUnlocked ? rc.withValues(alpha: 0.7) : p.withValues(alpha: 0.35),
+                          ]),
+                          borderRadius: BorderRadius.circular(5),
+                          boxShadow: a.isUnlocked
+                              ? [BoxShadow(color: rc.withValues(alpha: 0.4), blurRadius: 4, offset: const Offset(0, 1))]
+                              : [],
+                        ),
+                      ),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+
+                Row(children: [
+                  Icon(
+                    a.isUnlocked ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                    size: 13,
+                    color: a.isUnlocked ? rc : AppColors.textHint,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    a.isUnlocked ? '已解鎖！' : '${a.progress} / ${a.total}',
+                    style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700,
+                      color: a.isUnlocked ? rc : AppColors.textHint,
+                    ),
+                  ),
+                  if (a.isUnlocked) ...[
+                    const SizedBox(width: 5),
+                    DoodleHeart(color: rc.withValues(alpha: 0.75), size: 13),
+                    const SizedBox(width: 3),
+                    DoodleHeart(color: rc.withValues(alpha: 0.45), size: 10),
+                  ],
+                ]),
+              ]),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _rarityBadge(Achievement a, Color rc, bool unlocked) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: rc.withValues(alpha: unlocked ? 0.20 : 0.08),
+        borderRadius: const BorderRadius.only(
+          topRight: Radius.circular(12),
+          bottomLeft: Radius.circular(12),
+        ),
+        boxShadow: unlocked
+            ? [BoxShadow(color: rc.withValues(alpha: 0.25), blurRadius: 4)]
+            : [],
+      ),
+      child: Text(
+        '${widget.raritySticker} ${widget.rarityLabel}',
+        style: TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w800,
+          color: unlocked ? rc : AppColors.textHint,
+        ),
       ),
     );
   }

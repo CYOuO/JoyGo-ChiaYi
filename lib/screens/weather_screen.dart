@@ -9,13 +9,17 @@ import '../theme/fabric_textures.dart';
 // Map weather icon key → (IconData, Color)
 (IconData, Color) _weatherIcon(String key) {
   switch (key) {
-    case '⛅': case 'partly_cloudy': return (Icons.cloud_rounded, const Color(0xFF7AB8CC));
-    case '🌧️': case 'rain':         return (Icons.grain_rounded,  const Color(0xFF5A8FAF));
-    case '🌦️': case 'rain_sun':     return (Icons.grain_rounded,  const Color(0xFF5A9FC0));
-    case '🌤️': case 'mostly_sunny': return (Icons.wb_sunny_rounded, const Color(0xFFE8C46A));
-    case '☀️': case 'sunny':        return (Icons.wb_sunny_rounded, const Color(0xFFFFB300));
-    case '🌫️': case 'foggy':        return (Icons.blur_on_rounded, const Color(0xFF90A4AE));
-    default:                         return (Icons.cloud_rounded,  const Color(0xFF7AB8CC));
+    case '⛈️': case 'thunderstorm':  return (Icons.bolt_rounded,        const Color(0xFFF5C542));
+    case '🌧️': case 'rain':          return (Icons.grain_rounded,        const Color(0xFF8FA8B8));
+    case '🌦️': case 'rain_sun':      return (Icons.grain_rounded,        const Color(0xFF6EA0B8));
+    case '🌩️': case 'lightning':     return (Icons.thunderstorm_rounded, const Color(0xFFF0BA30));
+    case '☁️': case 'cloudy':        return (Icons.cloud_rounded,        const Color(0xFFB0C8D8));
+    case '⛅': case 'partly_cloudy': return (Icons.cloud_rounded,        const Color(0xFF7AB8CC));
+    case '🌤️': case 'mostly_sunny': return (Icons.wb_sunny_rounded,     const Color(0xFFE8C46A));
+    case '☀️': case 'sunny':         return (Icons.wb_sunny_rounded,     const Color(0xFFFFB300));
+    case '🌫️': case 'foggy':         return (Icons.blur_on_rounded,      const Color(0xFF90A4AE));
+    case '❄️': case 'snow':          return (Icons.ac_unit_rounded,      const Color(0xFF90CAF9));
+    default:                          return (Icons.cloud_rounded,        const Color(0xFF7AB8CC));
   }
 }
 
@@ -152,7 +156,7 @@ class _WeatherScreenState extends State<WeatherScreen>
                 ]),
                 const Spacer(),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Icon(todayIconData, size: 52, color: Colors.white.withOpacity(0.95)),
+                  Icon(todayIconData, size: 52, color: todayIconColor.withOpacity(0.92)),
                   Row(children: [
                     Text('${today['high']}°', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18)),
                     Text(' / ${today['low']}°', style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 14)),
@@ -161,10 +165,10 @@ class _WeatherScreenState extends State<WeatherScreen>
               ]),
               const SizedBox(height: 18),
               Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
-                _todayDetail(Icons.umbrella_rounded, '降雨機率', '${today['rain']}%'),
-                _todayDetail(Icons.water_drop_rounded, '相對濕度', '${today['humid']}%'),
-                _todayDetail(Icons.air_rounded, '風速', '${today['wind']}km/h'),
-                _todayDetail(Icons.thermostat_rounded, '體感', '${(today['high'] as int) + 2}°C'),
+                _todayDetail(Icons.umbrella_rounded,    '降雨機率', '${today['rain']}%',   iconColor: const Color(0xFF80CFEE)),
+                _todayDetail(Icons.water_drop_rounded,  '相對濕度', '${today['humid']}%',  iconColor: const Color(0xFF90DDEE)),
+                _todayDetail(Icons.air_rounded,         '風速',    '${today['wind']}km/h', iconColor: const Color(0xFFB0E8D8)),
+                _todayDetail(Icons.thermostat_rounded,  '體感',    '${(today['high'] as int) + 2}°C', iconColor: const Color(0xFFFFD580)),
               ]),
             ],
           ),
@@ -172,8 +176,8 @@ class _WeatherScreenState extends State<WeatherScreen>
         const SizedBox(height: 16),
         // ── 7-day forecast ──
         StitchedBox(
-          color: AppColors.surfaceWarm,
-          stitchColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.18),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.05),
+          stitchColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.22),
           radius: 20, inset: 4, dashWidth: 4, dashGap: 3,
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -225,9 +229,9 @@ class _WeatherScreenState extends State<WeatherScreen>
     );
   }
 
-  Widget _todayDetail(IconData icon, String label, String val) {
+  Widget _todayDetail(IconData icon, String label, String val, {Color? iconColor}) {
     return Column(children: [
-      Icon(icon, size: 18, color: Colors.white.withOpacity(0.9)),
+      Icon(icon, size: 18, color: iconColor ?? Colors.white.withOpacity(0.9)),
       const SizedBox(height: 3),
       Text(val, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
       Text(label, style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 9)),

@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
-import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle;
+import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle, SlideUpFadeIn;
 import '../models/dummy_data.dart';
 import '../services/community_service.dart';
 import '../services/spot_service.dart';
@@ -1443,7 +1443,10 @@ class _CommunityScreenState extends State<CommunityScreen> {
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
           itemCount: posts.length,
-          itemBuilder: (_, i) => _firebasePostCard(posts[i], primary),
+          itemBuilder: (_, i) => SlideUpFadeIn(
+            index: i, staggerDelay: const Duration(milliseconds: 45),
+            child: _firebasePostCard(posts[i], primary),
+          ),
         );
       },
     );

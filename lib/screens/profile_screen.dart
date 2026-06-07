@@ -18,7 +18,7 @@ import 'package:share_plus/share_plus.dart';
 import 'stamp_screen.dart';
 import 'login_page.dart';
 import 'settings_screen.dart';
-import 'community_screen.dart' show FirebasePostDetailPage;
+import 'community_screen.dart' show FirebasePostDetailPage, CommunityScreen;
 import 'trip_screen.dart' show TripScreen;
 import 'info_pages.dart';
 import '../services/local_fav_service.dart';
@@ -120,6 +120,49 @@ Widget _statBox(String value, String label) {
     Text(label,
       style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
   ]));
+}
+
+// 帶數字跑馬燈動畫的統計框（登入頁用）
+class _AnimatedStatBox extends StatefulWidget {
+  final int target;
+  final String label;
+  const _AnimatedStatBox({required this.target, required this.label});
+  @override
+  State<_AnimatedStatBox> createState() => _AnimatedStatBoxState();
+}
+class _AnimatedStatBoxState extends State<_AnimatedStatBox> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _anim;
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _anim = Tween<double>(begin: 0, end: widget.target.toDouble())
+        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+    Future.delayed(const Duration(milliseconds: 200), () { if (mounted) _ctrl.forward(); });
+  }
+  @override
+  void didUpdateWidget(_AnimatedStatBox old) {
+    super.didUpdateWidget(old);
+    if (old.target != widget.target) {
+      _anim = Tween<double>(begin: _anim.value, end: widget.target.toDouble())
+          .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+      _ctrl.forward(from: 0);
+    }
+  }
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+  @override
+  Widget build(BuildContext context) {
+    final p = Theme.of(context).colorScheme.primary;
+    return Expanded(child: Column(children: [
+      AnimatedBuilder(animation: _anim, builder: (_, __) =>
+        Text('${_anim.value.round()}',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: p))),
+      const SizedBox(height: 2),
+      Text(widget.label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+    ]));
+  }
 }
 
 Widget _statDivider() => Container(
@@ -374,8 +417,8 @@ Widget _myDataSection(BuildContext context, Color primary, {bool dimmed = false}
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 2)))),
     (Icons.map_outlined, l10n.profileFootprint, const Color(0xFFE8EFF8),
       () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StampScreen(initialTab: 4)))),
-    (Icons.favorite_border_rounded, l10n.profileMyCollection, const Color(0xFFF8EAF0),
-      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SavedPostsPage()))),
+    (Icons.article_outlined, '我的貼文', const Color(0xFFEAF0F8),
+      () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityScreen()))),
   ];
 
   return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -832,13 +875,13 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                     ]),
                   ),
                   const SizedBox(height: 20),
-                  // Stats row
+                  // Stats row（數字滾動動畫）
                   Row(children: [
-                    _statBox('$_tripCount', context.watch<AppSettingsProvider>().l10n.profileTripCount),
+                    _AnimatedStatBox(target: _tripCount, label: context.watch<AppSettingsProvider>().l10n.profileTripCount),
                     _statDivider(),
-                    _statBox('$_savedCount', context.watch<AppSettingsProvider>().l10n.profileMyCollection),
+                    _AnimatedStatBox(target: _savedCount, label: context.watch<AppSettingsProvider>().l10n.profileMyCollection),
                     _statDivider(),
-                    _statBox('$_stampCount', context.watch<AppSettingsProvider>().l10n.profileStampCount),
+                    _AnimatedStatBox(target: _stampCount, label: context.watch<AppSettingsProvider>().l10n.profileStampCount),
                   ]),
                   const SizedBox(height: 20),
                 ]),
@@ -852,10 +895,10 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               child: Column(children: [
                 // 旅人會員卡
-                _memberCard(context, primary, joinedAt: user.metadata.creationTime),
+                SlideUpFadeIn(index: 0, child: _memberCard(context, primary, joinedAt: user.metadata.creationTime)),
                 const SizedBox(height: 14),
                 // 我的資料（縫線快捷區塊）
-                Container(
+                SlideUpFadeIn(index: 1, child: Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
@@ -865,7 +908,7 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                         blurRadius: 12, offset: const Offset(0, 4))],
                   ),
                   child: _myDataSection(context, primary),
-                ),
+                )),
                 const SizedBox(height: 14),
                 // Menu list
                 Container(

@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -80,6 +81,12 @@ class _StampScreenState extends State<StampScreen>
     _startLocationWatch();
     _loadPhotos();
     _initLastKnownPosition();
+    // 切換到打卡照片 tab 時自動重新整理
+    _tabController.addListener(() {
+      if (_tabController.index == 1 && !_tabController.indexIsChanging) {
+        _loadPhotos();
+      }
+    });
   }
 
   Future<void> _loadPhotos() async {
@@ -280,7 +287,8 @@ class _StampScreenState extends State<StampScreen>
             bottom: _cameraFabOffset.dy,
             child: GestureDetector(
               onTap: () => Navigator.push(ctx,
-                  MaterialPageRoute(builder: (_) => const CameraScreen())),
+                  MaterialPageRoute(builder: (_) => const CameraScreen()))
+                  .then((_) => _loadPhotos()),
               onPanUpdate: (d) {
                 setState(() {
                   final newDx = (_cameraFabOffset.dx - d.delta.dx)
@@ -400,8 +408,8 @@ class _StampScreenState extends State<StampScreen>
           child: GridView.builder(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8,
-              childAspectRatio: 0.78,
+              crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10,
+              childAspectRatio: 0.80,
             ),
             itemCount: _photoPaths.length,
             itemBuilder: (ctx, i) {
@@ -1261,7 +1269,7 @@ class _StampScreenState extends State<StampScreen>
                         ),
                       ),
                       children: [
-                        // CartoDB Voyager — 有黃綠藍的普通彩色地圖（好看且有細節）
+                        // 底圖：CartoDB Voyager（彩色普通地圖，有黃綠藍）
                         TileLayer(
                           urlTemplate:
                               'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
@@ -1269,22 +1277,10 @@ class _StampScreenState extends State<StampScreen>
                               'com.chiayicity.explore_chiayi',
                           maxZoom: 19,
                         ),
-                        // 打卡景點光暈（較大範圍、柔光提示已打卡）
-                        CircleLayer(
-                          circles: spots
-                              .where((s) => (_visitedSpots[s.id] ?? 0) > 0)
-                              .map((spot) {
-                            final count = _visitedSpots[spot.id] ?? 0;
-                            final color = _getStampColor(count);
-                            return CircleMarker(
-                              point: LatLng(spot.lat, spot.lng),
-                              radius: count >= 5 ? 500 : count >= 3 ? 380 : 260,
-                              useRadiusInMeter: true,
-                              color: color.withValues(alpha: 0.13),
-                              borderColor: color.withValues(alpha: 0.35),
-                              borderStrokeWidth: 1.5,
-                            );
-                          }).toList(),
+                        // 白色遮罩 + 打卡圓形鏤空（讓已打卡範圍顯示彩色地圖）
+                        _WhiteRevealLayer(
+                          spots: spots,
+                          visitedSpots: _visitedSpots,
                         ),
                         // 景點 Markers
                         MarkerLayer(
@@ -1480,6 +1476,66 @@ class _StampScreenState extends State<StampScreen>
       ),
     );
   }
+}
+
+// ── 地圖白色遮罩 + 已打卡鏤空揭示層 ──────────────────────────
+class _WhiteRevealLayer extends StatelessWidget {
+  final List<Spot> spots;
+  final Map<String, int> visitedSpots;
+  const _WhiteRevealLayer({required this.spots, required this.visitedSpots});
+
+  @override
+  Widget build(BuildContext context) {
+    final camera = MapCamera.of(context);
+    final visited = spots
+        .where((s) => (visitedSpots[s.id] ?? 0) > 0)
+        .map((s) => (LatLng(s.lat, s.lng), visitedSpots[s.id]!))
+        .toList();
+    return IgnorePointer(
+      child: CustomPaint(
+        painter: _RevealPainter(camera: camera, visited: visited),
+        size: Size.infinite,
+      ),
+    );
+  }
+}
+
+class _RevealPainter extends CustomPainter {
+  final MapCamera camera;
+  final List<(LatLng, int)> visited;
+  _RevealPainter({required this.camera, required this.visited});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 白色半透明遮罩 layer（讓未打卡區顯示淡白）
+    canvas.saveLayer(Rect.fromLTWH(0, 0, size.width, size.height), Paint());
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      Paint()..color = const Color(0xCCFFFFFF), // ~80% 白色
+    );
+
+    // 對已打卡景點：用 dstOut 打透明洞，讓底圖彩色地圖透出
+    final holePaint = Paint()
+      ..blendMode = BlendMode.dstOut
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20); // 邊緣柔化
+
+    for (final (latlng, count) in visited) {
+      final pt = camera.latLngToScreenPoint(latlng);
+      final meters = count >= 5 ? 500.0 : count >= 3 ? 380.0 : 260.0;
+      // 將公尺轉為螢幕像素
+      final mpp = 156543.03392 *
+          math.cos(latlng.latitude * math.pi / 180) /
+          math.pow(2, camera.zoom);
+      final px = (meters / mpp).clamp(20.0, 600.0);
+      canvas.drawCircle(Offset(pt.x.toDouble(), pt.y.toDouble()), px, holePaint);
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_RevealPainter old) =>
+      old.camera != camera || old.visited.length != visited.length;
 }
 
 // ── 成就卡片（帶動畫）──────────────────────────────────────

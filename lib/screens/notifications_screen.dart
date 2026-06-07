@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
-import '../theme/fabric_textures.dart';
+import '../theme/fabric_textures.dart' show DoodleCircle, DoodleHeart, DoodleLightning, SlideUpFadeIn;
 import '../widgets/user_profile_sheet.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -195,7 +195,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       padding: const EdgeInsets.only(bottom: 16),
                       itemCount: items.length,
                       separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
-                      itemBuilder: (_, i) => _buildNotifTile(items[i], primary, ctx),
+                      itemBuilder: (_, i) => SlideUpFadeIn(
+                        index: i,
+                        staggerDelay: const Duration(milliseconds: 40),
+                        child: _buildNotifTile(items[i], primary, ctx),
+                      ),
                     ),
                   ),
                 ]);

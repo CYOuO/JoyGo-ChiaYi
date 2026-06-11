@@ -10,7 +10,8 @@ import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
 import '../providers/app_settings_provider.dart';
-import '../widgets/common_widgets.dart' show TapFeedback, SectionHeader;
+import '../providers/user_provider.dart';
+import '../widgets/common_widgets.dart' show TapFeedback, SectionHeader, GlowTitle, ShimmerPostTitle;
 import '../services/community_service.dart';
 import 'saved_posts_page.dart';
 import 'travel_companions_page.dart';
@@ -312,29 +313,31 @@ class _TravelStatsSheetState extends State<_TravelStatsSheet> {
 
   Future<void> _load() async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      // 打卡數 + 連續打卡：從 SharedPreferences
-      final raw = prefs.getString('stamp_visited_v1');
-      int stamps = 0;
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        stamps = decoded.values.where((v) => (v as int) > 0).length;
-      }
-      final streak = prefs.getInt('stamp_streak_v1') ?? 0;
-
-      // 行程數：從 Firestore trips 集合直接計算（準確）
-      int trips = 0, saved = 0;
       final uid = FirebaseAuth.instance.currentUser?.uid;
+      int stamps = 0, trips = 0, saved = 0, streak = 0;
+
       if (uid != null) {
+        // 打卡數：從 Firestore users/{uid}/stamps（visitCount > 0）
+        final stampsSnap = await FirebaseFirestore.instance
+            .collection('users').doc(uid).collection('stamps').get();
+        stamps = stampsSnap.docs
+            .where((d) => ((d.data()['visitCount'] as num?)?.toInt() ?? 0) > 0)
+            .length;
+
+        // 行程數：從 Firestore trips 集合
         final tripsSnap = await FirebaseFirestore.instance
-            .collection('trips')
-            .where('uid', isEqualTo: uid)
-            .get();
+            .collection('trips').where('uid', isEqualTo: uid).get();
         trips = tripsSnap.docs.length;
+
+        // 收藏貼文數：直接 get() 再算長度，避免 count() 在舊 SDK 回傳 null
+        final savedSnap = await FirebaseFirestore.instance
+            .collection('users').doc(uid).collection('saved_posts').get();
+        saved = savedSnap.docs.length;
       }
-      // 收藏景點數：從 LocalFavService（本地 SharedPreferences）
-      final savedSpots = await LocalFavService.getSavedSpotsData();
-      saved = savedSpots.length;
+
+      // 連續打卡天數：仍從 SharedPreferences（日期計算在本地）
+      final prefs = await SharedPreferences.getInstance();
+      streak = prefs.getInt('stamp_streak_v1') ?? 0;
 
       if (mounted) setState(() {
         _stamps = stamps; _trips = trips; _streak = streak; _saved = saved; _loaded = true;
@@ -666,7 +669,6 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   int _tripCount  = 0;
   int _savedCount = 0;
   int _stampCount = 0;
-  String? _nickname; // 本地暫存，修改後立刻反映
   // 頭貼上傳狀態
   File? _localPhoto;
   bool _uploading = false;
@@ -675,21 +677,8 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
   void initState() {
     super.initState();
     _loadCounts();
-    _loadNickname();
-  }
-
-  Future<void> _loadNickname() async {
-    // 優先從 Firestore 讀取 nickname，確保最新
-    final uid = widget.user.uid;
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final n = doc.data()?['nickname'] as String?;
-      if (mounted && n != null && n.isNotEmpty) setState(() => _nickname = n);
-    } catch (_) {}
-    // 若 Firestore 沒有，fallback 到 Auth displayName
-    if (_nickname == null && mounted) {
-      setState(() => _nickname = widget.user.displayName);
-    }
+    // 確保 UserProvider 已初始化（正常由 MainShell 觸發，這裡作保底）
+    context.read<UserProvider>().init(widget.user);
   }
 
   Future<void> _showEditNameDialog(BuildContext context, Color primary, String currentName) async {
@@ -716,12 +705,23 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
     );
     if (newName != null && newName.isNotEmpty && newName != currentName) {
       try {
-        await FirebaseAuth.instance.currentUser?.updateDisplayName(newName);
         final uid = FirebaseAuth.instance.currentUser?.uid;
+        await FirebaseAuth.instance.currentUser?.updateDisplayName(newName);
         if (uid != null) {
           await FirebaseFirestore.instance.collection('users').doc(uid).update({'nickname': newName});
+          // 同步更新此用戶所有社群貼文的 authorName
+          final postsSnap = await FirebaseFirestore.instance
+              .collection('community_posts')
+              .where('authorId', isEqualTo: uid)
+              .get();
+          if (postsSnap.docs.isNotEmpty) {
+            final batch = FirebaseFirestore.instance.batch();
+            for (final doc in postsSnap.docs) {
+              batch.update(doc.reference, {'authorName': newName});
+            }
+            await batch.commit();
+          }
         }
-        if (mounted) setState(() => _nickname = newName); // 立刻更新畫面
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.profileNameUpdated), behavior: SnackBarBehavior.floating));
       } catch (e) {
@@ -765,13 +765,26 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
 
     setState(() { _localPhoto = File(picked.path); _uploading = true; });
     try {
-      final ref = FirebaseStorage.instance.ref('avatars/${widget.user.uid}.jpg');
+      final uid = widget.user.uid;
+      final ref = FirebaseStorage.instance.ref('avatars/$uid.jpg');
       await ref.putFile(_localPhoto!);
       final url = await ref.getDownloadURL();
       await widget.user.updatePhotoURL(url);
       await FirebaseFirestore.instance
-          .collection('users').doc(widget.user.uid)
+          .collection('users').doc(uid)
           .set({'photoURL': url}, SetOptions(merge: true));
+      // 同步更新此用戶所有社群貼文的 authorPhoto
+      final postsSnap = await FirebaseFirestore.instance
+          .collection('community_posts')
+          .where('authorId', isEqualTo: uid)
+          .get();
+      if (postsSnap.docs.isNotEmpty) {
+        final batch = FirebaseFirestore.instance.batch();
+        for (final doc in postsSnap.docs) {
+          batch.update(doc.reference, {'authorPhoto': url});
+        }
+        await batch.commit();
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -784,37 +797,37 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
 
   Future<void> _loadCounts() async {
     try {
-      // Firestore：行程數
-      final doc = await FirebaseFirestore.instance
-          .collection('users').doc(widget.user.uid).get();
-      final d = doc.data() ?? {};
-      // 收藏貼文數：直接從 subcollection 計算（準確）
+      // 收藏貼文數：直接 get() 再算長度，避免 count() 在舊 SDK 回傳 null
       final savedSnap = await FirebaseFirestore.instance
           .collection('users').doc(widget.user.uid)
-          .collection('saved_posts').count().get();
+          .collection('saved_posts').get();
       if (!mounted) return;
-      setState(() {
-        _tripCount  = (d['tripCount']  as num?)?.toInt() ?? 0;
-        _savedCount = savedSnap.count ?? 0;
-      });
-      // SharedPreferences：打卡數（stamp data 存在本地）
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('stamp_visited_v1');
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw) as Map<String, dynamic>;
-        final count = decoded.values.where((v) => (v as int) > 0).length;
-        if (mounted) setState(() => _stampCount = count);
-      }
+      setState(() => _savedCount = savedSnap.docs.length);
+      // 打卡數：從 Firestore users/{uid}/stamps（visitCount > 0 的文件數）
+      final stampsSnap = await FirebaseFirestore.instance
+          .collection('users').doc(widget.user.uid)
+          .collection('stamps').get();
+      final stampCount = stampsSnap.docs
+          .where((d) => ((d.data()['visitCount'] as num?)?.toInt() ?? 0) > 0)
+          .length;
+      if (mounted) setState(() => _stampCount = stampCount);
+      // 行程數：從 trips 集合直接計算（比 tripCount 欄位更準確）
+      final tripsSnap2 = await FirebaseFirestore.instance
+          .collection('trips')
+          .where('uid', isEqualTo: widget.user.uid)
+          .get();
+      if (mounted) setState(() => _tripCount = tripsSnap2.docs.length);
     } catch (_) {}
   }
 
 
   @override
   Widget build(BuildContext context) {
-    final primary = Theme.of(context).colorScheme.primary;
-    final user    = widget.user;
-    final name    = _nickname ?? user.displayName ?? '旅行家';
-    final photo   = user.photoURL;
+    final primary    = Theme.of(context).colorScheme.primary;
+    final user       = widget.user;
+    final userProv   = context.watch<UserProvider>();
+    final name       = userProv.nickname.isNotEmpty ? userProv.nickname : (user.displayName ?? '旅行家');
+    final photo      = userProv.photoURL.isNotEmpty ? userProv.photoURL : user.photoURL;
 
     return Scaffold(
       body: CustomScrollView(
@@ -827,9 +840,10 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
                 child: Column(children: [
                   Row(children: [
-                    Text(context.watch<AppSettingsProvider>().l10n.profileMyProfile,
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900,
-                          color: AppColors.textPrimary)),
+                    GlowTitle(
+                      text: context.watch<AppSettingsProvider>().l10n.profileMyProfile,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+                    ),
                   ]),
                   const SizedBox(height: 20),
                   // Avatar — 造型框 + 相機按鈕
@@ -867,9 +881,11 @@ class _LoggedInProfileViewState extends State<_LoggedInProfileView> {
                   GestureDetector(
                     onTap: () => _showEditNameDialog(context, primary, name),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Text(name,
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary)),
+                      ShimmerPostTitle(
+                        text: name,
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+                        maxLines: 1,
+                      ),
                       const SizedBox(width: 6),
                       Icon(Icons.edit_rounded, size: 15, color: primary.withValues(alpha: 0.6)),
                     ]),
@@ -1558,16 +1574,24 @@ class _CouponsScreenState extends State<CouponsScreen> {
           final isFull    = usedCount >= maxUses;
           final color     = _parseColor(d['colorHex'] as String? ?? '#88B8C8');
           final icon      = _parseIcon(d['iconName']  as String? ?? 'local_offer');
-          final code      = d['couponCode'] as String? ?? '';
-          final expiry    = d['expiryDate'] as Timestamp?;
+          // couponCode 優先讀新欄位，其次舊欄位 code
+          final code      = (d['couponCode'] as String? ?? d['code'] as String? ?? '');
+          // expiryDate 優先，其次舊欄位 expiresAt
+          final expiry    = (d['expiryDate'] ?? d['expiresAt']) as Timestamp?;
           final expiryStr = expiry != null
               ? '${expiry.toDate().year}/${expiry.toDate().month}/${expiry.toDate().day}'
               : '--';
+          // title 優先讀新欄位，其次用 code 顯示
+          final couponTitle = (d['title'] as String? ?? '').isNotEmpty
+              ? (d['title'] as String)
+              : (code.isNotEmpty ? code : doc.id);
+          // desc: 新欄位 desc 或舊欄位 description
+          final couponDesc = (d['desc'] as String? ?? d['description'] as String? ?? '');
 
           return _CouponCard(
             couponId:   doc.id,
-            title:      d['title']   as String? ?? '',
-            desc:       d['desc']    as String? ?? '',
+            title:      couponTitle,
+            desc:       couponDesc,
             expiryStr:  expiryStr,
             couponCode: code,
             icon:       icon,

@@ -34,6 +34,24 @@ class AppConfig {
     defaultValue: '',
   );
 
+  /// AWS S3 備份設定
+  static const awsAccessKeyId = String.fromEnvironment(
+    'AWS_ACCESS_KEY_ID',
+    defaultValue: '',
+  );
+  static const awsSecretAccessKey = String.fromEnvironment(
+    'AWS_SECRET_ACCESS_KEY',
+    defaultValue: '',
+  );
+  static const awsS3Bucket = String.fromEnvironment(
+    'AWS_S3_BUCKET',
+    defaultValue: 'joygo-chiayi-backup',
+  );
+  static const awsS3Region = String.fromEnvironment(
+    'AWS_S3_REGION',
+    defaultValue: 'ap-southeast-2',
+  );
+
   /// 嘉義市座標（固定用於天氣 API）
   static const double chiayiLat = 23.4801;
   static const double chiayiLon = 120.4501;

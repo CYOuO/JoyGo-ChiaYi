@@ -24,9 +24,49 @@ IconData _tripIconFromKey(String key) {
 /// 旅伴管理頁面
 /// 顯示每個行程的旅伴，可新增/移除旅伴
 class TravelCompanionsPage extends StatefulWidget {
-  const TravelCompanionsPage({super.key});
+  /// 若從通知跳入，可直接聚焦到特定行程
+  final String? focusTripId;
+  const TravelCompanionsPage({super.key, this.focusTripId});
   @override
   State<TravelCompanionsPage> createState() => _TravelCompanionsPageState();
+
+  // ── 靜態工具：寫出邀請通知（同時寫 invitations + notifications）
+  static Future<void> sendInviteNotification({
+    required FirebaseFirestore db,
+    required String tripId,
+    required String tripTitle,
+    required String foundUid,
+    required String companionDocId,
+    required String myUid,
+    required String myName,
+    required String myPhotoUrl,
+  }) async {
+    // invitations（舊流程，保留相容性）
+    await db.collection('users').doc(foundUid).collection('invitations').doc(companionDocId).set({
+      'tripId':      tripId,
+      'companionId': companionDocId,
+      'fromUid':     myUid,
+      'fromName':    myName,
+      'tripTitle':   tripTitle,
+      'status':      'pending',
+      'sentAt':      FieldValue.serverTimestamp(),
+    });
+    // notifications（新：讓通知頁面可以顯示邀請）
+    await db.collection('users').doc(foundUid).collection('notifications').doc(companionDocId).set({
+      'type':         'invite',
+      'title':        '$myName 邀請你加入行程',
+      'body':         '「$tripTitle」— 點擊確認是否加入',
+      'tripId':       tripId,
+      'tripTitle':    tripTitle,
+      'companionId':  companionDocId,
+      'fromUid':      myUid,
+      'fromName':     myName,
+      'fromPhotoUrl': myPhotoUrl,
+      'isRead':       false,
+      'inviteStatus': 'pending',
+      'createdAt':    FieldValue.serverTimestamp(),
+    });
+  }
 }
 
 class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
@@ -36,7 +76,7 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
   String? get _uid => _auth.currentUser?.uid;
 
   // ── 加入旅伴（支援 Firebase 用戶搜尋 + 假人頭）──────────────
-  Future<void> _addCompanion(String tripId, Color primary) async {
+  Future<void> _addCompanion(FirebaseTrip trip, Color primary) async {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -47,51 +87,32 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
           final myUid = _uid ?? '';
 
           if (isDummy) {
-            // 虛擬旅伴：直接加入，status = 'dummy'
-            await _db.collection('trips').doc(tripId).collection('companions').add({
-              'name':     name,
-              'email':    email,
-              'uid':      '',
-              'photoURL': '',
-              'status':   'dummy',
-              'addedBy':  myUid,
-              'addedAt':  FieldValue.serverTimestamp(),
+            await _db.collection('trips').doc(trip.id).collection('companions').add({
+              'name': name, 'email': email, 'uid': '', 'photoURL': '',
+              'status': 'dummy', 'addedBy': myUid,
+              'addedAt': FieldValue.serverTimestamp(),
             });
           } else if (foundUid != null && foundUid.isNotEmpty) {
-            // 真實帳號：加入為 pending，同時寫入對方的 invitations
-            final docRef = await _db.collection('trips').doc(tripId).collection('companions').add({
-              'name':     name,
-              'email':    email,
-              'uid':      foundUid,
-              'photoURL': photoUrl ?? '',
-              'status':   'pending',
-              'addedBy':  myUid,
-              'addedAt':  FieldValue.serverTimestamp(),
+            final docRef = await _db.collection('trips').doc(trip.id).collection('companions').add({
+              'name': name, 'email': email, 'uid': foundUid, 'photoURL': photoUrl ?? '',
+              'status': 'pending', 'addedBy': myUid,
+              'addedAt': FieldValue.serverTimestamp(),
             });
-            // 通知對方
             final myDoc = await _db.collection('users').doc(myUid).get();
-            final myName = myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '旅伴';
+            final myName = (myDoc.data()?['nickname'] ?? myDoc.data()?['displayName'] ?? '旅伴').toString();
+            final myPhoto = (myDoc.data()?['photoURL'] ?? myDoc.data()?['photoUrl'] ?? '').toString();
             try {
-              await _db.collection('users').doc(foundUid).collection('invitations').doc(docRef.id).set({
-                'tripId':       tripId,
-                'companionId':  docRef.id,
-                'fromUid':      myUid,
-                'fromName':     myName,
-                'tripTitle':    '', // 可後續補
-                'status':       'pending',
-                'sentAt':       FieldValue.serverTimestamp(),
-              });
+              await TravelCompanionsPage.sendInviteNotification(
+                db: _db, tripId: trip.id, tripTitle: trip.title,
+                foundUid: foundUid, companionDocId: docRef.id,
+                myUid: myUid, myName: myName, myPhotoUrl: myPhoto,
+              );
             } catch (_) {}
           } else {
-            // 只有名字，無帳號
-            await _db.collection('trips').doc(tripId).collection('companions').add({
-              'name':     name,
-              'email':    email,
-              'uid':      '',
-              'photoURL': '',
-              'status':   'manual',
-              'addedBy':  myUid,
-              'addedAt':  FieldValue.serverTimestamp(),
+            await _db.collection('trips').doc(trip.id).collection('companions').add({
+              'name': name, 'email': email, 'uid': '', 'photoURL': '',
+              'status': 'manual', 'addedBy': myUid,
+              'addedAt': FieldValue.serverTimestamp(),
             });
           }
         },
@@ -104,11 +125,18 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
     final uid = _uid;
     if (uid == null) return;
     try {
-      // 更新 companion 狀態
-      await _db.collection('trips').doc(tripId).collection('companions').doc(companionId)
-          .update({'status': 'confirmed'});
-      // 刪除邀請記錄
+      await Future.wait([
+        _db.collection('trips').doc(tripId).collection('companions').doc(companionId)
+            .update({'status': 'confirmed'}),
+        _db.collection('trips').doc(tripId)
+            .update({'members': FieldValue.arrayUnion([uid])}),
+      ]);
+      // 刪除邀請記錄 + 更新通知
       await _db.collection('users').doc(uid).collection('invitations').doc(invitationId).delete();
+      try {
+        await _db.collection('users').doc(uid).collection('notifications').doc(invitationId)
+            .update({'isRead': true, 'inviteStatus': 'accepted'});
+      } catch (_) {}
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('已接受邀請，成為正式旅伴！'),
         behavior: SnackBarBehavior.floating,
@@ -122,27 +150,41 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
     try {
       await _db.collection('trips').doc(tripId).collection('companions').doc(companionId).delete();
       await _db.collection('users').doc(uid).collection('invitations').doc(invitationId).delete();
+      try {
+        await _db.collection('users').doc(uid).collection('notifications').doc(invitationId)
+            .update({'isRead': true, 'inviteStatus': 'declined'});
+      } catch (_) {}
     } catch (_) {}
   }
 
-  // ── 移除旅伴 ────────────────────────────────────────────────
-  Future<void> _removeCompanion(String tripId, String companionId, String name) async {
+  // ── 移除旅伴 / 退出行程 ─────────────────────────────────────
+  Future<void> _removeCompanion(String tripId, String companionId, String companionUid, String name) async {
+    final isMe = companionUid == _uid;
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('移除旅伴', style: TextStyle(fontWeight: FontWeight.w800)),
-        content: Text('確定要移除「$name」嗎？'),
+        title: Text(isMe ? '退出行程' : '移除旅伴',
+          style: const TextStyle(fontWeight: FontWeight.w800)),
+        content: Text(isMe ? '確定要退出此行程嗎？' : '確定要移除「$name」嗎？'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('移除', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))),
+            child: Text(isMe ? '退出' : '移除',
+              style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))),
         ],
       ),
     );
     if (ok != true) return;
     await _db.collection('trips').doc(tripId).collection('companions').doc(companionId).delete();
+    // 如果被移除的是已確認成員，也從 members 陣列移除
+    if (companionUid.isNotEmpty) {
+      try {
+        await _db.collection('trips').doc(tripId)
+            .update({'members': FieldValue.arrayRemove([companionUid])});
+      } catch (_) {}
+    }
   }
 
   @override
@@ -218,18 +260,29 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
                           body: '先在「行程管理」建立行程\n再來這裡新增旅伴一起出發！',
                         );
                       }
+                      // 若有 focusTripId，把該行程排到最前面
+                      final sorted = [...trips];
+                      if (widget.focusTripId != null) {
+                        sorted.sort((a, b) {
+                          if (a.id == widget.focusTripId) return -1;
+                          if (b.id == widget.focusTripId) return 1;
+                          return 0;
+                        });
+                      }
                       return ListView.separated(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        itemCount: trips.length,
+                        itemCount: sorted.length,
                         separatorBuilder: (_, __) => const SizedBox(height: 16),
                         itemBuilder: (_, i) => _TripCompanionCard(
-                          trip: trips[i],
+                          trip: sorted[i],
                           primary: primary,
-                          onAddCompanion: () => _addCompanion(trips[i].id, primary),
-                          onRemoveCompanion: (cid, name) =>
-                              _removeCompanion(trips[i].id, cid, name),
+                          currentUid: uid,
+                          highlighted: sorted[i].id == widget.focusTripId,
+                          onAddCompanion: () => _addCompanion(sorted[i], primary),
+                          onRemoveCompanion: (cid, cUid, name) =>
+                              _removeCompanion(sorted[i].id, cid, cUid, name),
                         ),
                       );
                     },
@@ -241,18 +294,27 @@ class _TravelCompanionsPageState extends State<TravelCompanionsPage> {
   }
 }
 
-/// 每個行程的旅伴卡片
+// ════════════════════════════════════════════════════════════════
+// 每個行程的旅伴卡片（顯示管理員 + 成員 + 角色保護）
+// ════════════════════════════════════════════════════════════════
 class _TripCompanionCard extends StatelessWidget {
   final FirebaseTrip trip;
   final Color primary;
+  final String currentUid;
+  final bool highlighted;
   final VoidCallback onAddCompanion;
-  final void Function(String, String) onRemoveCompanion;
+  final void Function(String companionId, String companionUid, String name) onRemoveCompanion;
+
   const _TripCompanionCard({
     required this.trip,
     required this.primary,
+    required this.currentUid,
+    required this.highlighted,
     required this.onAddCompanion,
     required this.onRemoveCompanion,
   });
+
+  bool get _isAdmin => trip.uid == currentUid;
 
   @override
   Widget build(BuildContext context) {
@@ -261,11 +323,17 @@ class _TripCompanionCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 12, offset: const Offset(0, 4))],
+        border: highlighted
+            ? Border.all(color: primary, width: 2)
+            : null,
+        boxShadow: [BoxShadow(
+          color: highlighted
+              ? primary.withValues(alpha: 0.18)
+              : Colors.black.withValues(alpha: 0.05),
+          blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // 行程標題
+        // 行程標題列
         Container(
           padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
           decoration: BoxDecoration(
@@ -281,15 +349,24 @@ class _TripCompanionCard extends StatelessWidget {
               Text(trip.dateDisplay,
                 style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
             ])),
-            IconButton(
-              icon: Icon(Icons.person_add_rounded, color: primary, size: 22),
-              onPressed: onAddCompanion,
-              tooltip: '新增旅伴',
-            ),
+            // 只有管理員可以新增旅伴
+            if (_isAdmin)
+              IconButton(
+                icon: Icon(Icons.person_add_rounded, color: primary, size: 22),
+                onPressed: onAddCompanion,
+                tooltip: '新增旅伴',
+              ),
           ]),
         ),
 
-        // 旅伴列表
+        // ── 管理員行（一定顯示）──────────────────────────────
+        _AdminRow(
+          creatorUid: trip.uid,
+          isCurrentUser: trip.uid == currentUid,
+          primary: primary,
+        ),
+
+        // ── 旅伴列表 ─────────────────────────────────────────
         StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('trips').doc(trip.id)
@@ -300,50 +377,71 @@ class _TripCompanionCard extends StatelessWidget {
             final docs = snap.data?.docs ?? [];
             if (docs.isEmpty) {
               return Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 child: Row(children: [
                   Icon(Icons.group_outlined, size: 16, color: AppColors.textHint),
                   const SizedBox(width: 8),
-                  Text('尚無旅伴，點擊 + 新增',
-                    style: TextStyle(fontSize: 13, color: AppColors.textHint)),
+                  Text(_isAdmin ? '尚無旅伴，點擊 + 新增' : '尚無其他旅伴',
+                    style: const TextStyle(fontSize: 13, color: AppColors.textHint)),
                 ]),
               );
             }
             return Column(
               children: docs.map((doc) {
-                // 防禦性資料取出，避免 null / type cast 造成 crash
                 final rawData = doc.data();
                 if (rawData == null) return const SizedBox.shrink();
                 final d = Map<String, dynamic>.from(rawData as Map);
                 final name     = (d['name']  ?? '旅伴').toString();
                 final email    = (d['email'] ?? '').toString();
-                // 相容新（photoURL）舊（photoUrl）欄位名稱
                 final photoUrl = ((d['photoURL'] ?? d['photoUrl']) ?? '').toString();
-                final isReal   = (d['uid'] ?? '').toString().isNotEmpty;
+                final companionUid = (d['uid'] ?? '').toString();
+                final status   = (d['status'] ?? 'manual').toString();
+                final isMe     = companionUid == currentUid;
+                // 管理員不能被列在旅伴清單裡移除（他本來就是 owner）
+                // 如果因為 bug 重複加了，也顯示但不讓移除
+                final isCreator = companionUid == trip.uid;
+
+                // 是否可以顯示移除按鈕
+                // - 管理員：可移除任何人（除了自己 / creator）
+                // - 成員：只能移除自己
+                final canRemove = !isCreator && (_isAdmin || isMe);
+
                 return ListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  leading: CircleAvatar(
-                    radius: 18,
-                    backgroundColor: primary.withValues(alpha: 0.12),
-                    backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
-                    child: photoUrl.isEmpty
-                        ? Text(name.isNotEmpty ? name[0] : '?',
-                            style: TextStyle(color: primary, fontWeight: FontWeight.w800))
-                        : null,
+                  leading: _CompanionAvatar(
+                    photoUrl: photoUrl,
+                    name: name,
+                    primary: primary,
                   ),
                   title: Row(children: [
-                    Flexible(child: Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+                    Flexible(child: Text(name,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis)),
                     const SizedBox(width: 6),
-                    _StatusChip(status: (d['status'] ?? (isReal ? 'confirmed' : 'manual')) as String, primary: primary),
+                    _StatusChip(status: status, primary: primary),
+                    if (isMe) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(4)),
+                        child: Text('你', style: TextStyle(fontSize: 9, color: primary, fontWeight: FontWeight.w800)),
+                      ),
+                    ],
                   ]),
                   subtitle: email.isNotEmpty
                       ? Text(email, style: const TextStyle(fontSize: 11, color: AppColors.textHint))
                       : null,
-                  trailing: IconButton(
-                    icon: const Icon(Icons.remove_circle_outline_rounded,
-                        color: AppColors.error, size: 20),
-                    onPressed: () => onRemoveCompanion(doc.id, name),
-                  ),
+                  trailing: canRemove
+                      ? IconButton(
+                          icon: Icon(
+                            isMe ? Icons.exit_to_app_rounded : Icons.remove_circle_outline_rounded,
+                            color: AppColors.error, size: 20),
+                          tooltip: isMe ? '退出行程' : '移除旅伴',
+                          onPressed: () => onRemoveCompanion(doc.id, companionUid, name),
+                        )
+                      : const SizedBox(width: 48), // 佔位，讓 UI 對齊
                 );
               }).toList(),
             );
@@ -356,9 +454,99 @@ class _TripCompanionCard extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════
-//  新增旅伴 Sheet（支援搜尋 Firebase 用戶，含 Google 帳號）
-// ═══════════════════════════════════════════════════════════
+// ── 管理員行（從 Firestore 抓取 creator 資料）──────────────────
+class _AdminRow extends StatefulWidget {
+  final String creatorUid;
+  final bool isCurrentUser;
+  final Color primary;
+  const _AdminRow({required this.creatorUid, required this.isCurrentUser, required this.primary});
+  @override
+  State<_AdminRow> createState() => _AdminRowState();
+}
+class _AdminRowState extends State<_AdminRow> {
+  Map<String, dynamic>? _userData;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+  Future<void> _load() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.creatorUid).get();
+      if (mounted && doc.exists) setState(() => _userData = doc.data());
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (_userData?['nickname'] ?? _userData?['displayName'] ?? '管理員').toString();
+    final photo = (_userData?['photoURL'] ?? _userData?['photoUrl'] ?? '').toString();
+    final email = (_userData?['email'] ?? _userData?['emailAddress'] ?? '').toString();
+    final p = widget.primary;
+
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+      leading: _CompanionAvatar(photoUrl: photo, name: name, primary: p),
+      title: Row(children: [
+        Flexible(child: Text(name,
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          overflow: TextOverflow.ellipsis)),
+        const SizedBox(width: 6),
+        // 管理員皇冠徽章
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF3CD),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: const Color(0xFFFFD700).withValues(alpha: 0.6)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Text('👑', style: TextStyle(fontSize: 9)),
+            const SizedBox(width: 2),
+            const Text('管理員', style: TextStyle(fontSize: 9, color: Color(0xFFB8860B), fontWeight: FontWeight.w800)),
+          ]),
+        ),
+        if (widget.isCurrentUser) ...[
+          const SizedBox(width: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            decoration: BoxDecoration(
+              color: p.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(4)),
+            child: Text('你', style: TextStyle(fontSize: 9, color: p, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ]),
+      subtitle: email.isNotEmpty
+          ? Text(email, style: const TextStyle(fontSize: 11, color: AppColors.textHint))
+          : null,
+      trailing: const SizedBox(width: 48), // 管理員不能被移除，佔位
+    );
+  }
+}
+
+// ── 頭像 ─────────────────────────────────────────────────────
+class _CompanionAvatar extends StatelessWidget {
+  final String photoUrl;
+  final String name;
+  final Color primary;
+  const _CompanionAvatar({required this.photoUrl, required this.name, required this.primary});
+  @override
+  Widget build(BuildContext context) => CircleAvatar(
+    radius: 18,
+    backgroundColor: primary.withValues(alpha: 0.12),
+    backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+    child: photoUrl.isEmpty
+        ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: TextStyle(color: primary, fontWeight: FontWeight.w800, fontSize: 13))
+        : null,
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// 新增旅伴 Sheet
+// ════════════════════════════════════════════════════════════════
 class _AddCompanionSheet extends StatefulWidget {
   final Color primary;
   final Future<void> Function(String name, String email, String? uid, String? photoUrl, bool isDummy) onAdd;
@@ -381,31 +569,17 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
     if (email.isEmpty) return;
     setState(() { _searching = true; _notFound = false; _foundUser = null; });
     try {
-      // 先搜尋 email 欄位
       var q = await FirebaseFirestore.instance
-          .collection('users')
-          .where('email', isEqualTo: email)
-          .limit(1)
-          .get();
-      // 若找不到，嘗試搜尋 Google 帳號（uid 對應的 email）
+          .collection('users').where('email', isEqualTo: email).limit(1).get();
       if (q.docs.isEmpty) {
         q = await FirebaseFirestore.instance
-            .collection('users')
-            .where('emailAddress', isEqualTo: email)
-            .limit(1)
-            .get();
+            .collection('users').where('emailAddress', isEqualTo: email).limit(1).get();
       }
       if (q.docs.isEmpty) {
         setState(() { _searching = false; _notFound = true; });
       } else {
         final d = q.docs.first.data();
-        setState(() {
-          _searching = false;
-          _foundUser = {
-            ...d,
-            'uid': q.docs.first.id,
-          };
-        });
+        setState(() { _searching = false; _foundUser = {...d, 'uid': q.docs.first.id}; });
       }
     } catch (e) {
       setState(() { _searching = false; _notFound = true; });
@@ -439,11 +613,7 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
   }
 
   @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _nameCtrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _emailCtrl.dispose(); _nameCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
@@ -499,15 +669,14 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
             ),
           ]),
           const SizedBox(height: 12),
-          // 搜尋結果
           if (_notFound) ...[
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: AppColors.error.withValues(alpha: 0.06), borderRadius: BorderRadius.circular(12)),
-              child: Row(children: [
-                const Icon(Icons.person_off_rounded, size: 18, color: AppColors.error),
-                const SizedBox(width: 8),
-                const Expanded(child: Text('找不到此 Email 的用戶，可改用手動輸入', style: TextStyle(fontSize: 12, color: AppColors.error))),
+              child: const Row(children: [
+                Icon(Icons.person_off_rounded, size: 18, color: AppColors.error),
+                SizedBox(width: 8),
+                Expanded(child: Text('找不到此 Email 的用戶，可改用手動輸入', style: TextStyle(fontSize: 12, color: AppColors.error))),
               ]),
             ),
             const SizedBox(height: 12),
@@ -571,7 +740,7 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(
-                    found['nickname'] ?? found['displayName'] ?? found['name'] ?? '用戶',
+                    (found['nickname'] ?? found['displayName'] ?? found['name'] ?? '用戶').toString(),
                     style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                   ),
                   Row(children: [
@@ -607,14 +776,14 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
                 style: TextStyle(fontSize: 11, color: AppColors.textHint.withValues(alpha: 0.7))),
             ),
 
-          // ── 分隔線 + 虛擬旅伴區 ────────────────────────────
+          // ── 虛擬旅伴區 ────────────────────────────────────
           const SizedBox(height: 16),
           Row(children: [
             const Expanded(child: Divider()),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Text('或新增虛擬旅伴（分帳用）',
-                style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+              child: const Text('或新增虛擬旅伴（分帳用）',
+                style: TextStyle(fontSize: 11, color: AppColors.textHint)),
             ),
             const Expanded(child: Divider()),
           ]),
@@ -657,7 +826,7 @@ class _AddCompanionSheetState extends State<_AddCompanionSheet> {
   }
 }
 
-// ── 邀請狀態 Chip ──────────────────────────────────────────
+// ── 邀請狀態 Chip ──────────────────────────────────────────────
 class _StatusChip extends StatelessWidget {
   final String status;
   final Color primary;
@@ -684,7 +853,7 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-// ── 邀請確認卡片 ────────────────────────────────────────────
+// ── 邀請確認卡片 ────────────────────────────────────────────────
 class _InvitationCard extends StatelessWidget {
   final String docId;
   final Map<String, dynamic> data;
@@ -696,7 +865,8 @@ class _InvitationCard extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
-    final fromName = (data['fromName'] ?? '').toString();
+    final fromName  = (data['fromName']  ?? '').toString();
+    final tripTitle = (data['tripTitle'] ?? '').toString();
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       padding: const EdgeInsets.all(14),
@@ -714,13 +884,14 @@ class _InvitationCard extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('$fromName 邀請你加入旅伴',
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-          const Text('確認後即可共同管理行程',
-            style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          if (tripTitle.isNotEmpty)
+            Text('「$tripTitle」', style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
         ])),
         const SizedBox(width: 8),
         TextButton(
           onPressed: onDecline,
-          style: TextButton.styleFrom(foregroundColor: AppColors.error, minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+          style: TextButton.styleFrom(foregroundColor: AppColors.error, minimumSize: Size.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
           child: const Text('拒絕', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
         ),
         const SizedBox(width: 4),
@@ -728,7 +899,8 @@ class _InvitationCard extends StatelessWidget {
           onPressed: onAccept,
           style: ElevatedButton.styleFrom(
             backgroundColor: primary, foregroundColor: Colors.white,
-            elevation: 0, minimumSize: Size.zero, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            elevation: 0, minimumSize: Size.zero,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           child: const Text('接受', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),

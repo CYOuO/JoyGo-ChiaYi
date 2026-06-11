@@ -51,3 +51,8 @@ tdx-server-temp/.env
 # Local environment variables (contains API keys — never commit)
 local.env.json
 .env
+# 機密：Firebase 服務帳號金鑰（絕不 commit）
+serviceAccountKey.json
+*serviceAccount*.json
+google-services-admin.json
+*.env

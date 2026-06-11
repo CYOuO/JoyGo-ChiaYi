@@ -1686,3 +1686,250 @@ class _TranslatedTextState extends State<TranslatedText> {
     );
   }
 }
+
+// ── ShimmerPostTitle：社群貼文標題，逐字波浪色彩動畫 ─────────
+/// 文字顏色在主題色與深色之間做波浪式偏移，每個字有時間差，視覺上像 LED 跑燈。
+class ShimmerPostTitle extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  final int maxLines;
+  const ShimmerPostTitle({super.key, required this.text, this.style, this.maxLines = 2});
+
+  @override
+  State<ShimmerPostTitle> createState() => _ShimmerPostTitleState();
+}
+
+class _ShimmerPostTitleState extends State<ShimmerPostTitle>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2200))
+      ..repeat();
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final base    = (widget.style ?? DefaultTextStyle.of(context).style)
+        .copyWith(color: Colors.white);
+    final n = widget.text.length;
+
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        // ShaderMask 帶橫向移動的漸層，模擬光波掃過
+        final shift = _ctrl.value; // 0→1 循環
+        return ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) => LinearGradient(
+            colors: [
+              AppColors.textPrimary,
+              primary,
+              primary.withValues(alpha: 0.7),
+              AppColors.textPrimary,
+              AppColors.textPrimary,
+            ],
+            stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
+            begin: Alignment(-1 + shift * 4, 0),   // 光波從左往右掃
+            end:   Alignment( 1 + shift * 4, 0),
+            tileMode: TileMode.clamp,
+          ).createShader(bounds),
+          child: Text(
+            widget.text,
+            style: base,
+            maxLines: widget.maxLines,
+            overflow: TextOverflow.ellipsis,
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── GlowTitle：漸層色 + 輕柔飄動效果的標題文字 ─────────────
+/// 用法：GlowTitle(text: '行程管理', style: ...)
+/// colors 預設從 primary → accent，也可自訂。
+class GlowTitle extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  final List<Color>? colors; // null = 自動用主題色
+  const GlowTitle({super.key, required this.text, this.style, this.colors});
+
+  @override
+  State<GlowTitle> createState() => _GlowTitleState();
+}
+
+class _GlowTitleState extends State<GlowTitle> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  late Animation<double> _float;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2600))
+      ..repeat(reverse: true);
+    _float = CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final accent  = Theme.of(context).colorScheme.secondary;
+    final grad    = widget.colors ?? [primary, accent, primary.withValues(alpha: 0.7)];
+    final baseStyle = (widget.style ?? DefaultTextStyle.of(context).style)
+        .copyWith(color: Colors.white); // ShaderMask 需要白色底色
+
+    return AnimatedBuilder(
+      animation: _float,
+      builder: (_, child) => Transform.translate(
+        offset: Offset(0, (_float.value - 0.5) * 5), // ±2.5 px 上下飄動
+        child: child,
+      ),
+      child: ShaderMask(
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) => LinearGradient(
+          colors: grad,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ).createShader(bounds),
+        child: Text(widget.text, style: baseStyle),
+      ),
+    );
+  }
+}
+
+// ── MarqueeText：店家風格跑馬燈，文字不超寬時靜態顯示 ────────
+class MarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle? style;
+  const MarqueeText({super.key, required this.text, this.style});
+
+  @override
+  State<MarqueeText> createState() => _MarqueeTextState();
+}
+
+class _MarqueeTextState extends State<MarqueeText>
+    with SingleTickerProviderStateMixin {
+  static const double _gap      = 80.0;   // 每輪間距（px）
+  static const double _speed    = 50.0;   // 速度（px/s）
+  static const int    _pauseMs  = 1200;   // 靜止時間（ms）
+
+  late AnimationController _ctrl;
+  double _offset    = 0;
+  double _cycleWidth = 1;
+  bool   _scrolling = false;   // 靜止期間不推進 offset
+  DateTime _lastTick = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(days: 9999))
+      ..addListener(_onTick)
+      ..repeat();
+    // 等 _pauseMs 後才開始滾動，讓所有卡片標題先對齊在左側
+    Future.delayed(const Duration(milliseconds: _pauseMs), () {
+      if (mounted) setState(() => _scrolling = true);
+    });
+  }
+
+  void _onTick() {
+    if (!_scrolling || _cycleWidth <= 1) {
+      _lastTick = DateTime.now(); // 重置，避免暫停期間累積大 dt
+      return;
+    }
+    final now = DateTime.now();
+    final dt = now.difference(_lastTick).inMicroseconds / 1e6;
+    _lastTick = now;
+    setState(() {
+      _offset = (_offset + _speed * dt) % _cycleWidth;
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onTick);
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = widget.style ?? DefaultTextStyle.of(context).style;
+    return LayoutBuilder(builder: (_, constraints) {
+      final tp = TextPainter(
+        text: TextSpan(text: widget.text, style: style),
+        maxLines: 1,
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: double.infinity);
+
+      final textWidth  = tp.width;
+      final textHeight = tp.height;
+
+      // cycleWidth：至少佔滿容器寬，確保短文字跑完後也有足夠空白再出現
+      _cycleWidth = textWidth < constraints.maxWidth
+          ? constraints.maxWidth + _gap
+          : textWidth + _gap;
+
+      return SizedBox(
+        height: textHeight,
+        child: ClipRect(
+          child: CustomPaint(
+            size: Size(constraints.maxWidth, textHeight),
+            painter: _MarqueePainter(
+              text: widget.text,
+              style: style,
+              offset: _offset,
+              cycleWidth: _cycleWidth,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+}
+
+class _MarqueePainter extends CustomPainter {
+  final String text;
+  final TextStyle style;
+  final double offset;
+  final double cycleWidth;
+
+  const _MarqueePainter({
+    required this.text,
+    required this.style,
+    required this.offset,
+    required this.cycleWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: double.infinity);
+
+    // 從 -offset 開始畫，每隔 cycleWidth 重複一份，直到填滿可視區域
+    double x = -offset;
+    while (x < size.width) {
+      tp.paint(canvas, Offset(x, (size.height - tp.height) / 2));
+      x += cycleWidth;
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MarqueePainter old) =>
+      old.offset != offset || old.text != text;
+}

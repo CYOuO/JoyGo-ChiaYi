@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/app_settings_provider.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
-import 'firebase_seed_screen.dart';
+import 'admin_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -172,32 +174,46 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 20),
 
-          // ── 開發者工具 ────────────────────────────────────
-          _SectionHeader(title: l10n.settingsDevTools, icon: Icons.developer_mode_rounded),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            child: StitchedBox(
-            color: AppColors.surface,
-            stitchColor: primary.withValues(alpha: 0.20),
-            radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
-            padding: EdgeInsets.zero,
-            child: ListTile(
-              leading: Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF9800).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+          // ── 管理員入口（僅管理員可見）────────────────────────
+          FutureBuilder<DocumentSnapshot?>(
+            future: FirebaseAuth.instance.currentUser?.uid != null
+                ? FirebaseFirestore.instance
+                    .collection('admin_users')
+                    .doc(FirebaseAuth.instance.currentUser!.uid)
+                    .get()
+                : Future.value(null),
+            builder: (_, snap) {
+              final isAdmin = snap.data?.exists == true;
+              if (!isAdmin) return const SizedBox.shrink();
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _SectionHeader(title: '管理員', icon: Icons.admin_panel_settings_rounded),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: StitchedBox(
+                    color: AppColors.surface,
+                    stitchColor: primary.withValues(alpha: 0.20),
+                    radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
+                    padding: EdgeInsets.zero,
+                    child: ListTile(
+                      leading: Container(
+                        width: 36, height: 36,
+                        decoration: BoxDecoration(
+                          color: primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.admin_panel_settings_rounded, size: 18, color: primary),
+                      ),
+                      title: const Text('管理員介面', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      subtitle: const Text('舉報管理・內容審核・推播通知・資料統計', style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+                      trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+                      onTap: () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const AdminScreen())),
+                    ),
+                  ),
                 ),
-                child: const Icon(Icons.cloud_upload_rounded, size: 18, color: Color(0xFFE65100)),
-              ),
-              title: Text(l10n.settingsFirebaseSeed, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              subtitle: Text(l10n.settingsFirebaseSeedSub, style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-              trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
-              onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const FirebaseSeedScreen())),
-            ),
-            ),   // StitchedBox
-          ),     // Padding
+              ]);
+            },
+          ),
 
           const SizedBox(height: 32),
         ],

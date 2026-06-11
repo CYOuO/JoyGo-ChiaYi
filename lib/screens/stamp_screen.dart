@@ -35,18 +35,16 @@ class _StampScreenState extends State<StampScreen>
   List<Spot> _realSpots = [];
   bool _spotsLoading = true;
 
-  // Map<spotId, visitCount> — 持久化到 SharedPreferences
+  // Map<spotId, visitCount> — 每位使用者分開儲存到 Firestore
   Map<String, int> _visitedSpots = {};
-  static const _kVisitedKey = 'stamp_visited_v1';
+  // 最近打卡的 spotId（排序用）
+  String? _lastCheckedInSpotId;
 
   // 連續打卡天數
   int _streak = 0;
   String _lastCheckinDate = '';
-  static const _kStreakKey = 'stamp_streak_v1';
-  static const _kLastDateKey = 'stamp_last_date_v1';
   // 總打卡天數（所有有打卡的不重複日期）
   Set<String> _allCheckinDates = {};
-  static const _kAllDatesKey = 'stamp_all_dates_v1';
 
   // GPS auto check-in
   StreamSubscription<Position>? _posStream;
@@ -61,7 +59,10 @@ class _StampScreenState extends State<StampScreen>
 
   static const _kCheckinRadius = 100.0;
   static const _kCheckinCooldown = Duration(hours: 1); // 同一景點 1 小時內不重複打卡
-  static const _kCheckinTimeKey = 'stamp_checkin_times_v1'; // 持久化冷卻時間
+  // Streak / dates 仍存本機（不需跨裝置）
+  static const _kStreakKey   = 'stamp_streak_v1';
+  static const _kLastDateKey = 'stamp_last_date_v1';
+  static const _kAllDatesKey = 'stamp_all_dates_v1';
 
   // 涵蓋嘉義縣市 + 鄰近雲林、台南部分區域
   static final _chiayiBounds = LatLngBounds(
@@ -90,7 +91,8 @@ class _StampScreenState extends State<StampScreen>
   }
 
   Future<void> _loadPhotos() async {
-    final paths = await CameraScreen.getSavedPhotoPaths();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final paths = await CameraScreen.getSavedPhotoPaths(uid: uid);
     if (mounted) setState(() { _photoPaths = paths; _photosLoading = false; });
   }
 
@@ -104,37 +106,63 @@ class _StampScreenState extends State<StampScreen>
     } catch (_) {}
   }
 
+  // ── Firestore 路徑：users/{uid}/stamps ──────────────────────
+  CollectionReference<Map<String, dynamic>>? get _stampsRef {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return null;
+    return FirebaseFirestore.instance.collection('users').doc(uid).collection('stamps');
+  }
+
   Future<void> _loadVisited() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_kVisitedKey);
-    if (raw != null && raw.isNotEmpty) {
-      final decoded = jsonDecode(raw) as Map<String, dynamic>;
-      if (mounted) setState(() => _visitedSpots = decoded.map((k, v) => MapEntry(k, v as int)));
+    // ① 先從 Firestore 載入（每人分開）
+    final ref = _stampsRef;
+    if (ref != null) {
+      try {
+        final snap = await ref.get();
+        final map = <String, int>{};
+        for (final doc in snap.docs) {
+          final d = doc.data();
+          map[doc.id] = (d['visitCount'] as num?)?.toInt() ?? 1;
+          // 載入冷卻時間
+          final ts = d['lastCheckin'];
+          if (ts is Timestamp) _lastCheckinTime[doc.id] = ts.toDate();
+        }
+        if (mounted) setState(() => _visitedSpots = map);
+      } catch (_) {}
     }
+
+    // ② 從 SharedPreferences 載入打卡統計（streak / dates）
+    final prefs = await SharedPreferences.getInstance();
     _streak = prefs.getInt(_kStreakKey) ?? 0;
     _lastCheckinDate = prefs.getString(_kLastDateKey) ?? '';
     final allDatesRaw = prefs.getStringList(_kAllDatesKey) ?? [];
     _allCheckinDates = allDatesRaw.toSet();
-    // 載入打卡冷卻時間（避免重新進頁面後冷卻重置）
-    final timesRaw = prefs.getString(_kCheckinTimeKey);
-    if (timesRaw != null && timesRaw.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(timesRaw) as Map<String, dynamic>;
-        _lastCheckinTime.addAll(decoded.map((k, v) => MapEntry(k, DateTime.parse(v as String))));
-      } catch (_) {}
-    }
+
     if (mounted) setState(() {});
   }
 
   Future<void> _saveVisited() async {
+    // ① 存 streak / dates 到 SharedPreferences（裝置本機）
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kVisitedKey, jsonEncode(_visitedSpots));
     await prefs.setInt(_kStreakKey, _streak);
     await prefs.setString(_kLastDateKey, _lastCheckinDate);
     await prefs.setStringList(_kAllDatesKey, _allCheckinDates.toList());
-    // 持久化打卡冷卻時間
-    await prefs.setString(_kCheckinTimeKey,
-      jsonEncode(_lastCheckinTime.map((k, v) => MapEntry(k, v.toIso8601String()))));
+
+    // ② 同步打卡資料到 Firestore（每人分開）
+    final ref = _stampsRef;
+    if (ref != null) {
+      final batch = FirebaseFirestore.instance.batch();
+      for (final entry in _visitedSpots.entries) {
+        if (entry.value <= 0) continue;
+        final ts = _lastCheckinTime[entry.key];
+        batch.set(ref.doc(entry.key), {
+          'visitCount': entry.value,
+          if (ts != null) 'lastCheckin': Timestamp.fromDate(ts),
+        }, SetOptions(merge: true));
+      }
+      try { await batch.commit(); } catch (_) {}
+    }
+
     _syncLeaderboard();
   }
 
@@ -216,12 +244,15 @@ class _StampScreenState extends State<StampScreen>
       _lastCheckinTime[spot.id] = now;
       final newCount = (_visitedSpots[spot.id] ?? 0) + 1;
       _updateStreak();
-      setState(() => _visitedSpots[spot.id] = newCount);
+      setState(() {
+        _visitedSpots[spot.id] = newCount;
+        _lastCheckedInSpotId = spot.id; // 讓此景點排最前
+      });
       _saveVisited();
 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('「${spot.name}」自動打卡成功！第 $newCount 次造訪'),
-        backgroundColor: _getStampColor(newCount),
+        backgroundColor: _getSpotColor(spot.id, newCount),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
@@ -406,46 +437,51 @@ class _StampScreenState extends State<StampScreen>
         // ── 拍立得風格照片牆 ────────────────────────────────
         Expanded(
           child: GridView.builder(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+            padding: const EdgeInsets.fromLTRB(14, 8, 14, 24),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10,
-              childAspectRatio: 0.80,
+              crossAxisCount: 2, crossAxisSpacing: 14, mainAxisSpacing: 14,
+              // 拍立得比例：寬:高 ≈ 3:4，加底部留白後 ≈ 0.72
+              childAspectRatio: 0.72,
             ),
             itemCount: _photoPaths.length,
             itemBuilder: (ctx, i) {
               final path = _photoPaths[i];
               final file = File(path);
               // 每張略微隨機旋轉，模擬拍立得散落
-              final angle = (i % 5 == 0 ? -0.03 : i % 5 == 1 ? 0.025 : i % 5 == 2 ? -0.015 : i % 5 == 3 ? 0.03 : -0.02);
+              final angle = (i % 5 == 0 ? -0.025 : i % 5 == 1 ? 0.02 : i % 5 == 2 ? -0.015 : i % 5 == 3 ? 0.025 : 0.01);
               return SlideUpFadeIn(
                 index: i, staggerDelay: const Duration(milliseconds: 30),
                 child: GestureDetector(
                   onTap: () => _showPhotoDetail(ctx, path),
+                  onLongPress: () => _confirmDeletePhoto(ctx, path, i),
                   child: Transform.rotate(
                     angle: angle,
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 3))],
+                        borderRadius: BorderRadius.circular(4),
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 8, offset: const Offset(2, 4)),
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 2, offset: const Offset(0, 1)),
+                        ],
                       ),
                       child: Column(children: [
-                        // 照片區
-                        Expanded(child: ClipRRect(
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-                          child: file.existsSync()
-                              ? Image.file(file, fit: BoxFit.cover, width: double.infinity)
-                              : Container(color: primary.withValues(alpha: 0.08),
-                                  child: Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 24)),
+                        // 上方留白（拍立得頂部白邊）
+                        const SizedBox(height: 8),
+                        // 左右留白包住照片
+                        Expanded(child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(2),
+                            child: file.existsSync()
+                                ? Image.file(file, fit: BoxFit.cover, width: double.infinity)
+                                : Container(color: primary.withValues(alpha: 0.08),
+                                    child: Icon(Icons.broken_image_outlined, color: AppColors.textHint, size: 24)),
+                          ),
                         )),
-                        // 拍立得白邊底部
-                        Container(
-                          height: 22,
-                          alignment: Alignment.center,
-                          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                            DoodleHeart(color: primary.withValues(alpha: 0.40), size: 9),
-                          ]),
-                        ),
+                        // 拍立得底部大留白 + 可愛裝飾
+                        _PolaroidBottom(index: i, primary: primary),
+                        const SizedBox(height: 6),
                       ]),
                     ),
                   ),
@@ -456,6 +492,39 @@ class _StampScreenState extends State<StampScreen>
         ),
       ]),
     );
+  }
+
+  Future<void> _confirmDeletePhoto(BuildContext ctx, String path, int index) async {
+    final confirmed = await showDialog<bool>(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 22),
+          SizedBox(width: 8),
+          Text('刪除照片', style: TextStyle(fontWeight: FontWeight.w800)),
+        ]),
+        content: const Text('確定要刪除這張拍立得照片嗎？此動作無法還原。'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('刪除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final key = CameraScreen.photoPathsKeyForUid(uid);
+    final prefs = await SharedPreferences.getInstance();
+    final paths = prefs.getStringList(key) ?? [];
+    paths.remove(path);
+    await prefs.setStringList(key, paths);
+    // 嘗試刪除本機檔案
+    try { File(path).deleteSync(); } catch (_) {}
+    if (mounted) setState(() => _photoPaths = List.from(paths));
   }
 
   void _showPhotoDetail(BuildContext ctx, String path) {
@@ -476,7 +545,23 @@ class _StampScreenState extends State<StampScreen>
 
   Widget _buildStampTab() {
     if (_spotsLoading) return const StampGridSkeleton();
-    final spots = _realSpots;
+    // 已打卡景點排最前，最近打卡的排第一；未打卡的排後面
+    final spots = List<Spot>.from(_realSpots)
+      ..sort((a, b) {
+        final va = _visitedSpots[a.id] ?? 0;
+        final vb = _visitedSpots[b.id] ?? 0;
+        if (va > 0 && vb == 0) return -1;
+        if (va == 0 && vb > 0) return 1;
+        if (va > 0 && vb > 0) {
+          // 最近打卡的排最前
+          if (a.id == _lastCheckedInSpotId) return -1;
+          if (b.id == _lastCheckedInSpotId) return 1;
+          final ta = _lastCheckinTime[a.id] ?? DateTime(2000);
+          final tb = _lastCheckinTime[b.id] ?? DateTime(2000);
+          return tb.compareTo(ta);
+        }
+        return 0;
+      });
     final visitedCount = _visitedSpots.keys.where((k) => (_visitedSpots[k] ?? 0) > 0).length;
     final total = spots.length;
 
@@ -606,7 +691,7 @@ class _StampScreenState extends State<StampScreen>
                 final visitCount = _visitedSpots[spot.id] ?? 0;
                 final isVisited = visitCount > 0;
 
-                final stampC = _getStampColor(visitCount);
+                final stampC = _getSpotColor(spot.id, visitCount);
                 return SlideUpFadeIn(
                   index: index,
                   staggerDelay: const Duration(milliseconds: 40),
@@ -632,7 +717,7 @@ class _StampScreenState extends State<StampScreen>
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: _getStampColor(visitCount),
+                                    color: stampC,
                                     width: 3,
                                   ),
                                 ),
@@ -642,11 +727,10 @@ class _StampScreenState extends State<StampScreen>
                                 height: 52,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: _getStampColor(visitCount)
-                                      .withOpacity(0.15),
+                                  color: stampC.withValues(alpha: 0.18),
                                 ),
                                 child: Center(
-                                  child: Icon(_spotIconData(spot.category), size: 24, color: AppColors.textSecondary),
+                                  child: Icon(_spotIconData(spot.category), size: 24, color: stampC.withValues(alpha: 0.9)),
                                 ),
                               ),
                               Positioned(
@@ -656,7 +740,7 @@ class _StampScreenState extends State<StampScreen>
                                   width: 20,
                                   height: 20,
                                   decoration: BoxDecoration(
-                                    color: _getStampColor(visitCount),
+                                    color: stampC,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Center(
@@ -722,7 +806,7 @@ class _StampScreenState extends State<StampScreen>
                             '✓ 已踩點',
                             style: TextStyle(
                               fontSize: 10,
-                              color: _getStampColor(visitCount),
+                              color: stampC,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -746,6 +830,30 @@ class _StampScreenState extends State<StampScreen>
     );
   }
 
+  // 馬卡龍色系印章色盤（每個景點有唯一的柔和色彩）
+  static const _kStampMacaronColors = [
+    Color(0xFFE8A598), // 珊瑚粉
+    Color(0xFF9FC5E8), // 天空藍
+    Color(0xFFA8D5BA), // 薄荷綠
+    Color(0xFFFFD966), // 奶油黃
+    Color(0xFFB7A4D1), // 薰衣草紫
+    Color(0xFFF4B8C1), // 玫瑰粉
+    Color(0xFF8BC4D4), // 粉藍
+    Color(0xFFC5E0B4), // 抹茶綠
+    Color(0xFFFFB347), // 橘杏
+    Color(0xFFD4A5C9), // 藕紫
+  ];
+
+  /// 根據景點 ID 取得馬卡龍顏色；造訪次數越多顏色越深
+  Color _getSpotColor(String spotId, int visitCount) {
+    if (visitCount == 0) return AppColors.textHint;
+    final base = _kStampMacaronColors[spotId.hashCode.abs() % _kStampMacaronColors.length];
+    if (visitCount >= 5) return Color.lerp(base, Colors.brown.shade700, 0.22)!;
+    if (visitCount >= 3) return Color.lerp(base, Colors.black, 0.10)!;
+    return base;
+  }
+
+  /// 相容舊有呼叫（無景點 ID 場合，依造訪次數返回固定色）
   Color _getStampColor(int visitCount) {
     if (visitCount >= 5) return AppColors.stampGold;
     if (visitCount >= 3) return AppColors.stampSilver;
@@ -928,7 +1036,7 @@ class _StampScreenState extends State<StampScreen>
 
   void _showStampDetail(BuildContext context, Spot spot, int visitCount) {
     final isVisited = visitCount > 0;
-    final stampColor = _getStampColor(visitCount);
+    final stampColor = _getSpotColor(spot.id, visitCount);
 
     // Calculate current distance to spot (if location known)
     double? _rawDist;
@@ -1287,7 +1395,7 @@ class _StampScreenState extends State<StampScreen>
                           markers: spots.map((spot) {
                             final count = _visitedSpots[spot.id] ?? 0;
                             final color = count > 0
-                                ? _getStampColor(count)
+                                ? _getSpotColor(spot.id, count)
                                 : Colors.grey.shade400;
                             return Marker(
                               point: LatLng(spot.lat, spot.lng),
@@ -1351,7 +1459,7 @@ class _StampScreenState extends State<StampScreen>
               final spot  = spots[i];
               final count = _visitedSpots[spot.id] ?? 0;
               final color = count > 0
-                  ? _getStampColor(count)
+                  ? _getSpotColor(spot.id, count)
                   : Colors.grey.shade400;
               return GestureDetector(
                 onTap: () {
@@ -1376,7 +1484,7 @@ class _StampScreenState extends State<StampScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(_spotIconData(spot.category), size: 20,
-                          color: count > 0 ? _getStampColor(count) : AppColors.textHint),
+                          color: count > 0 ? _getSpotColor(spot.id, count) : AppColors.textHint),
                       const SizedBox(height: 3),
                       Text(
                         spot.name,
@@ -1851,6 +1959,117 @@ class _StampMarker extends StatelessWidget {
               color: visited ? color : Colors.grey.shade400),
         ),
       ],
+    );
+  }
+}
+
+// ─── 拍立得底部裝飾（每張有不同的可愛樣式）──────────────────
+class _PolaroidBottom extends StatelessWidget {
+  final int index;
+  final Color primary;
+  const _PolaroidBottom({required this.index, required this.primary});
+
+  // 7 種底部樣式
+  static const _kStyles = [
+    'hearts',      // 愛心排列
+    'stars',       // 星星串
+    'flowers',     // 小花
+    'label_chiayi', // 嘉義文字標籤
+    'dots',        // 彩色圓點
+    'music',       // 音符
+    'label_travel', // 旅行文字標籤
+  ];
+
+  static const _kMacaronColors = [
+    Color(0xFFE8A598), Color(0xFF9FC5E8), Color(0xFFA8D5BA),
+    Color(0xFFFFD966), Color(0xFFB7A4D1), Color(0xFFF4B8C1),
+    Color(0xFFFFB347), Color(0xFF87CEEB),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final style = _kStyles[index % _kStyles.length];
+    final c1 = _kMacaronColors[index % _kMacaronColors.length];
+    final c2 = _kMacaronColors[(index + 3) % _kMacaronColors.length];
+    final c3 = _kMacaronColors[(index + 5) % _kMacaronColors.length];
+
+    Widget content;
+    switch (style) {
+      case 'hearts':
+        content = Row(mainAxisAlignment: MainAxisAlignment.center,
+          children: ['♥', '♡', '♥', '♡', '♥'].asMap().entries.map((e) =>
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(e.value, style: TextStyle(
+                fontSize: e.key == 2 ? 14 : 10,
+                color: e.key % 2 == 0 ? c1 : c2.withValues(alpha: 0.6))))
+          ).toList());
+        break;
+      case 'stars':
+        content = Row(mainAxisAlignment: MainAxisAlignment.center,
+          children: ['✦', '★', '✦', '★', '✦'].asMap().entries.map((e) =>
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(e.value, style: TextStyle(
+                fontSize: e.key == 2 ? 13 : 9,
+                color: e.key % 2 == 0 ? c2 : c3.withValues(alpha: 0.7))))
+          ).toList());
+        break;
+      case 'flowers':
+        content = Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: ['✿', '❀', '✾', '❀', '✿'].asMap().entries.map((e) =>
+            Text(e.value, style: TextStyle(
+              fontSize: e.key == 2 ? 14 : 10,
+              color: [c1, c2, c3, c2, c1][e.key].withValues(alpha: 0.85)))
+          ).toList());
+        break;
+      case 'label_chiayi':
+        content = Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('✦', style: TextStyle(fontSize: 8, color: c1)),
+          const SizedBox(width: 5),
+          Text('嘉義回憶', style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w700,
+            color: primary.withValues(alpha: 0.65), letterSpacing: 1.2)),
+          const SizedBox(width: 5),
+          Text('✦', style: TextStyle(fontSize: 8, color: c1)),
+        ]);
+        break;
+      case 'dots':
+        content = Row(mainAxisAlignment: MainAxisAlignment.center,
+          children: List.generate(7, (k) => Container(
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            width: k == 3 ? 10 : 7,
+            height: k == 3 ? 10 : 7,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _kMacaronColors[(index + k) % _kMacaronColors.length].withValues(alpha: 0.80)),
+          )));
+        break;
+      case 'music':
+        content = Row(mainAxisAlignment: MainAxisAlignment.center,
+          children: ['♩', '♪', '♫', '♪', '♩'].asMap().entries.map((e) =>
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 2),
+              child: Text(e.value, style: TextStyle(
+                fontSize: e.key == 2 ? 14 : 10,
+                color: e.key % 2 == 0 ? c3 : c1)))
+          ).toList());
+        break;
+      case 'label_travel':
+      default:
+        content = Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text('☁', style: TextStyle(fontSize: 9, color: c2)),
+          const SizedBox(width: 4),
+          Text('旅行紀念', style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w700,
+            color: primary.withValues(alpha: 0.65), letterSpacing: 1.2)),
+          const SizedBox(width: 4),
+          Text('☁', style: TextStyle(fontSize: 9, color: c2)),
+        ]);
+    }
+
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      alignment: Alignment.center,
+      child: content,
     );
   }
 }

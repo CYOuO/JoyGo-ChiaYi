@@ -58,6 +58,7 @@ dependencies:
   mobile_scanner: ^4.0.0
 
   # Notifications
+  firebase_messaging: ^14.9.4
   flutter_local_notifications: ^17.2.1
 
   # UI helpers
@@ -74,6 +75,9 @@ dependencies:
 
   # Premium icon packs
   phosphor_flutter: ^2.1.0      # Duotone / bold / fill icons
+
+  # AWS S3 備份（Signature V4 簽名用）
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:

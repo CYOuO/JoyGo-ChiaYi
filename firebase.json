@@ -1,1 +1,37 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"joygo-chiayi","appId":"1:152569932828:android:5e5ad147c149953f6503d9","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"joygo-chiayi","configurations":{"android":"1:152569932828:android:5e5ad147c149953f6503d9","ios":"1:152569932828:ios:c420139a3bd9ad396503d9","macos":"1:152569932828:ios:c420139a3bd9ad396503d9","web":"1:152569932828:web:6b1d20a0626717ef6503d9","windows":"1:152569932828:web:43878fea116ff2e26503d9"}}}}}}
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "joygo-chiayi",
+          "appId": "1:152569932828:android:5e5ad147c149953f6503d9",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "joygo-chiayi",
+          "configurations": {
+            "android": "1:152569932828:android:5e5ad147c149953f6503d9",
+            "ios": "1:152569932828:ios:c420139a3bd9ad396503d9",
+            "macos": "1:152569932828:ios:c420139a3bd9ad396503d9",
+            "web": "1:152569932828:web:6b1d20a0626717ef6503d9",
+            "windows": "1:152569932828:web:43878fea116ff2e26503d9"
+          }
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // HapticFeedback
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene, ShimmerBox;
@@ -33,7 +34,7 @@ const _kExpIconMap = <String, (IconData, Color)>{
   'lunch':   (Icons.lunch_dining_rounded,        Color(0xFFFF8A65)),
   'cafe':    (Icons.local_cafe_rounded,          Color(0xFF8D6E63)),
   'dessert': (Icons.icecream_rounded,            Color(0xFFF48FB1)),
-  'tea':     (Icons.emoji_food_beverage_rounded, Color(0xFF66BB6A)),
+  'tea':     (Icons.emoji_food_beverage_rounded, Color(0xFFA8D5BA)),
   'bar':     (Icons.local_bar_rounded,           Color(0xFFFFB300)),
   'hotel':   (Icons.hotel_rounded,               Color(0xFF5C6BC0)),
   'train':   (Icons.train_rounded,               Color(0xFF42A5F5)),
@@ -160,11 +161,15 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   StreamSubscription<List<TripMember>>?    _membersSub;
   StreamSubscription<List<ExpenseRecord>>? _expensesSub;
   StreamSubscription<List<FirebaseTrip>>?  _tripsSub;
+  StreamSubscription<Set<String>>?         _settledSub;
 
   // ── Live data (Firebase → local models) ──────────────────
   List<TripMember>   _fbMembers  = [];
   List<ExpenseRecord> _fbExpenses = [];
   List<FirebaseTrip>  _fbTrips   = [];
+
+  // ── 已標記完成的分帳對（fromId_toId）────────────────────
+  final Set<String> _settledPairs = {};
 
   // ── 轉換後的 local models（UI 使用）─────────────────────
   List<Member>      get _members  => _toMemberList(_fbMembers);
@@ -205,7 +210,14 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   void _subscribeToData() {
     // 訂閱行程列表（獨立模式）
     _tripsSub = TripService.tripsStream().listen((trips) {
-      if (mounted) setState(() => _fbTrips = trips);
+      if (mounted) setState(() {
+        _fbTrips = trips;
+        // 自動選取第一個行程（獨立模式且尚未選取）
+        if (_selectedTripId == null && widget.tripId == null && trips.isNotEmpty) {
+          _selectedTripId = trips.first.id;
+          _subscribeToTrip(trips.first.id);
+        }
+      });
     });
 
     // 若有 tripId（嵌入 or 已選取行程），訂閱成員 + 消費
@@ -216,12 +228,28 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   void _subscribeToTrip(String tripId) {
     _membersSub?.cancel();
     _expensesSub?.cancel();
+    _settledSub?.cancel();
 
     _membersSub = ExpenseService.membersStream(tripId).listen((m) {
       if (mounted) setState(() => _fbMembers = m);
+      // 自動同步有 uid 的成員名稱（確保顯示最新暱稱）
+      for (final member in m) {
+        if (member.uid != null && !member.isExternal) {
+          ExpenseService.syncMemberName(tripId, member.uid!);
+        }
+      }
     });
     _expensesSub = ExpenseService.expensesStream(tripId).listen((e) {
       if (mounted) setState(() => _fbExpenses = e);
+    });
+
+    _settledSub = ExpenseService.settledPairsStream(tripId).listen((pairs) {
+      if (mounted) {
+        setState(() {
+          _settledPairs.clear();
+          _settledPairs.addAll(pairs);
+        });
+      }
     });
 
     // 確保自己在成員清單
@@ -233,6 +261,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     _membersSub?.cancel();
     _expensesSub?.cancel();
     _tripsSub?.cancel();
+    _settledSub?.cancel();
     _tabController.dispose();
     super.dispose();
   }
@@ -442,18 +471,21 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                _selectedTripId == null
-                    ? '選擇行程'
-                    : _fbTrips
-                        .where((t) => t.id == _selectedTripId)
-                        .map((t) => t.title)
-                        .firstOrNull ?? '選擇行程',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w800, fontSize: 16),
-                overflow: TextOverflow.ellipsis,
+              Flexible(
+                child: Text(
+                  _selectedTripId == null
+                      ? '選擇行程'
+                      : _fbTrips
+                          .where((t) => t.id == _selectedTripId)
+                          .map((t) => t.title)
+                          .firstOrNull ?? '選擇行程',
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w800, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 2),
               const Icon(Icons.arrow_drop_down_rounded, size: 20),
             ],
           ),
@@ -489,44 +521,57 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36, height: 4,
-                margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2)),
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.65,
+          ),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36, height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2)),
+                ),
               ),
-            ),
-            const Text('選擇行程',
-                style: TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            ..._fbTrips.map((t) => _tripPickerItem(t.id, t.title, t.icon)),
-            const Divider(height: 20),
-            Builder(builder: (bCtx) {
-              final p = Theme.of(bCtx).colorScheme.primary;
-              return ListTile(
-                leading: Icon(Icons.add_rounded, color: p),
-                title: Text('新增行程',
-                    style: TextStyle(color: p, fontWeight: FontWeight.w600)),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAddTripDialog();
-                },
-              );
-            }),
-          ],
+              const Text('選擇行程',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ..._fbTrips.map((t) => _tripPickerItem(t.id, t.title, t.icon)),
+                    const Divider(height: 20),
+                    Builder(builder: (bCtx) {
+                      final p = Theme.of(bCtx).colorScheme.primary;
+                      return ListTile(
+                        leading: Icon(Icons.add_rounded, color: p),
+                        title: Text('新增行程',
+                            style: TextStyle(color: p, fontWeight: FontWeight.w600)),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showAddTripDialog();
+                        },
+                      );
+                    }),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -536,7 +581,18 @@ class _ExpenseScreenState extends State<ExpenseScreen>
     final isSelected = _selectedTripId == id;
     final primary = Theme.of(context).colorScheme.primary;
     return ListTile(
-      leading: Text(icon, style: const TextStyle(fontSize: 20)),
+      leading: Container(
+        width: 38, height: 38,
+        decoration: BoxDecoration(
+          color: (isSelected ? primary : AppColors.textHint).withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(
+          _tripIconFromKey(icon),
+          size: 20,
+          color: isSelected ? primary : AppColors.textSecondary,
+        ),
+      ),
       title: Text(name,
           style: TextStyle(
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
@@ -903,7 +959,9 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     color: AppColors.textHint),
               ),
               const SizedBox(height: 14),
-              if (settlements.isEmpty && _expenses.isEmpty)
+              if (_members.length <= 1 && _expenses.isNotEmpty)
+                _singlePersonSummary() // 單人模式專屬 UI
+              else if (settlements.isEmpty && _expenses.isEmpty)
                 _noExpensesSettlement()
               else if (settlements.isEmpty)
                 _emptySettlement()
@@ -919,7 +977,7 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         const Padding(
           padding: EdgeInsets.only(bottom: 10),
           child: Text(
-            '各人消費明細',
+            '成員消費明細',
             style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 15,
@@ -938,6 +996,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   Widget _memberBalanceRow(Member m, int bal) {
     final isPositive = bal >= 0;
     final absVal = bal.abs();
+    final isSingle = _members.length <= 1;
+    final totalPaid = _memberTotals[m.id] ?? 0;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -955,26 +1015,31 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                         fontSize: 14,
                         color: AppColors.textPrimary)),
                 Text(
-                  isPositive
-                      ? (absVal == 0
-                          ? '已結清 ✓'
-                          : '應收 NT\$ $absVal')
-                      : '應付 NT\$ $absVal',
+                  isSingle 
+                      ? '總花費 NT\$ $totalPaid'
+                      : isPositive
+                          ? (absVal == 0
+                              ? '已結清 ✓'
+                              : '應收 NT\$ $absVal')
+                          : '應付 NT\$ $absVal',
                   style: TextStyle(
                     fontSize: 12,
-                    color: absVal == 0
-                        ? AppColors.textHint
-                        : (isPositive
-                            ? Theme.of(context).colorScheme.primary
-                            : AppColors.error),
+                    color: isSingle 
+                        ? Theme.of(context).colorScheme.primary
+                        : absVal == 0
+                            ? AppColors.textHint
+                            : (isPositive
+                                ? Theme.of(context).colorScheme.primary
+                                : AppColors.error),
                     fontWeight: FontWeight.w600,
                   ),
                 ),
+
               ],
             ),
           ),
-          // Balance bar
-          _balanceBar(bal),
+          // Balance bar（僅顯示於 Row 右側）
+          if (!isSingle) _balanceBar(bal),
         ],
       ),
     );
@@ -1035,14 +1100,15 @@ class _ExpenseScreenState extends State<ExpenseScreen>
         orElse: () => Member(id: '', name: '?'));
     final to = _members.firstWhere((m) => m.id == s.toId,
         orElse: () => Member(id: '', name: '?'));
+    final isSettled = _settledPairs.contains('${s.fromId}_${s.toId}');
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: isSettled ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.06) : AppColors.background,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider),
+        border: Border.all(color: isSettled ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.45) : AppColors.divider),
       ),
       child: Row(
         children: [
@@ -1056,46 +1122,46 @@ class _ExpenseScreenState extends State<ExpenseScreen>
                     fontWeight: FontWeight.w600,
                     color: AppColors.textSecondary)),
           ]),
-          // Arrow + amount
+          // Transfer arrow + amount
           Expanded(
             child: Column(
               children: [
-                Text(
-                  'NT\$ ${s.amount}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 15,
-                    color: AppColors.accentTerra,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.accentTerra.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.accentTerra.withOpacity(0.30)),
+                  ),
+                  child: Text(
+                    'NT\$ ${s.amount}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                      color: AppColors.accentTerra,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 6),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Expanded(
-                      child: Container(
-                          height: 1.5,
-                          color: AppColors.accentTerra
-                              .withOpacity(0.3)),
+                    Expanded(child: Container(height: 1, color: AppColors.accentTerra.withOpacity(0.25))),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: AppColors.accentTerra,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: AppColors.accentTerra.withOpacity(0.30), blurRadius: 6, offset: const Offset(0, 2))],
+                      ),
+                      child: const Icon(Icons.payments_rounded, color: Colors.white, size: 13),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 6),
-                      child: Icon(Icons.arrow_forward_rounded,
-                          color: AppColors.accentTerra, size: 16),
-                    ),
-                    Expanded(
-                      child: Container(
-                          height: 1.5,
-                          color: AppColors.accentTerra
-                              .withOpacity(0.3)),
-                    ),
+                    Expanded(child: Container(height: 1, color: AppColors.accentTerra.withOpacity(0.25))),
                   ],
                 ),
-                const SizedBox(height: 2),
-                Text('轉帳給',
-                    style: const TextStyle(
-                        fontSize: 10,
-                        color: AppColors.textHint)),
+                const SizedBox(height: 4),
+                const Text('轉帳給', style: TextStyle(fontSize: 10, color: AppColors.textHint)),
               ],
             ),
           ),
@@ -1111,30 +1177,40 @@ class _ExpenseScreenState extends State<ExpenseScreen>
           ]),
           // Mark done
           const SizedBox(width: 10),
-          GestureDetector(
-            onTap: () async => await _markSettled(context, s, from, to),
-            child: Builder(builder: (bCtx) {
-              final p = Theme.of(bCtx).colorScheme.primary;
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: p.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '標記\n完成',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: p,
-                    height: 1.3,
+          if (isSettled)
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.check_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+            )
+          else
+            GestureDetector(
+              onTap: () async => await _markSettled(context, s, from, to),
+              child: Builder(builder: (bCtx) {
+                final p = Theme.of(bCtx).colorScheme.primary;
+                return Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: p.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-              );
-            }),
-          ),
+                  child: Text(
+                    '標記\n完成',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: p,
+                      height: 1.3,
+                    ),
+                  ),
+                );
+              }),
+            ),
         ],
       ),
     );
@@ -1178,6 +1254,37 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       ),
     );
   }
+
+  Widget _singlePersonSummary() {
+  final primary = Theme.of(context).colorScheme.primary;
+  final totalPaid = _totalAmount;
+  
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 24),
+    child: Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: primary.withValues(alpha: 0.1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.self_improvement_rounded, size: 48, color: primary), 
+        ),
+        const SizedBox(height: 16),
+        Text('獨旅記帳模式',
+            style: TextStyle(
+                fontWeight: FontWeight.w800,
+                color: primary,
+                fontSize: 16)),
+        const SizedBox(height: 6),
+        Text('目前總共花費了 NT\$ $totalPaid',
+            style: const TextStyle(
+                color: AppColors.textSecondary, fontSize: 13)),
+      ],
+    ),
+  );
+}
 
   Widget _memberDetailCard(Member m) {
     final paid = _expenses
@@ -1526,7 +1633,8 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       builder: (_) => _AddExpenseSheet(
         members: _members,
         trips: _fbTrips.map((t) => _TripEntry(id: t.id, name: t.title, icon: t.icon)).toList(),
-        initialTripId: _selectedTripId,
+        initialTripId: _activeTripId,
+        lockTrip: widget.embedded && widget.tripId != null,
         onAdd: (e) {
           // 儲存到 Firebase（若有 tripId）
           if (tid != null) {
@@ -1674,6 +1782,35 @@ class _ExpenseScreenState extends State<ExpenseScreen>
   }
 
   void _showMemberManager(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
+    final tid = _activeTripId;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _MemberManagerSheet(
+        primary: primary,
+        tripId: tid,
+        members: _members,
+        memberAvatar: _memberAvatar,
+        onAddExternal: () => _showAddExternalMember(context),
+        onRemove: (mid) async {
+          if (tid != null) await ExpenseService.removeMember(tid, mid);
+        },
+        onAddAppUser: (uid, name, photoUrl) async {
+          if (tid == null) return;
+          final ref = ExpenseService.membersRef(tid);
+          await ref.doc(uid).set({
+            'uid': uid, 'name': name, 'photoUrl': photoUrl,
+            'isExternal': false, 'addedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        },
+      ),
+    );
+  }
+
+  // legacy: kept for _showMemberManager compat
+  void _showMemberManager_OLD(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
     final tid = _activeTripId;
     showModalBottomSheet(
@@ -1860,6 +1997,12 @@ class _ExpenseScreenState extends State<ExpenseScreen>
       ),
     );
     if (confirm == true && mounted) {
+      // 🌟 改成寫入 Firebase
+      final tid = _activeTripId;
+      if (tid != null) {
+        await ExpenseService.markSettled(tid, '${s.fromId}_${s.toId}');
+      }
+      
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('已標記 ${from.name} 轉帳 NT\$${s.amount} 給 ${to.name} ✓'),
@@ -1913,6 +2056,216 @@ class _ExpenseScreenState extends State<ExpenseScreen>
 }
 
 // ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// 旅伴管理 Sheet（Email 搜尋 App 用戶 + 加外部旅伴）
+// ═══════════════════════════════════════════════
+class _MemberManagerSheet extends StatefulWidget {
+  final Color primary;
+  final String? tripId;
+  final List<Member> members;
+  final Widget Function(Member, {required double radius}) memberAvatar;
+  final VoidCallback onAddExternal;
+  final Future<void> Function(String mid) onRemove;
+  final Future<void> Function(String uid, String name, String? photoUrl) onAddAppUser;
+
+  const _MemberManagerSheet({
+    required this.primary, required this.tripId, required this.members,
+    required this.memberAvatar, required this.onAddExternal,
+    required this.onRemove, required this.onAddAppUser,
+  });
+  @override State<_MemberManagerSheet> createState() => _MemberManagerSheetState();
+}
+
+class _MemberManagerSheetState extends State<_MemberManagerSheet> {
+  final _searchCtrl = TextEditingController();
+  bool _searching = false;
+  bool _notFound = false;
+  Map<String, dynamic>? _foundUser;
+  bool _adding = false;
+
+  @override void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
+  Future<void> _search() async {
+    final q = _searchCtrl.text.trim();
+    if (q.isEmpty) return;
+    setState(() { _searching = true; _notFound = false; _foundUser = null; });
+    try {
+      final db = FirebaseFirestore.instance;
+      // 先試 email，再試 nickname
+      QuerySnapshot? snap;
+      snap = await db.collection('users').where('email', isEqualTo: q).limit(1).get();
+      if (snap.docs.isEmpty) {
+        snap = await db.collection('users').where('nickname', isEqualTo: q).limit(1).get();
+      }
+      if (snap.docs.isEmpty) {
+        setState(() { _searching = false; _notFound = true; });
+      } else {
+        final d = snap.docs.first.data() as Map<String, dynamic>;
+        setState(() { _searching = false; _foundUser = {...d, 'uid': snap!.docs.first.id}; });
+      }
+    } catch (_) {
+      setState(() { _searching = false; _notFound = true; });
+    }
+  }
+
+  Future<void> _addFoundUser() async {
+    if (_foundUser == null || _adding) return;
+    setState(() => _adding = true);
+    final uid = _foundUser!['uid'] as String;
+    final name = (_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? _foundUser!['name'] ?? uid).toString();
+    final photo = (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] as String? ?? '');
+    await widget.onAddAppUser(uid, name, photo.isEmpty ? null : photo);
+    setState(() { _adding = false; _foundUser = null; _searching = false; _notFound = false; _searchCtrl.clear(); });
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('已加入 $name'),
+      backgroundColor: widget.primary, behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.primary;
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 把手
+          Center(child: Container(width: 36, height: 4,
+            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 14),
+
+          // 標題 + 加外部旅伴
+          Row(children: [
+            const Text('旅伴管理', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.textPrimary)),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: widget.onAddExternal,
+              icon: Icon(Icons.person_add_alt_1_outlined, color: p, size: 18),
+              label: Text('加外部旅伴', style: TextStyle(color: p, fontSize: 13)),
+            ),
+          ]),
+          const SizedBox(height: 10),
+
+          // ── 搜尋 App 用戶 ──────────────────────────────────
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: p.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: p.withValues(alpha: 0.15)),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('搜尋 App 用戶', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: p)),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      hintText: '輸入 Email 或暱稱',
+                      hintStyle: const TextStyle(fontSize: 12, color: AppColors.textHint),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: p.withValues(alpha: 0.2))),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: p.withValues(alpha: 0.2))),
+                    ),
+                    onSubmitted: (_) => _search(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _searching ? null : _search,
+                  child: Container(
+                    width: 42, height: 42,
+                    decoration: BoxDecoration(color: p, borderRadius: BorderRadius.circular(10)),
+                    child: _searching
+                        ? const Padding(padding: EdgeInsets.all(10), child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        : const Icon(Icons.search_rounded, color: Colors.white, size: 20),
+                  ),
+                ),
+              ]),
+              // 搜尋結果
+              if (_notFound)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('找不到此用戶', style: TextStyle(fontSize: 12, color: AppColors.error)),
+                ),
+              if (_foundUser != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+                  child: Row(children: [
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: p.withValues(alpha: 0.15),
+                      backgroundImage: (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] ?? '').toString().isNotEmpty
+                          ? NetworkImage((_foundUser!['photoURL'] ?? _foundUser!['photoUrl']).toString()) : null,
+                      child: (_foundUser!['photoURL'] ?? _foundUser!['photoUrl'] ?? '').toString().isEmpty
+                          ? Text(
+                              (_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? '?').toString().isNotEmpty
+                                  ? (_foundUser!['nickname'] ?? _foundUser!['displayName']).toString()[0]
+                                  : '?',
+                              style: TextStyle(color: p, fontWeight: FontWeight.w700),
+                            ) : null,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text((_foundUser!['nickname'] ?? _foundUser!['displayName'] ?? '').toString(),
+                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                      Text((_foundUser!['email'] ?? _foundUser!['emailAddress'] ?? '').toString(),
+                          style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+                    ])),
+                    GestureDetector(
+                      onTap: _adding ? null : _addFoundUser,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: p, borderRadius: BorderRadius.circular(8)),
+                        child: _adding
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('加入', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ]),
+                ),
+              ],
+            ]),
+          ),
+          const SizedBox(height: 14),
+
+          // ── 現有成員列表 ────────────────────────────────────
+          const Text('目前成員', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+          const SizedBox(height: 6),
+          ...widget.members.map((m) => ListTile(
+            dense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 0),
+            leading: widget.memberAvatar(m, radius: 18),
+            title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+            subtitle: m.isExternal
+                ? const Text('外部成員', style: TextStyle(fontSize: 11, color: AppColors.textHint))
+                : null,
+            trailing: m.uid == myUid
+                ? const Text('（我）', style: TextStyle(color: AppColors.textHint, fontSize: 12))
+                : IconButton(
+                    icon: const Icon(Icons.remove_circle_outline, color: AppColors.error, size: 20),
+                    onPressed: () => widget.onRemove(m.id),
+                  ),
+          )),
+        ]),
+      ),
+    );
+  }
+}
+
 // ADD EXPENSE SHEET
 // ═══════════════════════════════════════════════
 
@@ -1920,11 +2273,13 @@ class _AddExpenseSheet extends StatefulWidget {
   final List<Member> members;
   final List<_TripEntry> trips;
   final String? initialTripId;
+  /// 若為 true，隱藏行程選擇器（從行程內部開啟時已知行程）
+  final bool lockTrip;
   final void Function(ExpenseItem) onAdd;
 
   const _AddExpenseSheet(
       {required this.members, required this.trips,
-       required this.onAdd, this.initialTripId});
+       required this.onAdd, this.initialTripId, this.lockTrip = false});
 
   @override
   State<_AddExpenseSheet> createState() =>
@@ -2121,8 +2476,8 @@ class _AddExpenseSheetState
 
               const SizedBox(height: 14),
 
-              // Trip selector
-              if (widget.trips.isNotEmpty) ...[
+              // Trip selector（行程內開啟時隱藏，因為已知行程）
+              if (widget.trips.isNotEmpty && !widget.lockTrip) ...[
                 const _Label('所屬行程'),
                 const SizedBox(height: 8),
                 SingleChildScrollView(

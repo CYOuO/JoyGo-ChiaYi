@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -25,6 +26,9 @@ class FirebaseTrip {
   /// 各景點備注       key = spotName, value = note string
   final Map<String, String> spotNotes;
 
+  /// 被邀請加入的成員 UIDs（不包含建立者）
+  final List<String> members;
+
   const FirebaseTrip({
     required this.id,
     required this.uid,
@@ -37,6 +41,7 @@ class FirebaseTrip {
     this.coverUrl,
     this.icon = 'map',
     required this.createdAt,
+    this.members    = const [],
     this.spotTimes  = const {},
     this.spotBudgets= const {},
     this.spotNotes  = const {},
@@ -62,10 +67,20 @@ class FirebaseTrip {
       coverUrl:    d['coverUrl']    as String?,
       icon:        d['icon']        as String? ?? 'map',
       createdAt:   (d['createdAt']  as Timestamp?)?.toDate() ?? DateTime.now(),
+      members:     List<String>.from(d['members'] ?? []),
       spotTimes:   _toMap<String>(d['spotTimes'],   (v) => v.toString()),
       spotBudgets: _toMap<int>   (d['spotBudgets'], (v) => (v as num).toInt()),
       spotNotes:   _toMap<String>(d['spotNotes'],   (v) => v.toString()),
     );
+  }
+
+  /// 從 spots 的 __DAY_X__ 標記推算實際天數（AI 套用後 days 欄位可能未更新）
+  int get actualDays {
+    final maxFromSpots = spots
+        .where((s) => s.startsWith('__DAY_'))
+        .map((s) => int.tryParse(RegExp(r'__DAY_(\d+)__').firstMatch(s)?.group(1) ?? '0') ?? 0)
+        .fold(0, (a, b) => a > b ? a : b);
+    return maxFromSpots > 0 ? maxFromSpots : days;
   }
 
   String get dateDisplay {
@@ -89,16 +104,34 @@ class TripService {
   static Stream<List<FirebaseTrip>> tripsStream() {
     final uid = _uid;
     if (uid == null) return const Stream.empty();
-    // 只用單欄位 where，排序在 client 端，避免 Firestore composite index 需求
-    return _db
-        .collection('trips')
-        .where('uid', isEqualTo: uid)
-        .snapshots()
-        .map((s) {
-          final list = s.docs.map(FirebaseTrip.fromDoc).toList();
-          list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          return list;
-        });
+    // 合併兩個 stream：自己的行程 + 被邀請加入的行程
+    final ownStream = _db.collection('trips').where('uid', isEqualTo: uid).snapshots();
+    final memberStream = _db.collection('trips').where('members', arrayContains: uid).snapshots();
+
+    QuerySnapshot? latestOwn;
+    QuerySnapshot? latestMember;
+
+    List<FirebaseTrip> _merge() {
+      final seen = <String>{};
+      final merged = <FirebaseTrip>[];
+      for (final doc in [
+        ...?latestOwn?.docs,
+        ...?latestMember?.docs,
+      ]) {
+        if (seen.add(doc.id)) merged.add(FirebaseTrip.fromDoc(doc));
+      }
+      merged.sort((x, y) => y.createdAt.compareTo(x.createdAt));
+      return merged;
+    }
+
+    late StreamController<List<FirebaseTrip>> ctrl;
+    ctrl = StreamController<List<FirebaseTrip>>.broadcast(
+      onListen: () {
+        ownStream.listen((s) { latestOwn = s; ctrl.add(_merge()); });
+        memberStream.listen((s) { latestMember = s; ctrl.add(_merge()); });
+      },
+    );
+    return ctrl.stream;
   }
 
   /// 即時監聽單一行程文件（行程詳情頁用，景點加入後即時更新）
@@ -171,6 +204,15 @@ class TripService {
 
   static Future<void> deleteTrip(String tripId) =>
       _db.collection('trips').doc(tripId).delete();
+
+  /// 退出共享行程：從 members 陣列移除自己的 uid
+  static Future<void> leaveTrip(String tripId) async {
+    final uid = _uid;
+    if (uid == null) return;
+    await _db.collection('trips').doc(tripId).update({
+      'members': FieldValue.arrayRemove([uid]),
+    });
+  }
 
   static Future<void> setCompleted(String tripId, {required bool completed}) =>
       _db.collection('trips').doc(tripId).update({'isCompleted': completed});

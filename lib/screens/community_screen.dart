@@ -13,7 +13,8 @@ import '../services/community_service.dart';
 import '../services/spot_service.dart';
 import '../services/trip_service.dart';
 import '../providers/app_settings_provider.dart';
-import '../widgets/common_widgets.dart' show WashiTapeDivider;
+import '../providers/user_provider.dart';
+import '../widgets/common_widgets.dart' show WashiTapeDivider, GlowTitle, ShimmerPostTitle;
 import '../widgets/user_profile_sheet.dart';
 
 // Map trip icon key (emoji or named) → IconData
@@ -42,7 +43,7 @@ String _timeAgo(DateTime dt, [AppL10n? l10n]) =>
     (l10n ?? const AppL10n('zh')).commTimeAgo(dt);
 
 // ── 套用行程：top-level function，任何頁面都可呼叫 ───────────────
-void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
+void _showApplyTripSheet(BuildContext context, List<String> spotNames, {String? tripTitle}) {
   final user = FirebaseAuth.instance.currentUser;
   final l10n = context.read<AppSettingsProvider>().l10n;
   if (user == null) {
@@ -56,13 +57,48 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
     return;
   }
   final primary = Theme.of(context).colorScheme.primary;
+
+  // ── 新建行程（選日期）────────────────────────────────────────
+  Future<void> createNewWithDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: now,
+      firstDate: now.subtract(const Duration(days: 365)),
+      lastDate: now.add(const Duration(days: 365 * 3)),
+      helpText: '選擇出發日期',
+      confirmText: '確認',
+      cancelText: '取消',
+    );
+    if (picked == null) return;
+    if (!context.mounted) return;
+    final title = (tripTitle != null && tripTitle.isNotEmpty)
+        ? tripTitle
+        : '社群行程 ${picked.month}/${picked.day}';
+    try {
+      await TripService.createTrip(title: title, startDate: picked, spots: spotNames);
+      if (context.mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('已建立「$title」並加入 ${spotNames.length} 個景點'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('建立失敗：$e'), behavior: SnackBarBehavior.floating));
+    }
+  }
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => Container(
       constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.65),
+          maxHeight: MediaQuery.of(context).size.height * 0.72),
       decoration: const BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -88,7 +124,46 @@ void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
             l10n.commAddSpotsDesc(spotNames.length, spotNames.toList()),
             style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
         ),
+        const SizedBox(height: 10),
+        // ── 新建行程按鈕（選日期）───────────────────────────
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: GestureDetector(
+            onTap: createNewWithDate,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: primary.withValues(alpha: 0.25)),
+              ),
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(color: primary, borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.add_rounded, size: 20, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('新建行程並選擇出發日期',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: primary)),
+                  const SizedBox(height: 2),
+                  const Text('點此選日期，自動建立新行程',
+                    style: TextStyle(fontSize: 11, color: AppColors.textHint)),
+                ])),
+                Icon(Icons.calendar_month_rounded, size: 20, color: primary),
+              ]),
+            ),
+          ),
+        ),
         const Divider(height: 20),
+        Padding(
+          padding: const EdgeInsets.only(left: 20, bottom: 4),
+          child: Align(alignment: Alignment.centerLeft,
+            child: Text('或加入既有行程',
+              style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w700))),
+        ),
         Flexible(
           child: StreamBuilder<List<FirebaseTrip>>(
             stream: TripService.tripsStream(),
@@ -273,7 +348,7 @@ class _CommunityScreenState extends State<CommunityScreen> {
                         color: p.withValues(alpha: 0.35)))),
                   ])),
                   const SizedBox(width: 2),
-                  Text(l10n.commTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  GlowTitle(text: l10n.commTitle, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
                 ]);
               }),
         leading: _isSearching
@@ -357,34 +432,37 @@ class _CommunityScreenState extends State<CommunityScreen> {
                 ..._kTags.map((t) => _tagChip(t, t, primary)),
               ]),
             ),
-            // Row 2：預算滑桿（直接顯示）+ 排序按鈕
+            // Row 2：預算滑桿（僅行程分享 tab 顯示）+ 排序按鈕
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
               child: Row(children: [
-                Icon(Icons.attach_money_rounded, size: 14,
-                    color: _budgetActive ? primary : AppColors.textHint),
-                Expanded(child: SliderTheme(
-                  data: SliderThemeData(
-                    activeTrackColor: primary,
-                    inactiveTrackColor: AppColors.divider,
-                    thumbColor: primary,
-                    overlayColor: primary.withValues(alpha: 0.1),
-                    trackHeight: 3,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  ),
-                  child: RangeSlider(
-                    values: _budgetRange,
-                    min: 0, max: _budgetMax, divisions: 30,
-                    onChanged: (v) => setState(() => _budgetRange = v),
-                  ),
-                )),
-                Text(
-                  _budgetActive
-                      ? 'NT\$${_budgetRange.start.round()}–${_budgetRange.end >= _budgetMax ? context.read<AppSettingsProvider>().l10n.noLimit : "${_budgetRange.end.round()}"}'
-                      : context.read<AppSettingsProvider>().l10n.noLimit,
-                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                      color: _budgetActive ? primary : AppColors.textHint)),
-                const SizedBox(width: 10),
+                if (_contentTab == 0) ...[
+                  Icon(Icons.attach_money_rounded, size: 14,
+                      color: _budgetActive ? primary : AppColors.textHint),
+                  Expanded(child: SliderTheme(
+                    data: SliderThemeData(
+                      activeTrackColor: primary,
+                      inactiveTrackColor: AppColors.divider,
+                      thumbColor: primary,
+                      overlayColor: primary.withValues(alpha: 0.1),
+                      trackHeight: 3,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                    ),
+                    child: RangeSlider(
+                      values: _budgetRange,
+                      min: 0, max: _budgetMax, divisions: 30,
+                      onChanged: (v) => setState(() => _budgetRange = v),
+                    ),
+                  )),
+                  Text(
+                    _budgetActive
+                        ? 'NT\$${_budgetRange.start.round()}–${_budgetRange.end >= _budgetMax ? context.read<AppSettingsProvider>().l10n.noLimit : "${_budgetRange.end.round()}"}'
+                        : context.read<AppSettingsProvider>().l10n.noLimit,
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                        color: _budgetActive ? primary : AppColors.textHint)),
+                  const SizedBox(width: 10),
+                ] else
+                  const Spacer(),
                 _SortToggleButton(
                   isLatest: _sortLatest,
                   onToggle: () => setState(() => _sortLatest = !_sortLatest),
@@ -613,6 +691,15 @@ class _CommunityScreenState extends State<CommunityScreen> {
         final isFirstLoad = snap.connectionState == ConnectionState.waiting && snap.data == null;
         if (isFirstLoad) return const Center(child: CircularProgressIndicator());
         var posts = snap.data ?? [];
+        // 標籤過濾
+        if (_selectedTag != null) {
+          final tag = _selectedTag!;
+          posts = posts.where((p) =>
+              p.title.contains(tag) ||
+              p.content.contains(tag) ||
+              p.spotNames.any((s) => s.contains(tag))
+          ).toList();
+        }
         // 搜尋過濾
         if (q.isNotEmpty) {
           posts = posts.where((p) =>
@@ -620,6 +707,14 @@ class _CommunityScreenState extends State<CommunityScreen> {
               p.content.toLowerCase().contains(q) ||
               p.spotNames.any((s) => s.toLowerCase().contains(q))
           ).toList();
+        }
+        // 🌟 預算篩選：只篩有 tripBudget 的貼文
+        if (_budgetActive) {
+          posts = posts.where((p) {
+            if (p.tripBudget == null) return true; // 無費用資料的貼文不過濾
+            return p.tripBudget! >= _budgetRange.start &&
+                   p.tripBudget! <= _budgetRange.end;
+          }).toList();
         }
         if (posts.isEmpty) {
           return Stack(children: [
@@ -1544,20 +1639,26 @@ class _FirebasePostCardState extends State<_FirebasePostCard> {
           Padding(
             padding: const EdgeInsets.all(14),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
+              Builder(builder: (ctx) {
+                final currentUid = FirebaseAuth.instance.currentUser?.uid;
+                final isOwn = post.authorId == currentUid;
+                final userProv = ctx.watch<UserProvider>();
+                final displayName  = isOwn && userProv.nickname.isNotEmpty  ? userProv.nickname  : post.authorName;
+                final displayPhoto = isOwn && userProv.photoURL.isNotEmpty  ? userProv.photoURL  : post.authorPhoto;
+                return Row(children: [
                 GestureDetector(
                   onTap: () => widget.onShowAuthorProfile(post),
                   child: CircleAvatar(radius: 16,
-                    backgroundImage: post.authorPhoto.isNotEmpty ? NetworkImage(post.authorPhoto) : null,
+                    backgroundImage: displayPhoto.isNotEmpty ? NetworkImage(displayPhoto) : null,
                     backgroundColor: primary.withValues(alpha: 0.1),
-                    child: post.authorPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null,
+                    child: displayPhoto.isEmpty ? Icon(Icons.person_rounded, size: 16, color: primary) : null,
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(child: GestureDetector(
                   onTap: () => widget.onShowAuthorProfile(post),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(post.authorName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                    Text(displayName, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                     Text(_timeAgo(post.createdAt), style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
                   ]),
                 )),
@@ -1594,9 +1695,13 @@ class _FirebasePostCardState extends State<_FirebasePostCard> {
                       child: Icon(Icons.delete_outline_rounded, size: 16, color: AppColors.textHint),
                     ),
                   ),
-              ]),
+              ]); // Row
+              }), // Builder
               const SizedBox(height: 10),
-              Text(post.title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              ShimmerPostTitle(
+                text: post.title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
               if (post.content.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(post.content,
@@ -2105,7 +2210,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
                               final spot = SpotService.cached.where((s) => s.id == id).firstOrNull;
                               return spot?.name ?? id;
                             }).toList();
-                            _showApplyTripSheet(context, spotNames);
+                            _showApplyTripSheet(context, spotNames, tripTitle: widget.trip.title);
                           },
                           icon: const Icon(Icons.add_rounded, size: 15),
                           label: Text(context.read<AppSettingsProvider>().l10n.commApplyTripBtn),
@@ -2992,126 +3097,8 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
     });
   }
 
-  String _timeAgo(DateTime dt) {
-    final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1) return '剛剛';
-    if (diff.inHours < 1) return '${diff.inMinutes} 分鐘前';
-    if (diff.inDays < 1) return '${diff.inHours} 小時前';
-    if (diff.inDays < 7) return '${diff.inDays} 天前';
-    return '${dt.month}/${dt.day}';
-  }
-
-// ── 套用行程（top-level，可從任何貼文頁呼叫）──────────────────
-void _showApplyTripSheet(BuildContext context, List<String> spotNames) {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('請先登入才能套用行程'), behavior: SnackBarBehavior.floating));
-      return;
-    }
-    if (spotNames.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('此貼文沒有景點資訊'), behavior: SnackBarBehavior.floating));
-      return;
-    }
-    final primary = Theme.of(context).colorScheme.primary;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => Container(
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.65),
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(width: 36, height: 4,
-            margin: const EdgeInsets.fromLTRB(0, 12, 0, 12),
-            decoration: BoxDecoration(color: AppColors.divider,
-                borderRadius: BorderRadius.circular(2)))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(children: [
-              Icon(Icons.add_location_alt_rounded, color: primary, size: 20),
-              const SizedBox(width: 8),
-              Text('套用到哪個行程？',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: primary)),
-            ]),
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Text('將加入 ${spotNames.length} 個景點：${spotNames.take(3).join("、")}${spotNames.length > 3 ? "…" : ""}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textHint)),
-          ),
-          const Divider(height: 20),
-          Flexible(
-            child: StreamBuilder<List<FirebaseTrip>>(
-              stream: TripService.tripsStream(),
-              builder: (_, snap) {
-                final trips = snap.data ?? [];
-                if (trips.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.map_outlined, size: 40, color: AppColors.textHint),
-                      const SizedBox(height: 12),
-                      Text(context.read<AppSettingsProvider>().l10n.commNoTripInCreate,
-                        style: TextStyle(color: AppColors.textHint)),
-                    ]),
-                  );
-                }
-                return ListView.separated(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                  itemCount: trips.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 8),
-                  itemBuilder: (_, i) {
-                    final trip = trips[i];
-                    return ListTile(
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      tileColor: primary.withValues(alpha: 0.05),
-                      leading: Icon(_tripIconFromKey(trip.icon), size: 22, color: primary),
-                      title: Text(trip.title,
-                          style: const TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: Text(trip.dateDisplay,
-                          style: const TextStyle(fontSize: 11)),
-                      trailing: Icon(Icons.chevron_right_rounded, color: primary),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        try {
-                          await TripService.applySpots(trip.id, spotNames);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('已將 ${spotNames.length} 個景點加入「${trip.title}」'),
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: primary,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12)),
-                            ));
-                          }
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text('套用失敗：$e'),
-                              behavior: SnackBarBehavior.floating,
-                            ));
-                          }
-                        }
-                      },
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
+  String _timeAgo(DateTime dt) =>
+      context.read<AppSettingsProvider>().l10n.commTimeAgo(dt);
 
   void _showFullImage(BuildContext context, String url) {
     Navigator.push(context, PageRouteBuilder(
@@ -3312,6 +3299,9 @@ class _CreatePostPageState extends State<CreatePostPage> {
   bool _posting = false;
   // 選擇的既有行程
   Map<String, dynamic>? _selectedTrip;
+  // 從旅遊分帳自動抓到的費用總額
+  int? _tripBudget;
+  bool _loadingBudget = false;
 
   @override
   void initState() {
@@ -3342,42 +3332,78 @@ class _CreatePostPageState extends State<CreatePostPage> {
     final chosen = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.85,
+        expand: false,
+        builder: (ctx, scrollCtrl) => Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(children: [
+            // 把手
+            Center(child: Container(width: 36, height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
+            Text(context.read<AppSettingsProvider>().l10n.commSelectTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: scrollCtrl,
+                padding: const EdgeInsets.only(bottom: 24),
+                children: snap.docs.map((doc) {
+                  final d = doc.data();
+                  // 過濾掉 __DAY_X__ 標記，只計算真實景點
+                  final allSpots = (d['spots'] as List?)?.map((s) => s.toString()).toList() ?? [];
+                  final realSpots = allSpots.where((s) => !s.startsWith('__DAY_')).toList();
+                  return ListTile(
+                    leading: Icon(Icons.luggage_rounded, color: primary),
+                    title: Text(d['title']?.toString() ?? '未命名行程',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: Text('${realSpots.length} 個景點'),
+                    onTap: () => Navigator.pop(ctx, {...d, '__id': doc.id, 'spots': allSpots}),
+                  );
+                }).toList(),
+              ),
+            ),
+          ]),
         ),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Center(child: Container(width: 36, height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(color: AppColors.divider, borderRadius: BorderRadius.circular(2)))),
-          Text(context.read<AppSettingsProvider>().l10n.commSelectTrip, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-          const SizedBox(height: 12),
-          ...snap.docs.map((doc) {
-            final d = doc.data();
-            final spots = (d['spots'] as List?)?.map((s) => s.toString()).toList() ?? [];
-            return ListTile(
-              leading: Icon(Icons.luggage_rounded, color: primary),
-              title: Text(d['title']?.toString() ?? '未命名行程',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-              subtitle: Text('${spots.length} 個景點'),
-              onTap: () => Navigator.pop(context, {...d, '__id': doc.id, 'spots': spots}),
-            );
-          }),
-        ]),
       ),
     );
     if (chosen != null) {
       setState(() {
         _selectedTrip = chosen;
-        // 自動填入景點
-        _spots = List<String>.from(chosen['spots'] ?? []);
-        // 自動填入標題（如果空白）
+        // 過濾掉 __DAY_X__ 標記，只保留真實景點名稱
+        _spots = (List<String>.from(chosen['spots'] ?? []))
+            .where((s) => !s.startsWith('__DAY_'))
+            .toList();
         if (_titleCtrl.text.isEmpty && chosen['title'] != null) {
           _titleCtrl.text = chosen['title'].toString();
         }
+        _tripBudget = null;
+        _loadingBudget = true;
       });
+      // 🌟 自動從分帳抓費用總額
+      _fetchTripBudget(chosen['__id']?.toString());
+    }
+  }
+
+  Future<void> _fetchTripBudget(String? tripId) async {
+    if (tripId == null) { setState(() => _loadingBudget = false); return; }
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('trips').doc(tripId).collection('expenses').get();
+      final total = snap.docs.fold<int>(0, (sum, doc) {
+        final d = doc.data();
+        return sum + ((d['amount'] as num?)?.toInt() ?? 0);
+      });
+      if (mounted) setState(() { _tripBudget = total; _loadingBudget = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingBudget = false);
     }
   }
 
@@ -3400,6 +3426,20 @@ class _CreatePostPageState extends State<CreatePostPage> {
         SnackBar(content: Text(context.read<AppSettingsProvider>().l10n.commTripShareNoTrip), behavior: SnackBarBehavior.floating));
       return;
     }
+    // 檢查是否被管理員封鎖（isBanned）
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid != null) {
+      final userDoc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (userDoc.data()?['isBanned'] == true) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('您的帳號已被停用，無法發布貼文。'),
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: Colors.redAccent,
+          ));
+        return;
+      }
+    }
     setState(() => _posting = true);
     try {
       await CommunityService.createPost(
@@ -3408,6 +3448,7 @@ class _CreatePostPageState extends State<CreatePostPage> {
         type:      _type,
         images:    _images,
         spotNames: _spots,
+        tripBudget: _tripBudget,
       );
       if (mounted) {
         Navigator.pop(context);
@@ -3505,33 +3546,71 @@ class _CreatePostPageState extends State<CreatePostPage> {
                 ]),
               ),
             ),
-            // 顯示行程景點
-            if (_selectedTrip != null && (_selectedTrip!['spots'] as List?)?.isNotEmpty == true) ...[
+            // 🌟 自動帶入旅遊分帳費用總額
+            if (_selectedTrip != null) ...[
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: primary.withValues(alpha: 0.04),
+                  color: primary.withValues(alpha: 0.07),
                   borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: primary.withValues(alpha: 0.18)),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(context.read<AppSettingsProvider>().l10n.commTripSpotsLabel, style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 6),
-                  ...(_selectedTrip!['spots'] as List).asMap().entries.map((e) =>
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(children: [
-                        Container(width: 20, height: 20,
-                          decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
-                          child: Center(child: Text('${e.key + 1}',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)))),
-                        const SizedBox(width: 8),
-                        Text(e.value.toString(),
-                          style: const TextStyle(fontSize: 13, color: AppColors.textPrimary)),
-                      ]),
-                    )),
+                child: Row(children: [
+                  Icon(Icons.account_balance_wallet_rounded, size: 14, color: primary),
+                  const SizedBox(width: 6),
+                  Text('旅遊總費用：', style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
+                  if (_loadingBudget)
+                    SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 1.5, color: primary))
+                  else
+                    Text(
+                      _tripBudget != null && _tripBudget! > 0
+                          ? 'NT\$$_tripBudget（將用於預算篩選）'
+                          : '尚無分帳記錄',
+                      style: TextStyle(fontSize: 12, color: _tripBudget != null && _tripBudget! > 0
+                          ? primary : AppColors.textHint),
+                    ),
                 ]),
               ),
+            ],
+            // 顯示行程景點（過濾 __DAY_X__ 標記）
+            if (_selectedTrip != null) ...[
+              const SizedBox(height: 8),
+              Builder(builder: (ctx) {
+                final rawSpots = (_selectedTrip!['spots'] as List?)
+                    ?.map((s) => s.toString())
+                    .where((s) => !s.startsWith('__DAY_'))
+                    .toList() ?? [];
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: primary.withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(context.read<AppSettingsProvider>().l10n.commTripSpotsLabel,
+                      style: TextStyle(fontSize: 12, color: primary, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 6),
+                    if (rawSpots.isEmpty)
+                      Text('尚無景點', style: TextStyle(fontSize: 12, color: primary.withValues(alpha: 0.5)))
+                    else
+                      ...rawSpots.asMap().entries.map((e) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(children: [
+                          Container(width: 20, height: 20,
+                            decoration: BoxDecoration(color: primary, shape: BoxShape.circle),
+                            child: Center(child: Text('${e.key + 1}',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)))),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(e.value,
+                            style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                            overflow: TextOverflow.ellipsis)),
+                        ]),
+                      )),
+                  ]),
+                );
+              }),
             ],
             const SizedBox(height: 12),
           ],
@@ -3566,20 +3645,6 @@ class _CreatePostPageState extends State<CreatePostPage> {
             )).toList()),
             const SizedBox(height: 8),
           ],
-          Row(children: [
-            Expanded(child: TextField(
-              controller: _spotCtrl,
-              decoration: const InputDecoration(
-                hintText: '加入景點（如：阿里山、北門車站）',
-                border: InputBorder.none, filled: false),
-              onSubmitted: (v) {
-                if (v.trim().isNotEmpty) {
-                  setState(() { _spots.add(v.trim()); _spotCtrl.clear(); });
-                }
-              },
-            )),
-            Icon(Icons.place_outlined, color: primary),
-          ]),
           const Divider(),
           // 顯示額外照片（第2張起）
           if (_images.length > 1) ...[

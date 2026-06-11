@@ -293,14 +293,14 @@ class _MapScreenState extends State<MapScreen> {
     (label: '古蹟類',    icon: Icons.account_balance_rounded,      color: Color(0xFF8B6B3D)),
     (label: '廟宇類',    icon: Icons.temple_buddhist_rounded,      color: Color(0xFFB8860B)),
     (label: '文化類',    icon: Icons.theater_comedy_rounded,       color: Color(0xFF7B68EE)),
-    (label: '林場類',    icon: Icons.forest_rounded,               color: Color(0xFF2E7D32)),
-    (label: '森林遊樂區類', icon: Icons.park_rounded,              color: Color(0xFF388E3C)),
-    (label: '生態類',    icon: Icons.eco_rounded,                  color: Color(0xFF43A047)),
-    (label: '自然風景類', icon: Icons.landscape_rounded,           color: Color(0xFF00897B)),
+    (label: '林場類',    icon: Icons.forest_rounded,               color: Color(0xFF7AAA8A)),
+    (label: '森林遊樂區類', icon: Icons.park_rounded,              color: Color(0xFFA8D5BA)),
+    (label: '生態類',    icon: Icons.eco_rounded,                  color: Color(0xFFC5E0B4)),
+    (label: '自然風景類', icon: Icons.landscape_rounded,           color: Color(0xFF8BC4D4)),
     (label: '藝術類',    icon: Icons.palette_rounded,              color: Color(0xFFE91E63)),
     (label: '觀光工廠類', icon: Icons.factory_rounded,             color: Color(0xFF795548)),
     (label: '遊憩類',    icon: Icons.local_activity_rounded,       color: Color(0xFFFF9800)),
-    (label: '都會公園類', icon: Icons.nature_people_rounded,       color: Color(0xFF4CAF50)),
+    (label: '都會公園類', icon: Icons.nature_people_rounded,       color: Color(0xFFB7D4A8)),
     (label: '體育健身類', icon: Icons.fitness_center_rounded,      color: Color(0xFF2196F3)),
     (label: '其他',      icon: Icons.explore_rounded,             color: Color(0xFF9E9E9E)),
   ];
@@ -1027,10 +1027,12 @@ class _MapScreenState extends State<MapScreen> {
                   _isListView
                       ? _buildListView(places)
                       : _buildMap(places),
-                  Positioned(
-                    top: 6, left: 0, right: 0,
-                    child: _buildQuickChips(),
-                  ),
+                  // 快速篩選列：只在地圖模式顯示，列表模式不顯示
+                  if (!_isListView)
+                    Positioned(
+                      top: 6, left: 0, right: 0,
+                      child: _buildQuickChips(),
+                    ),
                 ]),
               ),
             ],

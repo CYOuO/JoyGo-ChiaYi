@@ -103,6 +103,10 @@ class ExpenseService {
   static CollectionReference<Map<String, dynamic>> _membersRef(String tripId) =>
       _db.collection('trips').doc(tripId).collection('expenseMembers');
 
+  /// 公開存取（供 UI 直接操作成員文件）
+  static CollectionReference<Map<String, dynamic>> membersRef(String tripId) =>
+      _membersRef(tripId);
+
   static Stream<List<TripMember>> membersStream(String tripId) =>
       _membersRef(tripId)
           .orderBy('addedAt')
@@ -110,21 +114,74 @@ class ExpenseService {
           .map((s) => s.docs.map(TripMember.fromDoc).toList());
 
   /// 加入行程成員（用 Firebase 用戶）
+  /// 優先讀 Firestore users/{uid}/nickname，其次 displayName，再次 email 前綴
   static Future<TripMember> addFirebaseMember(String tripId, User user) async {
+    // 讀 Firestore 取最新暱稱
+    String name = user.displayName ?? '';
+    String? photoUrl = user.photoURL;
+    try {
+      final uDoc = await _db.collection('users').doc(user.uid).get();
+      final ud = uDoc.data() ?? {};
+      final nick = (ud['nickname'] as String? ?? '').trim();
+      final disp = (ud['displayName'] as String? ?? '').trim();
+      final photo = (ud['photoUrl'] as String? ?? '').trim();
+      name = nick.isNotEmpty ? nick
+           : disp.isNotEmpty ? disp
+           : name.isNotEmpty ? name
+           : user.email?.split('@').first ?? user.uid.substring(0, 6);
+      if (photo.isNotEmpty) photoUrl = photo;
+    } catch (_) {
+      if (name.isEmpty) name = user.email?.split('@').first ?? user.uid.substring(0, 6);
+    }
+
     final ref = _membersRef(tripId).doc(user.uid);
     final data = {
       'uid':        user.uid,
-      'name':       user.displayName ?? user.email ?? user.uid.substring(0, 6),
-      'photoUrl':   user.photoURL,
+      'name':       name,
+      'photoUrl':   photoUrl,
       'isExternal': false,
       'addedAt':    FieldValue.serverTimestamp(),
     };
     await ref.set(data, SetOptions(merge: true));
     return TripMember(
       id: user.uid, uid: user.uid,
-      name: data['name'] as String,
-      photoUrl: user.photoURL,
+      name: name,
+      photoUrl: photoUrl,
     );
+  }
+
+  // ── Settlement State ──────────────────────────────────────
+  static CollectionReference<Map<String, dynamic>> _settledRef(String tripId) =>
+      _db.collection('trips').doc(tripId).collection('settled_pairs');
+
+  // 監聽結清狀態的 Stream
+  static Stream<Set<String>> settledPairsStream(String tripId) =>
+      _settledRef(tripId).snapshots().map((s) => s.docs.map((d) => d.id).toSet());
+
+  // 標記為已結清
+  static Future<void> markSettled(String tripId, String pairId) =>
+      _settledRef(tripId).doc(pairId).set({'timestamp': FieldValue.serverTimestamp()});
+
+  // 取消結清 (防呆用)
+  static Future<void> unmarkSettled(String tripId, String pairId) =>
+      _settledRef(tripId).doc(pairId).delete();
+
+  /// 同步更新成員名稱（從 Firestore users/{uid} 取最新暱稱）
+  static Future<void> syncMemberName(String tripId, String uid) async {
+    try {
+      final uDoc = await _db.collection('users').doc(uid).get();
+      final ud = uDoc.data() ?? {};
+      final nick = (ud['nickname'] as String? ?? '').trim();
+      final disp = (ud['displayName'] as String? ?? '').trim();
+      final photo = (ud['photoUrl'] as String? ?? '').trim();
+      final name = nick.isNotEmpty ? nick : disp.isNotEmpty ? disp : null;
+      if (name != null) {
+        await _membersRef(tripId).doc(uid).update({
+          'name': name,
+          if (photo.isNotEmpty) 'photoUrl': photo,
+        });
+      }
+    } catch (_) {}
   }
 
   /// 加入外部成員（無 app 帳號）

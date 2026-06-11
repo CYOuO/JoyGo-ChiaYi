@@ -602,7 +602,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return s.length > 10 ? s.substring(0, 10) : s;
   }
 
-  void _goSearch() => Navigator.push(context, _goRoute(const SearchScreen()));
+  void _goSearch() => Navigator.push(context, _goRoute(SearchScreen(
+    onSwitchToMap: () => widget.onSwitchTab?.call(2),
+  )));
   void _goNotifications() => Navigator.push(context, _goRoute(const NotificationsScreen())).then((_) => setState(() => _unreadCount = 0));
 
   @override
@@ -846,9 +848,11 @@ class _HomeScreenState extends State<HomeScreen> {
     return TapFeedback(
       onTap: () {
         if (tabIdx == 1) {
-          // YouBike → 跳到地圖頁並顯示 YouBike 站牌
-          MapScreen.focusNotifier.value = (lat: 23.4780, lng: 120.4407, catKey: MapScreen.catKeyYouBike);
-          widget.onSwitchTab?.call(2);
+          // YouBike → 跳到交通頁 YouBike tab，保留 onSwitchTab 讓站牌能跳地圖
+          Navigator.push(context, _goRoute(TransportScreen(
+            initialTab: 1,
+            onSwitchTab: (idx) => widget.onSwitchTab?.call(idx == 1 ? 2 : idx),
+          )));
         } else {
           Navigator.push(context, _goRoute(TransportScreen(initialTab: tabIdx)));
         }
@@ -1004,7 +1008,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(padding: const EdgeInsets.fromLTRB(20, 24, 20, 12), child: SectionHeader(title: _restaurantSectionTitle, actionText: '查看地圖', onAction: () => widget.onSwitchTab?.call(2))),
+        Padding(padding: const EdgeInsets.fromLTRB(20, 24, 20, 12), child: SectionHeader(title: _restaurantSectionTitle, actionText: _l10n.mapViewOnMap, onAction: () => widget.onSwitchTab?.call(2))),
         SizedBox(
           height: 210,
           child: _restaurantsLoading
@@ -1060,7 +1064,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(padding: const EdgeInsets.only(left: 2, bottom: 12), child: SectionHeader(title: _spotSectionTitle, actionText: '地圖', onAction: () => widget.onSwitchTab?.call(2))),
+            Padding(padding: const EdgeInsets.only(left: 2, bottom: 12), child: SectionHeader(title: _spotSectionTitle, actionText: _l10n.mapViewOnMap, onAction: () => widget.onSwitchTab?.call(2))),
             SizedBox(
               height: 34,
               child: ListView.separated(
@@ -1387,7 +1391,7 @@ class _BounceQuickButtonState extends State<_BounceQuickButton> with SingleTicke
     return GestureDetector(
       onTapDown: (_) => _ctrl.forward(), onTapCancel: () => _ctrl.reverse(),
       onTapUp: (_) { _ctrl.reverse(); widget.item.onTap(); },
-      child: AnimatedBuilder(animation: _scale, builder: (_, child) => Transform.scale(scale: _scale.value, child: child), child: StitchedBox(color: widget.item.color, stitchColor: AppColors.textHint.withValues(alpha: 0.7), radius: 16, inset: 4, dashWidth: 5, dashGap: 4, stitchStrokeWidth: 1.1, padding: const EdgeInsets.symmetric(vertical: 13), child: Column(mainAxisSize: MainAxisSize.min, children: [HugeIcon(icon: widget.item.icon, color: AppColors.textPrimary, size: 26), const SizedBox(height: 5), Text(widget.item.label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textPrimary))]))),
+      child: AnimatedBuilder(animation: _scale, builder: (_, child) => Transform.scale(scale: _scale.value, child: child), child: Builder(builder: (bCtx) { final p = Theme.of(bCtx).colorScheme.primary; return StitchedBox(color: widget.item.color, stitchColor: p.withValues(alpha: 0.25), radius: 16, inset: 4, dashWidth: 5, dashGap: 4, stitchStrokeWidth: 1.1, padding: const EdgeInsets.symmetric(vertical: 13), child: Column(mainAxisSize: MainAxisSize.min, children: [HugeIcon(icon: widget.item.icon, color: AppColors.textSecondary, size: 26), const SizedBox(height: 5), Text(widget.item.label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.textSecondary))])); })),
     );
   }
 }

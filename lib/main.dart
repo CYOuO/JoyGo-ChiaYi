@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import 'theme/app_theme.dart';
 import 'providers/app_settings_provider.dart';
+import 'providers/user_provider.dart';
 import 'screens/splash_screen.dart';
+import 'services/notification_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/trip_screen.dart';
@@ -17,6 +21,10 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // 推播通知初始化（權限請求 + 頻道建立 + FCM 訂閱）
+  await NotificationService.init();
+
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -27,7 +35,10 @@ Future<void> main() async {
   ));
   runApp(
     MultiProvider(
-      providers: [ChangeNotifierProvider(create: (_) => AppSettingsProvider())],
+      providers: [
+        ChangeNotifierProvider(create: (_) => AppSettingsProvider()),
+        ChangeNotifierProvider(create: (_) => UserProvider()),
+      ],
       child: const ExploreChiayiApp(),
     ),
   );
@@ -69,6 +80,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
+  StreamSubscription? _authSub;
 
   final ValueNotifier<int> _tripCalendarTrigger = ValueNotifier(0);
 
@@ -81,6 +93,7 @@ class _MainShellState extends State<MainShell> {
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _tripCalendarTrigger.dispose();
     super.dispose();
   }
@@ -90,6 +103,18 @@ class _MainShellState extends State<MainShell> {
   @override
   void initState() {
     super.initState();
+    // 監聽登入狀態，即時更新 UserProvider
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final up = context.read<UserProvider>();
+      if (user != null) {
+        up.init(user);
+        // 登入後開始監聽個人通知 → 觸發本機推播
+        NotificationService.startListeningUserNotifs(user.uid);
+      } else {
+        up.clear();
+        NotificationService.stopListeningUserNotifs();
+      }
+    });
     // 順序：首頁(0) 行程(1) 地圖(2,突出置中) 社群(3) 我的(4)
     // 分帳已合併進行程，不再獨立 tab
     _screens = [

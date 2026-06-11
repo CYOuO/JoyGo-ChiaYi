@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:gal/gal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/app_theme.dart';
 
 class CameraScreen extends StatefulWidget {
@@ -18,9 +19,25 @@ class CameraScreen extends StatefulWidget {
 
   static const kPhotoPathsKey = 'stamp_photo_paths_v1';
 
-  static Future<List<String>> getSavedPhotoPaths() async {
+  /// 依使用者 uid 產生獨立的 SharedPreferences key，確保每位使用者有自己的照片牆
+  static String photoPathsKeyForUid(String? uid) =>
+      uid != null && uid.isNotEmpty ? 'stamp_photo_paths_${uid}_v1' : kPhotoPathsKey;
+
+  static Future<List<String>> getSavedPhotoPaths({String? uid}) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(kPhotoPathsKey) ?? [];
+    final key = photoPathsKeyForUid(uid);
+    return prefs.getStringList(key) ?? [];
+  }
+
+  static Future<void> recordPhotoPathForUid(String path, {String? uid}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = photoPathsKeyForUid(uid);
+      final paths = prefs.getStringList(key) ?? [];
+      paths.insert(0, path);
+      if (paths.length > 100) paths.removeLast();
+      await prefs.setStringList(key, paths);
+    } catch (_) {}
   }
 
   @override
@@ -903,6 +920,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Save to gallery + record path for photo wall ───────────
   static Future<void> recordPhotoPath(String path) async {
+    // 同時寫入 uid-aware key（若已登入）以及舊的 global key（向下相容）
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    await CameraScreen.recordPhotoPathForUid(path, uid: uid);
+    // 保留舊 key 避免舊資料遺失（舊資料只在沒有 uid key 時顯示）
     try {
       final prefs = await SharedPreferences.getInstance();
       final paths = prefs.getStringList(CameraScreen.kPhotoPathsKey) ?? [];

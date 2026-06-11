@@ -25,6 +25,8 @@ class CommunityPost {
   final int commentCount;
   final int saveCount;
   final DateTime createdAt;
+  /// 來自旅遊分帳的總費用（NT$），null 表示未填
+  final int? tripBudget;
 
   const CommunityPost({
     required this.id,
@@ -40,6 +42,7 @@ class CommunityPost {
     required this.commentCount,
     required this.saveCount,
     required this.createdAt,
+    this.tripBudget,
   });
 
   factory CommunityPost.fromDoc(DocumentSnapshot doc) {
@@ -58,6 +61,7 @@ class CommunityPost {
       commentCount: (d['commentCount'] as num?)?.toInt() ?? 0,
       saveCount:    (d['saveCount']    as num?)?.toInt() ?? 0,
       createdAt:    (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      tripBudget:   (d['tripBudget']  as num?)?.toInt(),
     );
   }
 
@@ -74,6 +78,7 @@ class CommunityPost {
     'commentCount':commentCount,
     'saveCount':   saveCount,
     'createdAt':   FieldValue.serverTimestamp(),
+    if (tripBudget != null) 'tripBudget': tripBudget,
   };
 }
 
@@ -163,6 +168,7 @@ class CommunityService {
     required String type,
     List<File> images = const [],
     List<String> spotNames = const [],
+    int? tripBudget,
   }) async {
     final user = _auth.currentUser;
     if (user == null) throw Exception('未登入');
@@ -184,6 +190,7 @@ class CommunityService {
       imageURLs: imageURLs, spotNames: spotNames,
       type: type, likeCount: 0, commentCount: 0, saveCount: 0,
       createdAt: DateTime.now(),
+      tripBudget: tripBudget,
     );
 
     final ref = await _posts.add(post.toMap());

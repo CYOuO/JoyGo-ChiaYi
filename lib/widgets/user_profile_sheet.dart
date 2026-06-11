@@ -63,7 +63,6 @@ class _UserProfileSheetContentState extends State<_UserProfileSheetContent> {
         FirebaseFirestore.instance
             .collection('community_posts')
             .where('authorId', isEqualTo: widget.uid)
-            .orderBy('createdAt', descending: true)
             .limit(9)
             .get(),
       ]);
@@ -78,7 +77,12 @@ class _UserProfileSheetContentState extends State<_UserProfileSheetContent> {
         _isFollowing = following;
         _posts = postsSnap.docs
             .map((d) => {'id': d.id, ...(d.data() as Map<String, dynamic>)})
-            .toList();
+            .toList()
+          ..sort((a, b) {
+            final ta = (a['createdAt'] as dynamic)?.toDate()?.millisecondsSinceEpoch ?? 0;
+            final tb = (b['createdAt'] as dynamic)?.toDate()?.millisecondsSinceEpoch ?? 0;
+            return tb.compareTo(ta);
+          });
         _dataLoading = false;
         _followLoading = false;
       });

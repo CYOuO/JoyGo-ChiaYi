@@ -16,6 +16,7 @@ import '../services/rail_service.dart';
 import '../services/bus_notification_service.dart';
 import '../services/fav_bus_service.dart';
 import '../services/train_fav_service.dart';
+import '../services/alishan_fav_service.dart';
 import 'map_screen.dart';
 export 'news_screen.dart' show NewsScreen;
 
@@ -299,6 +300,7 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
     _startTimer();
     FavBusService.load();
     TrainFavService.load();
+    AlishanFavService.load();
   }
 
   void _onTab() {
@@ -734,12 +736,21 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                   ...favs.map((fav) {
                     final name = fav['routeName'] as String;
                     final city = fav['city'] as String;
+                    final dir  = fav['direction'] as int? ?? 0;
+                    final sub  = fav['subRouteName'] as String? ?? '';
+                    final label = fav['displayLabel'] as String? ?? '';
+                    final dirText = label.isNotEmpty ? label
+                        : '${dir == 0 ? "去程" : "返程"}${sub.isNotEmpty ? " ($sub)" : ""}';
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: GestureDetector(
                         onTap: () {
                           _busCtrl.text = name;
-                          setState(() { _busCity = city; _busRoute = name; _busFuture = RailService.getBusDynamic(city, name); });
+                          setState(() {
+                            _busCity = city;
+                            _busRoute = name;
+                            _busFuture = RailService.getBusDynamic(city, name);
+                          });
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -751,7 +762,12 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
                           child: Row(children: [
                             Icon(Icons.directions_bus_rounded, size: 15, color: c),
                             const SizedBox(width: 8),
-                            Expanded(child: Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c))),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(name, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: c)),
+                              if (dirText.isNotEmpty)
+                                Text(dirText, style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.6)),
+                                    overflow: TextOverflow.ellipsis, maxLines: 1),
+                            ])),
                             Text(city == 'Chiayi' ? '嘉義市' : '嘉義縣',
                                 style: TextStyle(fontSize: 10, color: c.withValues(alpha: 0.5))),
                           ]),
@@ -1372,6 +1388,8 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
   }
 
   // ─── ALISHAN ───────────────────────────────────────────────────
+  bool _aliOnlySaved = false;
+
   Widget _buildAli() {
     final valid = <Map<String, dynamic>>[];
     if (_aliDocs != null && _aliO != _aliD) {
@@ -1389,22 +1407,114 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
       }
       valid.sort((a, b) => (a['dep'] as String).compareTo(b['dep'] as String));
     }
-    return ListView(padding: const EdgeInsets.all(14), children: [
-      _ODCard(origin: _aliO, dest: _aliD, stations: _aliStations, bg: context.appMist, acc: context.appPrimary,
-        onO: (v) => setState(() => _aliO = v), onD: (v) => setState(() => _aliD = v),
-        onSwap: () => setState(() { final t = _aliO; _aliO = _aliD; _aliD = t; }),
+    const c = Color(0xFF3E8C5E); // 森林綠
+
+    return Column(children: [
+      // ── Header：OD 選站 ──────────────────────────────────────
+      Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+        child: Column(children: [
+          _ODCard(
+            origin: _aliO, dest: _aliD, stations: _aliStations,
+            bg: context.appMist, acc: context.appPrimary,
+            onO: (v) => setState(() => _aliO = v),
+            onD: (v) => setState(() => _aliD = v),
+            onSwap: () => setState(() { final t = _aliO; _aliO = _aliD; _aliD = t; }),
+          ),
+          const SizedBox(height: 10),
+        ]),
       ),
-      const SizedBox(height: 12),
-      if (_aliLoading) ...List.generate(3, (i) => const TransportCardSkeleton())
-      else if (_aliO == _aliD) Center(child: Text(context.read<AppSettingsProvider>().l10n.transDiffStation, style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)))
-      else if (valid.isEmpty) _Hint(icon: Icons.forest_rounded, color: context.appPrimary, text: '此區間今日無直達班次')
-      else ...valid.map((t) => Padding(padding: const EdgeInsets.only(bottom: 10), child: _AliCard(train: t, origin: _aliO, dest: _aliD))),
+      // ── 班次列表（筆記本樣式 + 左側書籤）────────────────────
+      Expanded(
+        child: ValueListenableBuilder<List<Map<String, dynamic>>>(
+          valueListenable: AlishanFavService.notifier,
+          builder: (ctx, allFavs, _) {
+            final displayed = _aliOnlySaved
+                ? valid.where((t) => AlishanFavService.isSaved({
+                    'no': t['no'], 'origin': _aliO, 'dest': _aliD})).toList()
+                : valid;
+            return Stack(children: [
+              // 底色：筆記本紋路
+              Positioned.fill(
+                child: Container(
+                  color: const Color(0xFFF7F7F9),
+                  child: const CustomPaint(painter: _RuledLinePainter()),
+                ),
+              ),
+              // 主內容（左側留 62px 給書籤）
+              if (_aliLoading)
+                Column(mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (i) => const Padding(
+                    padding: EdgeInsets.fromLTRB(62, 0, 14, 10),
+                    child: TransportCardSkeleton())))
+              else if (_aliO == _aliD)
+                Center(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(62, 0, 14, 0),
+                  child: Text(context.read<AppSettingsProvider>().l10n.transDiffStation,
+                    style: const TextStyle(color: AppColors.warning, fontWeight: FontWeight.w700)),
+                ))
+              else if (displayed.isEmpty)
+                Center(child: Padding(
+                  padding: const EdgeInsets.fromLTRB(62, 0, 14, 0),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    StitchedBox(
+                      color: Color.lerp(c, Colors.white, 0.8)!,
+                      stitchColor: c.withValues(alpha: 0.4),
+                      radius: 36, inset: 4, dashWidth: 4, dashGap: 3,
+                      padding: const EdgeInsets.all(20),
+                      child: const Text('🌲', style: TextStyle(fontSize: 38)),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      _aliOnlySaved ? '沒有收藏的班次' : '此區間今日無直達班次',
+                      style: const TextStyle(color: AppColors.textHint, fontSize: 13),
+                    ),
+                  ]),
+                ))
+              else ListView(
+                padding: const EdgeInsets.fromLTRB(62, 10, 14, 50),
+                children: displayed.asMap().entries.map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _AliCard(train: e.value, origin: _aliO, dest: _aliD)
+                    .animate()
+                    .fadeIn(delay: (e.key * 50).ms, duration: 250.ms)
+                    .slideY(begin: 0.08, end: 0, delay: (e.key * 50).ms, duration: 250.ms),
+                )).toList(),
+              ),
+              // ── 左側書籤（收藏篩選）─── 與台鐵/高鐵相同
+              Positioned(
+                top: 14, left: 8,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _aliOnlySaved = !_aliOnlySaved),
+                  child: Icon(
+                    _aliOnlySaved ? Icons.bookmark_rounded : Icons.bookmark_outline_rounded,
+                    size: 20,
+                    color: _aliOnlySaved
+                        ? c
+                        : allFavs.isEmpty
+                            ? AppColors.textHint.withValues(alpha: 0.20)
+                            : AppColors.textHint.withValues(alpha: 0.40),
+                  ),
+                ),
+              ),
+            ]);
+          },
+        ),
+      ),
     ]);
   }
 
   // ─── THSR ──────────────────────────────────────────────────────
+  bool _thsrOnlySaved = false;
+
   Widget _buildThsr() {
-    final trains = _thsrTrains ?? [];
+    final allTrains = _thsrTrains ?? [];
+    final trains = _thsrOnlySaved
+        ? allTrains.where((t) => TrainFavService.isSaved({
+            'train_no': t['TrainNo']?.toString() ?? '',
+            'origin': _thsrO, 'dest': _thsrD})).toList()
+        : allTrains;
     final totalPages = trains.isEmpty ? 0 : (trains.length / _kThsrPerPage).ceil();
 
     return Column(children: [
@@ -1426,11 +1536,13 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
         Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(3, (i) => const Padding(padding: EdgeInsets.fromLTRB(14, 0, 14, 10), child: TransportCardSkeleton()))))
       else if (_thsrError != null)
         Expanded(child: Center(child: Text(_thsrError!, style: const TextStyle(color: AppColors.error, fontWeight: FontWeight.w700))))
-      else if (trains.isEmpty)
-        Expanded(child: _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary, text: '此區間今日無直達班次'))
       else ...[
         Expanded(
-          child: PageFlipWidget(
+          child: Stack(children: [
+            trains.isEmpty
+              ? _Hint(icon: Icons.directions_railway_filled_rounded, color: context.appPrimary,
+                  text: _thsrOnlySaved ? '沒有收藏的班次' : '此區間今日無直達班次')
+              : PageFlipWidget(
             key: ValueKey('${_thsrO}_${_thsrD}_${trains.length}_$_thsrFlipSeed'),
             backgroundColor: const Color(0xFFF7F7F9),
             lastPage: GestureDetector(
@@ -1493,6 +1605,27 @@ class _TransportScreenState extends State<TransportScreen> with SingleTickerProv
               );
             }),
           ),
+            // ── 左側書籤（收藏篩選）─── 與台鐵相同
+            ValueListenableBuilder<List<Map<String, dynamic>>>(
+              valueListenable: TrainFavService.notifier,
+              builder: (ctx, favs, _) => Positioned(
+                top: 14, left: 8,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => _thsrOnlySaved = !_thsrOnlySaved),
+                  child: Icon(
+                    _thsrOnlySaved ? Icons.bookmark_rounded : Icons.bookmark_outline_rounded,
+                    size: 20,
+                    color: _thsrOnlySaved
+                        ? context.appPrimary
+                        : favs.where((f) => f['isThsr'] == true).isEmpty
+                            ? AppColors.textHint.withValues(alpha: 0.20)
+                            : AppColors.textHint.withValues(alpha: 0.40),
+                  ),
+                ),
+              ),
+            ),
+          ]),
         ),
       ],
     ]);
@@ -1832,10 +1965,18 @@ class _BusCardState extends State<_BusCard> {
   bool _starred = false;
   List<Map<String, dynamic>>? _busPositions;
 
+  // 由 stops 推導 direction / subRouteName（用於收藏 key）
+  int get _direction => (widget.stops.first['Direction'] as int? ?? 0);
+  String _subRouteName() {
+    final field = widget.stops.first['SubRouteName'];
+    return (field is Map) ? (field['Zh_tw']?.toString() ?? '') : (field?.toString() ?? '');
+  }
+
   @override
   void initState() {
     super.initState();
-    _starred = FavBusService.isSaved(widget.city, widget.routeName);
+    _starred = FavBusService.isSaved(widget.city, widget.routeName,
+        direction: _direction, subRouteName: _subRouteName());
   }
 
   String _etaText(Map s) {
@@ -1940,7 +2081,23 @@ class _BusCardState extends State<_BusCard> {
               ])),
               GestureDetector(
                 onTap: () async {
-                  final saved = await FavBusService.toggle(widget.city, widget.routeName);
+                  final dir = _direction;
+                  final sub = _subRouteName();
+                  final origin2 = (widget.stops.isNotEmpty)
+                      ? ((widget.stops.first['StopName'] is Map)
+                          ? (widget.stops.first['StopName']['Zh_tw']?.toString() ?? '')
+                          : widget.stops.first['StopName']?.toString() ?? '')
+                      : '';
+                  final dest2 = (widget.stops.isNotEmpty)
+                      ? ((widget.stops.last['StopName'] is Map)
+                          ? (widget.stops.last['StopName']['Zh_tw']?.toString() ?? '')
+                          : widget.stops.last['StopName']?.toString() ?? '')
+                      : '';
+                  final label = '${dir == 0 ? "去程" : "返程"}${sub.isNotEmpty ? " ($sub)" : ""} $origin2 ➔ $dest2';
+                  final saved = await FavBusService.toggle(
+                    widget.city, widget.routeName,
+                    direction: dir, subRouteName: sub, displayLabel: label,
+                  );
                   if (mounted) setState(() => _starred = saved);
                 },
                 child: Padding(
@@ -2365,68 +2522,221 @@ class _DashedLinePainter extends CustomPainter {
   @override bool shouldRepaint(covariant _DashedLinePainter old) => old.color != color;
 }
 
-// 阿里山卡
+// ═══════════════════════════════════════════════════════════════
+// 阿里山森林鐵路班次卡（車票風格，對齊台鐵/高鐵樣式）
+// ═══════════════════════════════════════════════════════════════
 class _AliCard extends StatefulWidget {
-  final Map<String, dynamic> train; final String origin, dest;
+  final Map<String, dynamic> train;
+  final String origin, dest;
   const _AliCard({required this.train, required this.origin, required this.dest});
   @override State<_AliCard> createState() => _AliCardState();
 }
+
 class _AliCardState extends State<_AliCard> {
   bool _expanded = false;
+  bool _starred = false;
+
+  // 阿里山小火車主題色：森林翠綠
+  static const _forestGreen = Color(0xFF3E8C5E);
+
+  @override
+  void initState() {
+    super.initState();
+    _starred = AlishanFavService.isSaved({
+      'no':     widget.train['no'],
+      'origin': widget.origin,
+      'dest':   widget.dest,
+    });
+  }
+
+  String get _duration {
+    final depParts = _formatTime(widget.train['dep']?.toString() ?? '').split(':');
+    final arrParts = _formatTime(widget.train['arr']?.toString() ?? '').split(':');
+    if (depParts.length == 2 && arrParts.length == 2) {
+      final depMin = (int.tryParse(depParts[0]) ?? 0) * 60 + (int.tryParse(depParts[1]) ?? 0);
+      final arrMin = (int.tryParse(arrParts[0]) ?? 0) * 60 + (int.tryParse(arrParts[1]) ?? 0);
+      final diff = arrMin - depMin;
+      if (diff > 0) {
+        final h = diff ~/ 60, m = diff % 60;
+        return h > 0 ? '約 $h 時 $m 分' : '約 $m 分';
+      }
+    }
+    return '';
+  }
+
   @override Widget build(BuildContext context) {
-    final p = context.appPrimary;
-    final m = context.appMist;
+    const c = _forestGreen;
     final stops = widget.train['stops'] as List<dynamic>? ?? [];
-    return StitchedBox(
-      color: Color.lerp(m, Colors.white, 0.45)!,
-      stitchColor: p.withValues(alpha: 0.4),
-      radius: 16, inset: 4, dashWidth: 4, dashGap: 3,
-      padding: EdgeInsets.zero,
-      child: ClipRRect(
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        child: Column(children: [
-          Container(height: 4, decoration: BoxDecoration(color: p, borderRadius: const BorderRadius.vertical(top: Radius.circular(15)))),
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
-              Container(width: 42, height: 42, decoration: BoxDecoration(color: p.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const Text('🚃', style: TextStyle(fontSize: 16)),
-                Text(widget.train['no']?.toString() ?? '', style: const TextStyle(color: AppColors.textSecondary, fontSize: 9, fontWeight: FontWeight.w800)),
-              ])),
-              const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2), decoration: BoxDecoration(color: p.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)), child: Text(context.read<AppSettingsProvider>().l10n.transTouristTrain, style: TextStyle(color: p, fontSize: 10, fontWeight: FontWeight.w700))), const Spacer(), Icon(_expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded, color: AppColors.textHint)]),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Text(_formatTime(widget.train['dep']?.toString() ?? ''), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.textPrimary)),
-                  Expanded(child: Container(height: 1, color: AppColors.divider, margin: const EdgeInsets.symmetric(horizontal: 10))),
-                  Text(_formatTime(widget.train['arr']?.toString() ?? ''), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.textPrimary)),
+        boxShadow: [BoxShadow(color: c.withValues(alpha: 0.12), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(children: [
+        // ══ 車票主體 ════════════════════════════════════════════
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            // ── 左側彩色票根 ──────────────────────────────────
+            Container(
+              width: 62,
+              color: c.withValues(alpha: 0.12),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Container(
+                  width: 38, height: 38,
+                  decoration: const BoxDecoration(color: c, shape: BoxShape.circle),
+                  child: const Center(
+                    child: Text('🚃', style: TextStyle(fontSize: 20)),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text('森林鐵路', style: TextStyle(color: c, fontSize: 9, fontWeight: FontWeight.w800)),
+                Text(
+                  widget.train['no']?.toString() ?? '',
+                  style: const TextStyle(color: Color(0xFF5EAA7E), fontSize: 9, fontWeight: FontWeight.w600),
+                ),
+              ]),
+            ),
+            // ── 鋸齒分隔線 ────────────────────────────────────
+            SizedBox(
+              width: 10,
+              child: CustomPaint(
+                painter: _PerforatedEdgePainter(color: c.withValues(alpha: 0.18)),
+              ),
+            ),
+            // ── 主要資訊區 ────────────────────────────────────
+            Expanded(child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  // 出發
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                      _formatTime(widget.train['dep']?.toString() ?? ''),
+                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26,
+                          color: c, letterSpacing: -0.5, height: 1.0),
+                    ),
+                    Text(widget.origin,
+                        style: const TextStyle(fontSize: 11,
+                            color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                  ]),
+                  // 虛線 + 小火車圖示
+                  Expanded(child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Column(children: [
+                      Row(children: [
+                        Container(width: 5, height: 5, decoration: const BoxDecoration(color: c, shape: BoxShape.circle)),
+                        Expanded(child: SizedBox(height: 1.5,
+                            child: CustomPaint(painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        const Text('🌲', style: TextStyle(fontSize: 13)),
+                        Expanded(child: SizedBox(height: 1.5,
+                            child: CustomPaint(painter: _DashedLinePainter(color: c.withValues(alpha: 0.35))))),
+                        Container(width: 5, height: 5, decoration: const BoxDecoration(color: c, shape: BoxShape.circle)),
+                      ]),
+                      if (_duration.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(_duration,
+                            style: const TextStyle(fontSize: 9,
+                                color: Color(0xFF5EAA7E), fontWeight: FontWeight.w600)),
+                      ],
+                    ]),
+                  )),
+                  // 抵達
+                  Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                    Text(
+                      _formatTime(widget.train['arr']?.toString() ?? ''),
+                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 26,
+                          letterSpacing: -0.5, height: 1.0, color: AppColors.textPrimary),
+                    ),
+                    Text(widget.dest,
+                        style: const TextStyle(fontSize: 11,
+                            color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+                  ]),
                 ]),
-              ])),
-            ])),
-          ),
-          if (_expanded && stops.isNotEmpty) ...[
-            Divider(height: 1, color: p.withValues(alpha: 0.15)),
-            Padding(padding: const EdgeInsets.fromLTRB(18, 12, 18, 16), child: Column(children: stops.map((s) {
+              ]),
+            )),
+            // ── 右側收藏 + 展開 ──────────────────────────────
+            Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              GestureDetector(
+                onTap: () async {
+                  final saved = await AlishanFavService.toggle({
+                    'no':     widget.train['no'],
+                    'dep':    widget.train['dep'],
+                    'arr':    widget.train['arr'],
+                    'origin': widget.origin,
+                    'dest':   widget.dest,
+                  });
+                  if (mounted) setState(() => _starred = saved);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 12, 4),
+                  child: Icon(
+                    _starred ? Icons.star_rounded : Icons.star_outline_rounded,
+                    size: 22,
+                    color: _starred ? const Color(0xFFFFCC44) : AppColors.textHint,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(
+                  _expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.textHint, size: 18,
+                ),
+              ),
+            ]),
+          ])),
+        ),
+        // ── 展開：停靠站 ────────────────────────────────────────
+        if (_expanded && stops.isNotEmpty) ...[
+          Divider(height: 1, color: c.withValues(alpha: 0.15)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+            child: Column(children: stops.map((s) {
               final name = (s['StationName'] ?? s['stationName'] ?? '').toString();
-              final time = _formatTime((s['ArrivalTime'] ?? s['arrivalTime'] ?? '').toString());
+              final time = _formatTime((s['ArrivalTime'] ?? s['DepartureTime'] ?? s['arrivalTime'] ?? '').toString());
               final isTarget = name.contains(widget.origin) || name.contains(widget.dest);
               final isLast = s == stops.last;
               return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 SizedBox(width: 18, child: Column(children: [
-                  Container(width: isTarget ? 13 : 9, height: isTarget ? 13 : 9, decoration: BoxDecoration(shape: BoxShape.circle, color: isTarget ? p : Colors.white, border: Border.all(color: isTarget ? p : AppColors.divider, width: isTarget ? 2.5 : 1.5))),
+                  Container(
+                    width: isTarget ? 13 : 9,
+                    height: isTarget ? 13 : 9,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isTarget ? c : Colors.white,
+                      border: Border.all(color: isTarget ? c : AppColors.divider, width: isTarget ? 2.5 : 1.5),
+                    ),
+                  ),
                   if (!isLast) Container(width: 1.5, height: 22, color: AppColors.divider),
                 ])),
                 const SizedBox(width: 10),
-                Expanded(child: Padding(padding: EdgeInsets.only(bottom: isLast ? 0 : 4), child: Row(children: [
-                  Expanded(child: Text(name, style: TextStyle(fontSize: 13, fontWeight: isTarget ? FontWeight.w800 : FontWeight.w500, color: isTarget ? AppColors.textPrimary : AppColors.textSecondary))),
-                  Text(time, style: TextStyle(fontSize: 12, fontWeight: isTarget ? FontWeight.w800 : FontWeight.w400, color: isTarget ? AppColors.textPrimary : AppColors.textHint)),
-                ]))),
+                Expanded(child: Padding(
+                  padding: EdgeInsets.only(bottom: isLast ? 0 : 4),
+                  child: Row(children: [
+                    Expanded(child: Text(name, style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: isTarget ? FontWeight.w800 : FontWeight.w500,
+                        color: isTarget ? AppColors.textPrimary : AppColors.textSecondary))),
+                    Text(time, style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isTarget ? FontWeight.w800 : FontWeight.w400,
+                        color: isTarget ? AppColors.textPrimary : AppColors.textHint)),
+                  ]),
+                )),
               ]);
-            }).toList())),
-          ],
-        ]),
-      ),
+            }).toList()),
+          ),
+        ],
+        if (_expanded && stops.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(14),
+            child: Text('無停靠站資料', style: TextStyle(color: AppColors.textHint, fontSize: 12)),
+          ),
+      ]),
     );
   }
 }

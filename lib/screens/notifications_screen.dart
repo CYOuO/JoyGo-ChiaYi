@@ -8,6 +8,7 @@ import '../providers/app_settings_provider.dart';
 import '../widgets/common_widgets.dart' show IllustratedEmptyState, EmptyScene;
 import '../theme/fabric_textures.dart' show DoodleCircle, DoodleHeart, DoodleLightning, SlideUpFadeIn;
 import '../widgets/user_profile_sheet.dart';
+import 'travel_companions_page.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -15,12 +16,19 @@ class NotificationsScreen extends StatefulWidget {
   State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends State<NotificationsScreen>
+    with WidgetsBindingObserver {
   static const _kDismissedKey = 'notif_dismissed_ids_v1';
   static const _kReadKey      = 'notif_read_ids_v1';
+  static const _kPrefix       = 'notif_setting_';
 
   Set<String> _dismissed = {};
   Set<String> _readIds   = {};
+
+  // 通知開關偏好設定（從 settings_screen 的 SharedPreferences 讀取）
+  bool _prefPush      = true;
+  bool _prefCommunity = false;
+  bool _prefTrip      = true;
 
   static IconData _typeIconData(String type) {
     switch (type) {
@@ -32,6 +40,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'nearby':      return Icons.place_rounded;
       case 'weather':     return Icons.cloud_rounded;
       case 'invite':      return Icons.group_add_rounded;
+      case 'broadcast':   return Icons.campaign_rounded;
       default:            return Icons.notifications_rounded;
     }
   }
@@ -45,20 +54,45 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     'nearby':      Color(0xFFD4A8C7),
     'weather':     Color(0xFF8FBFD8),
     'invite':      Color(0xFF7B6BAE),
+    'broadcast':   Color(0xFF9B59B6),
   };
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 從設定頁返回後重新讀取偏好
+    if (state == AppLifecycleState.resumed) _loadPrefs();
   }
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _dismissed = Set.from(prefs.getStringList(_kDismissedKey) ?? []);
-      _readIds   = Set.from(prefs.getStringList(_kReadKey) ?? []);
+      _dismissed      = Set.from(prefs.getStringList(_kDismissedKey) ?? []);
+      _readIds        = Set.from(prefs.getStringList(_kReadKey) ?? []);
+      _prefPush       = prefs.getBool('${_kPrefix}push')      ?? true;
+      _prefCommunity  = prefs.getBool('${_kPrefix}community') ?? false;
+      _prefTrip       = prefs.getBool('${_kPrefix}trip')      ?? true;
     });
+  }
+
+  /// 通知類型是否被使用者的偏好設定允許顯示
+  bool _isTypeAllowed(String type) {
+    if (!_prefPush) return false;              // 總推播關閉 → 全部不顯示
+    if (!_prefCommunity && (type == 'social' || type == 'follow')) return false;
+    if (!_prefTrip && (type == 'invite' || type == 'event')) return false;
+    return true;
   }
 
   Future<void> _markRead(String id) async {
@@ -133,6 +167,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       body: uid == null
           ? _buildGuest(primary)
           : StreamBuilder<QuerySnapshot>(
+              // 廣播通知
+              stream: FirebaseFirestore.instance
+                  .collection('broadcasts')
+                  .where('fcmSent', isEqualTo: true)
+                  .orderBy('createdAt', descending: true)
+                  .limit(20)
+                  .snapshots(),
+              builder: (ctx, broadcastSnap) {
+              return StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('users').doc(uid)
                   .collection('notifications')
@@ -140,10 +183,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   .limit(50)
                   .snapshots(),
               builder: (ctx, snap) {
-                // Build combined list from Firebase + local cache
+                // 個人通知
                 final fbDocs = snap.data?.docs ?? [];
-                final items = fbDocs
+                final personalItems = fbDocs
                     .where((d) => !_dismissed.contains(d.id))
+                    .where((d) {
+                      final type = (d.data() as Map<String, dynamic>)['type'] as String? ?? 'event';
+                      return _isTypeAllowed(type);
+                    })
                     .map((d) {
                       final data = d.data() as Map<String, dynamic>;
                       final isReadFb = data['isRead'] as bool? ?? false;
@@ -157,17 +204,58 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         fromUid: data['fromUid'] as String?,
                         fromPhotoUrl: data['fromPhotoUrl'] as String?,
                         fromName: data['fromName'] as String?,
+                        tripId: data['tripId'] as String?,
+                        companionId: data['companionId'] as String?,
+                        inviteStatus: data['inviteStatus'] as String?,
                       );
                     })
                     .toList();
 
+                // 廣播通知（管理員發送）
+                final broadcastItems = (broadcastSnap.data?.docs ?? [])
+                    .where((d) => !_dismissed.contains('bc_${d.id}'))
+                    .where((_) => _prefPush) // 推播總開關
+                    .map((d) {
+                      final data = d.data() as Map<String, dynamic>;
+                      return _NotifItem(
+                        id: 'bc_${d.id}',
+                        title: data['title'] as String? ?? '系統公告',
+                        body: data['body'] as String? ?? '',
+                        type: 'broadcast',
+                        time: _formatTime(data['createdAt']),
+                        isRead: _readIds.contains('bc_${d.id}'),
+                      );
+                    })
+                    .toList();
+
+                // 合併並依時間排序
+                final items = [...broadcastItems, ...personalItems];
+
                 final unreadCount = items.where((i) => !i.isRead).length;
 
-                if (items.isEmpty) {
-                  return _buildEmpty(primary);
+                if (items.isEmpty && snap.connectionState != ConnectionState.waiting) {
+                  return _buildEmpty(primary, disabledByPref: !_prefPush);
                 }
+                if (items.isEmpty) return const Center(child: CircularProgressIndicator());
 
                 return Column(children: [
+                  // 推播已關閉的提示 banner
+                  if (!_prefPush)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.orange.withValues(alpha: 0.3))),
+                      child: Row(children: [
+                        const Icon(Icons.notifications_off_rounded, size: 16, color: Colors.orange),
+                        const SizedBox(width: 8),
+                        const Expanded(child: Text('推播通知已關閉，請至設定開啟',
+                          style: TextStyle(fontSize: 12, color: Colors.orange, fontWeight: FontWeight.w600))),
+                      ]),
+                    ),
                   // Header row
                   if (unreadCount > 0)
                     Padding(
@@ -203,8 +291,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
                   ),
                 ]);
-              },
-            ),
+              },   // 個人通知 StreamBuilder builder
+            );     // 個人通知 StreamBuilder
+              },   // 廣播 StreamBuilder builder
+            ),     // 廣播 StreamBuilder
     );
   }
 
@@ -221,9 +311,67 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           );
         }
         break;
+      case 'invite':
+        // 跳到旅伴管理頁，並聚焦到對應行程
+        Navigator.push(ctx, MaterialPageRoute(
+          builder: (_) => TravelCompanionsPage(focusTripId: n.tripId),
+        ));
+        break;
       default:
         break;
     }
+  }
+
+  // ── 邀請通知：接受 ────────────────────────────────────────────
+  Future<void> _acceptInvite(_NotifItem n) async {
+    if (n.tripId == null || n.companionId == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await Future.wait([
+        FirebaseFirestore.instance
+            .collection('trips').doc(n.tripId!)
+            .collection('companions').doc(n.companionId!)
+            .update({'status': 'confirmed'}),
+        FirebaseFirestore.instance
+            .collection('trips').doc(n.tripId!)
+            .update({'members': FieldValue.arrayUnion([uid])}),
+      ]);
+      // 同步更新通知狀態
+      await FirebaseFirestore.instance
+          .collection('users').doc(uid)
+          .collection('notifications').doc(n.id)
+          .update({'isRead': true, 'inviteStatus': 'accepted'});
+      // 刪除 invitations 記錄
+      try {
+        await FirebaseFirestore.instance
+            .collection('users').doc(uid)
+            .collection('invitations').doc(n.companionId!).delete();
+      } catch (_) {}
+      _markRead(n.id);
+    } catch (_) {}
+  }
+
+  // ── 邀請通知：拒絕 ────────────────────────────────────────────
+  Future<void> _declineInvite(_NotifItem n) async {
+    if (n.tripId == null || n.companionId == null) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      await FirebaseFirestore.instance
+          .collection('trips').doc(n.tripId!)
+          .collection('companions').doc(n.companionId!).delete();
+      await FirebaseFirestore.instance
+          .collection('users').doc(uid)
+          .collection('notifications').doc(n.id)
+          .update({'isRead': true, 'inviteStatus': 'declined'});
+      try {
+        await FirebaseFirestore.instance
+            .collection('users').doc(uid)
+            .collection('invitations').doc(n.companionId!).delete();
+      } catch (_) {}
+      _markRead(n.id);
+    } catch (_) {}
   }
 
   Widget _buildNotifTile(_NotifItem n, Color primary, BuildContext ctx) {
@@ -286,6 +434,56 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 color: n.isRead ? AppColors.textHint : AppColors.textSecondary,
                 height: 1.4,
               )),
+              // 邀請通知：顯示接受 / 拒絕按鈕（僅在 pending 狀態）
+              if (n.type == 'invite' && (n.inviteStatus == 'pending' || n.inviteStatus == null)) ...[
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _declineInvite(n),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('拒絕', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => _acceptInvite(n),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('接受邀請', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ]),
+              ],
+              if (n.type == 'invite' && n.inviteStatus == 'accepted')
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Row(children: [
+                    Icon(Icons.check_circle_rounded, size: 14, color: color),
+                    const SizedBox(width: 4),
+                    Text('已接受邀請', style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              if (n.type == 'invite' && n.inviteStatus == 'declined')
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('已拒絕', style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                ),
             ])),
             if (!n.isRead) ...[
               const SizedBox(width: 8),
@@ -300,12 +498,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildEmpty(Color primary) => IllustratedEmptyState(
-    scene: EmptyScene.notification,
-    title: '目前沒有通知',
-    body: '新活動、有人追蹤你、行程按讚\n都會在這裡出現',
-    color: primary,
-  );
+  Widget _buildEmpty(Color primary, {bool disabledByPref = false}) =>
+    disabledByPref
+        ? IllustratedEmptyState(
+            scene: EmptyScene.notification,
+            title: '推播通知已關閉',
+            body: '請至「設定 → 通知」開啟推播，即可收到旅伴邀請、行程提醒等通知',
+            color: Colors.orange,
+          )
+        : IllustratedEmptyState(
+            scene: EmptyScene.notification,
+            title: '目前沒有通知',
+            body: '新活動、有人追蹤你、行程按讚\n都會在這裡出現',
+            color: primary,
+          );
 
   Widget _buildGuest(Color primary) => IllustratedEmptyState(
     scene: EmptyScene.notification,
@@ -337,10 +543,14 @@ class _NotifItem {
   final String? fromUid;      // 觸發通知的使用者 uid
   final String? fromPhotoUrl; // 對方頭貼（follow 通知用）
   final String? fromName;     // 對方名稱（快取用）
+  final String? tripId;       // 邀請通知：行程 ID
+  final String? companionId;  // 邀請通知：companions 文件 ID
+  final String? inviteStatus; // 邀請狀態：pending / accepted / declined
   const _NotifItem({
     required this.id, required this.title, required this.body,
     required this.type, required this.time, required this.isRead,
     this.fromUid, this.fromPhotoUrl, this.fromName,
+    this.tripId, this.companionId, this.inviteStatus,
   });
 }
 

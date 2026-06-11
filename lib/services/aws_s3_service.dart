@@ -64,7 +64,7 @@ class AwsS3Service {
       'AWS4-HMAC-SHA256',
       amzDate,
       credentialScope,
-      _sha256Hex(utf8.encode(canonicalRequest) as Uint8List),
+      _sha256Hex(utf8.encode(canonicalRequest)),
     ].join('\n');
 
     final signingKey = _deriveSigningKey(dateStamp);

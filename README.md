@@ -221,9 +221,9 @@ node uploadRestaurants.js
 
 | 頁面 | 功能 | 圖片 |
 |------|------|------|
-| 首頁 | 天氣、快速入口、推薦景點 | (<img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" />) |
-| 地圖 | 互動式地圖、景點標記、附近搜尋 | ![地圖示意圖](填入您的圖片網址) |
-| 搜尋 | 全站景點 / 餐廳 / 商店搜尋 | ![搜尋示意圖](填入您的圖片網址) |
+| 首頁 | 天氣、快速入口、推薦景點 | <img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" /> |
+| 地圖 | 互動式地圖、景點標記、附近搜尋 | <img width="157" height="350" alt="image" src="https://github.com/user-attachments/assets/65cef798-1bb8-4216-a3fe-fd68404ef2b9" /> |
+| 搜尋 | 全站景點 / 餐廳 / 商店搜尋 | <img width="202" height="455" alt="image" src="https://github.com/user-attachments/assets/e5438c62-602a-46a3-b985-d4eaa0ad0b80" /> |
 | 行程 | 建立 / 編輯行程、AI 規劃、邀請同行者 | ![行程示意圖](填入您的圖片網址) |
 | AI 規劃師 | Gemini 2.0 Flash 生成逐日行程建議 | ![AI規劃師示意圖](填入您的圖片網址) || AI 規劃師 | Gemini 2.0 Flash 生成逐日行程建議 | ![AI規劃師示意圖](填入您的圖片網址) |
 | 社群 | 發文、留言、按讚、追蹤 | ![社群示意圖](填入您的圖片網址) || 社群 | 發文、留言、按讚、追蹤 | ![社群示意圖](填入您的圖片網址) |

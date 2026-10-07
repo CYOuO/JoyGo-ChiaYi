@@ -220,7 +220,7 @@ node uploadRestaurants.js
 ## 六、App 功能頁面一覽
 
 ### 首頁
-提供天氣資訊、快速入口以及推薦景點。
+提供天氣資訊、快速入口以及推薦景點。/n
 <img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" />
 
 ---

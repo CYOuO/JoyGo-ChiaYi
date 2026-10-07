@@ -221,8 +221,7 @@ node uploadRestaurants.js
 
 | 頁面 | 功能 | 圖片 |
 |------|------|------|
-| 首頁 | 天氣、快速入口、推薦景點 | ![首頁示意圖](<img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" />
-) |
+| 首頁 | 天氣、快速入口、推薦景點 | (<img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" />) |
 | 地圖 | 互動式地圖、景點標記、附近搜尋 | ![地圖示意圖](填入您的圖片網址) |
 | 搜尋 | 全站景點 / 餐廳 / 商店搜尋 | ![搜尋示意圖](填入您的圖片網址) |
 | 行程 | 建立 / 編輯行程、AI 規劃、邀請同行者 | ![行程示意圖](填入您的圖片網址) |

@@ -4246,8 +4246,15 @@ class _TripDetailPageState extends State<_TripDetailPage>
             );
             if (picked != null && mounted) {
               final t = '${picked.hour.toString().padLeft(2,'0')}:${picked.minute.toString().padLeft(2,'0')}';
+              // 保留既有的 duration / 交通模式 / 備註，只更新時間
+              final existingRaw = _trip.spotTimes[name] ?? '';
+              final ep = existingRaw.split('|');
+              final existingDur  = ep.length > 1 ? ep[1] : '60';
+              final existingMode = ep.length > 2 ? ep[2] : '';
+              final existingNote = ep.length > 3 ? ep[3] : '';
+              final newRaw = '$t|$existingDur|$existingMode|$existingNote';
               setState(() => _spotTimes[name] = t);
-              TripService.setSpotTime(_trip.id, name, t);
+              TripService.setSpotTime(_trip.id, name, newRaw);
             }
           },
           child: Container(

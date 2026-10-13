@@ -428,7 +428,7 @@ class _AIPlannerScreenState extends State<AIPlannerScreen>
         if (s.startsWith('__DAY_')) tripDays++;
         else cleanSpots.add(s);
       }
-      if (tripDays > 0) _days = tripDays; 
+      if (tripDays > 0) setState(() => _days = tripDays);
 
       prompt = '請幫我安排 $_days 天的嘉義行程。\n'; 
       prompt += '【既有行程名稱】：$_selectedImportTrip\n';

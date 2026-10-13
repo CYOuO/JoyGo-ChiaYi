@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../theme/fabric_textures.dart' show StitchedBox, HandDrawnUnderline, DoodleCircle, SlideUpFadeIn;
 import '../models/dummy_data.dart';
 import '../services/community_service.dart';
+import '../services/admin_service.dart';
 import '../services/spot_service.dart';
 import '../services/trip_service.dart';
 import '../providers/app_settings_provider.dart';
@@ -2697,30 +2698,8 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
             icon: const Icon(Icons.share_outlined, color: AppColors.textPrimary, size: 22),
             onPressed: () => Share.share('探索諸羅 · ${post.title}\n\n${post.content}'),
           ),
-          // 刪除（作者才看到）
-          if (FirebaseAuth.instance.currentUser?.uid == post.authorId)
-            IconButton(
-              icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 22),
-              onPressed: () async {
-                final ok = await showDialog<bool>(
-                  context: context,
-                  builder: (_) => AlertDialog(
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                    title: const Text('刪除貼文', style: TextStyle(fontWeight: FontWeight.w800)),
-                    content: Text(context.read<AppSettingsProvider>().l10n.commDeleteConfirm),
-                    actions: [
-                      TextButton(onPressed: () => Navigator.pop(context, false), child: Text(context.read<AppSettingsProvider>().l10n.cancel)),
-                      TextButton(onPressed: () => Navigator.pop(context, true),
-                        child: Text(context.read<AppSettingsProvider>().l10n.delete, style: const TextStyle(color: AppColors.error))),
-                    ],
-                  ),
-                );
-                if (ok == true && mounted) {
-                  await CommunityService.deletePost(post.id);
-                  Navigator.pop(context);
-                }
-              },
-            ),
+          // 刪除（作者才看到）/ 舉報（其他人）
+          _PostMenuButton(post: post),
         ],
       ),
       extendBodyBehindAppBar: true,
@@ -3075,11 +3054,15 @@ class _FirebasePostDetailPageState extends State<FirebasePostDetailPage> {
                         await FirebaseFirestore.instance
                             .collection('reports').add({
                           'type': 'comment',
+                          'targetId': c.id,
+                          'targetContent': c.text,
                           'postId': postId,
                           'commentId': c.id,
                           'commentAuthor': c.authorName,
+                          'reporterId': FirebaseAuth.instance.currentUser?.uid ?? '',
                           'reportedBy': FirebaseAuth.instance.currentUser?.uid ?? '',
                           'reason': reason,
+                          'status': 'pending',
                           'createdAt': FieldValue.serverTimestamp(),
                         });
                         if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -3238,6 +3221,89 @@ class _UserProfileSheetState extends State<_UserProfileSheet> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           )),
       ]),
+    );
+  }
+}
+
+// ── 貼文選單按鈕（作者刪除 / 非作者舉報 / 管理員強制刪除）────────
+class _PostMenuButton extends StatefulWidget {
+  final CommunityPost post;
+  const _PostMenuButton({required this.post});
+  @override State<_PostMenuButton> createState() => _PostMenuButtonState();
+}
+class _PostMenuButtonState extends State<_PostMenuButton> {
+  bool _isAdmin = false;
+  @override
+  void initState() {
+    super.initState();
+    AdminService.isAdmin().then((v) { if (mounted) setState(() => _isAdmin = v); });
+  }
+  @override
+  Widget build(BuildContext context) {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final isAuthor = uid == widget.post.authorId;
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert_rounded, color: AppColors.textPrimary, size: 22),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      itemBuilder: (_) => [
+        if (isAuthor) const PopupMenuItem(value: 'delete',
+            child: ListTile(leading: Icon(Icons.delete_outline_rounded, color: AppColors.error, size: 18),
+                title: Text('刪除貼文', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.w600)), contentPadding: EdgeInsets.zero, dense: true)),
+        if (!isAuthor) const PopupMenuItem(value: 'report',
+            child: ListTile(leading: Icon(Icons.flag_outlined, color: AppColors.textSecondary, size: 18),
+                title: Text('舉報貼文'), contentPadding: EdgeInsets.zero, dense: true)),
+        if (_isAdmin) const PopupMenuItem(value: 'admin_delete',
+            child: ListTile(leading: Icon(Icons.admin_panel_settings_rounded, color: AppColors.warning, size: 18),
+                title: Text('管理員刪除', style: TextStyle(color: AppColors.warning, fontWeight: FontWeight.w600)), contentPadding: EdgeInsets.zero, dense: true)),
+      ],
+      onSelected: (v) async {
+        if (v == 'delete') {
+          final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+            title: const Text('刪除貼文'),
+            content: const Text('確定要刪除這篇貼文嗎？'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+              TextButton(onPressed: () => Navigator.pop(context, true),
+                  child: const Text('刪除', style: TextStyle(color: AppColors.error))),
+            ],
+          ));
+          if (ok == true && mounted) {
+            await CommunityService.deletePost(widget.post.id);
+            Navigator.pop(context);
+          }
+        } else if (v == 'report') {
+          final reason = await showDialog<String>(context: context, builder: (_) => _ReportDialog());
+          if (reason != null && mounted) {
+            await AdminService.submitReport(
+              type: 'post',
+              targetId: widget.post.id,
+              targetContent: widget.post.content,
+              reason: reason,
+            );
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('舉報已送出，感謝您的回報'), behavior: SnackBarBehavior.floating));
+          }
+        } else if (v == 'admin_delete') {
+          final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+            title: const Text('管理員刪除', style: TextStyle(color: AppColors.warning)),
+            content: Text('確定要以管理員身份刪除「${widget.post.authorName}」的貼文嗎？'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.error),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('確認刪除', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ));
+          if (ok == true && mounted) {
+            await AdminService.adminDeletePost(widget.post.id);
+            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('貼文已刪除'), behavior: SnackBarBehavior.floating));
+          }
+        }
+      },
     );
   }
 }

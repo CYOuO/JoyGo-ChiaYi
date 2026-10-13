@@ -167,11 +167,6 @@
 | 打卡照片 | 本地裝置 + Firebase Storage | 先存本地路徑，可選擇同步上傳 |
 | 景點圖片 | 外部 CDN URL | 以 CachedNetworkImage 快取 |
 
-資料 Schema（dbdiagram.io）：
-
-![Schema 1](docs/images/schema-1.png)
-![Schema 2](docs/images/schema-2.png)
-
 ## 技術重點
 
 - Flutter 多套件整合（flutter_map、firebase_auth、cloud_firestore、firebase_storage、google_sign_in 等），以 Provider 管理語言/主題/字體大小與登入狀態

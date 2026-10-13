@@ -1,8 +1,193 @@
-﻿# JoyGo 嘉義智慧旅遊 App
+# 去嘉義找 Joy（JoyGO-ChiaYi）
 
-嘉義縣市智慧旅遊行動應用程式，整合景點、交通、社群、AI 行程規劃等功能。
+整合旅遊規劃、即時交通、天氣、地圖、社群與集章打卡的嘉義在地旅遊 App，使用 Flutter 開發。
+
+> 2026S 行動裝置應用程式設計期末專題 · 第 13 組（邱采嫻、歐家怡）
+
+## 製作動機
+
+協助到訪嘉義的旅客在旅遊前做規劃，實際造訪時也能在同一個 App 中查看交通、天氣、地圖與嘉義最新資訊。
+
+解決的痛點：
+
+- **資訊分散**：旅遊、交通、天氣整合成單一入口
+- **行程難規劃**：考量天氣、交通時間與路線的智慧排程
+- **即時資訊不足**：公車動態、YouBike 可借/可還數量、天氣預報
+- **特殊需求不易搜尋**：輪椅友善、寵物友善、哺集乳室等
+- **多人共編與臨時應變**：共同編輯行程、AI 即時重排
+- **缺乏探索動力**：集章、成就與足跡紀錄
+
+## 主要功能
+
+| 功能 | 說明 |
+| --- | --- |
+| 地圖探索 | 彩色分類圖釘 + 由近到遠列表，點擊顯示詳細資訊卡片 |
+| 集章成就打卡 | GPS 進入景點 100m 內自動打卡（含冷卻時間）、連續天數、成就徽章、拍立得照片牆、白色遮罩逐步揭示的小地圖 |
+| 社群貼文 | 行程貼文（可一鍵套用）與討論區，支援圖片、按讚、收藏、留言、檢舉 |
+| 行程管理 | 自訂封面/圖示/日期、拖拉排序、智慧排序、行程地圖、記帳與分帳、旅伴群組、行事曆、倒數天數 |
+| AI 行程助手 | 整合 Google Gemini：智慧排程、行程匯入修改、自由對話規劃 |
+| 交通資訊 | TDX：公車、YouBike、台鐵、阿里山林鐵、高鐵 |
+| 天氣資訊 | 中央氣象署 CWA 開放資料（嘉義市東區、阿里山鄉） |
+| 活動/新聞 | 嘉義市政府開放資料 |
+| 設定 | 繁中/英/日語言、15 種主題色、通知開關 |
+| 管理者後台 | 資料統計、優惠券發送、權限管理、內容與舉報管理、JSON 匯入匯出、推播 |
+
+## 系統架構
+
+![系統架構](docs/images/architecture.png)
+
+- **使用者端**：Flutter App（Provider 狀態管理）
+- **後端**：Node.js Express（處理 TDX OAuth 2.0 Client Credentials，統一資料格式）
+- **資料儲存**：Firebase Auth / Firestore / Storage
+- **外部資料**：TDX、CWA、嘉義市政府開放資料、Google Gemini
+
+![App 資料介接方式](docs/images/data-flow.jpg)
+
+## 使用者端畫面
+
+### 首頁、通知、交通、新聞
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/home.png" width="200"><br>首頁</td>
+    <td align="center"><img src="docs/images/notifications.png" width="200"><br>通知中心</td>
+    <td align="center"><img src="docs/images/transport.png" width="200"><br>交通動態</td>
+    <td align="center"><img src="docs/images/news.png" width="200"><br>最新消息</td>
+  </tr>
+</table>
+
+### 行程管理
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/trips.png" width="200"><br>我的行程</td>
+    <td align="center"><img src="docs/images/favorites.png" width="200"><br>收藏景點</td>
+    <td align="center"><img src="docs/images/calendar.png" width="200"><br>活動行事曆</td>
+    <td align="center"><img src="docs/images/ai-planner.png" width="200"><br>AI 助手</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/create-trip.png" width="200"><br>建立行程</td>
+    <td align="center"><img src="docs/images/trip-share.png" width="200"><br>旅行日報分享</td>
+    <td align="center"><img src="docs/images/trip-edit.png" width="200"><br>行程編輯</td>
+    <td align="center"><img src="docs/images/trip-map.png" width="200"><br>行程路線地圖</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/trip-candidates.png" width="200"><br>候選景點</td>
+    <td align="center"><img src="docs/images/trip-expense.png" width="200"><br>旅遊分帳</td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
+### 地圖探索
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/map.png" width="200"><br>圖釘標記</td>
+    <td align="center"><img src="docs/images/map-list.png" width="200"><br>列表模式</td>
+  </tr>
+</table>
+
+### 旅遊社群
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/community.png" width="200"><br>社群</td>
+    <td align="center"><img src="docs/images/new-post.png" width="200"><br>發布貼文</td>
+    <td align="center"><img src="docs/images/post-detail-1.png" width="200"><br>貼文內文（帳號 A）</td>
+    <td align="center"><img src="docs/images/post-detail-2.png" width="200"><br>貼文內文（帳號 B）</td>
+  </tr>
+</table>
+
+### 個人頁面與設定
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/profile.png" width="200"><br>個人頁面</td>
+    <td align="center"><img src="docs/images/companions.png" width="200"><br>旅伴管理</td>
+    <td align="center"><img src="docs/images/coupons.png" width="200"><br>優惠券</td>
+    <td align="center"><img src="docs/images/saved-posts.png" width="200"><br>收藏貼文</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/settings.png" width="200"><br>設定</td>
+    <td align="center"><img src="docs/images/login.png" width="200"><br>登入註冊</td>
+    <td align="center"><img src="docs/images/weather.png" width="200"><br>天氣</td>
+    <td></td>
+  </tr>
+</table>
+
+### 集章成就
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/stamps-1.png" width="200"></td>
+    <td align="center"><img src="docs/images/stamps-2.png" width="200"></td>
+    <td align="center"><img src="docs/images/stamps-3.png" width="200"></td>
+    <td align="center"><img src="docs/images/stamps-4.png" width="200"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/stamps-5.png" width="200"></td>
+    <td align="center"><img src="docs/images/stamps-6.png" width="200"></td>
+    <td></td>
+    <td></td>
+  </tr>
+</table>
+
+集點印章、打卡照片牆、成就徽章、打卡排行榜、小地圖打卡紀錄。
+
+## 管理者端畫面
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/admin-1.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-2.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-3.png" width="200"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/admin-4.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-5.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-6.png" width="200"></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/admin-7.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-8.png" width="200"></td>
+    <td align="center"><img src="docs/images/admin-9.png" width="200"></td>
+  </tr>
+</table>
+
+資料統計與優惠券發送、使用者權限管理（升級管理者/停用帳號）、社群內容與舉報管理、JSON 資料匯入匯出、推播通知。
+
+## 資料儲存
+
+| 媒體類型 | 儲存位置 | 說明 |
+| --- | --- | --- |
+| 用戶大頭貼 | Firebase Storage | `avatars/{uid}.jpg`，URL 存入 Firestore `users` |
+| 行程封面照片 | Firebase Storage | `trip_covers/{uid}/{tripId}.jpg` |
+| 社群貼文圖片 | Firebase Storage | `posts/{uid}/{postId}/image_{n}.jpg` |
+| 打卡照片 | 本地裝置 + Firebase Storage | 先存本地路徑，可選擇同步上傳 |
+| 景點圖片 | 外部 CDN URL | 以 CachedNetworkImage 快取 |
+
+資料 Schema（dbdiagram.io）：
+
+![Schema 1](docs/images/schema-1.png)
+![Schema 2](docs/images/schema-2.png)
+
+## 技術重點
+
+- Flutter 多套件整合（flutter_map、firebase_auth、cloud_firestore、firebase_storage、google_sign_in 等），以 Provider 管理語言/主題/字體大小與登入狀態
+- Node.js Express 後端處理 TDX OAuth 2.0（取得、快取、刷新 Token），並將各種回傳格式標準化為統一 JSON
+- 整合 Google Gemini API 進行 AI 行程規劃
+
+## 資料來源
+
+- [TDX 運輸資料流通服務](https://tdx.transportdata.tw/)
+- [嘉義市政府開放資料](https://data.chiayi.gov.tw/opendata/)
+- 中央氣象署 CWA 開放資料平台
+- Google Gemini API
 
 ---
+
+# 安裝與部署
 
 ## 專案架構
 
@@ -214,98 +399,6 @@ node import_all_data.js
 ```powershell
 node uploadRestaurants.js
 ```
-
----
-
-## 六、App 功能頁面一覽
-
-### 首頁
-提供天氣資訊、快速入口以及推薦景點。<br>
-<img width="177" height="398" alt="image" src="https://github.com/user-attachments/assets/9c36bf59-1ef8-42c4-8fa6-e223cdf6970f" />
-
----
-
-### 地圖
-包含互動式地圖、景點標記與附近搜尋功能。<br>
-<img width="157" height="350" alt="image" src="https://github.com/user-attachments/assets/65cef798-1bb8-4216-a3fe-fd68404ef2b9" />
-
----
-
-### 搜尋
-支援全站景點、餐廳與商店搜尋。<br>
-<img width="202" height="455" alt="image" src="https://github.com/user-attachments/assets/e5438c62-602a-46a3-b985-d4eaa0ad0b80" />
-
----
-
-### 行程
-可建立與編輯行程、使用 AI 規劃，並邀請同行者共編。<br>
-![行程示意圖](填入您的圖片網址)
-
----
-
-### AI 規劃師
-整合 Gemini 2.0 Flash 生成逐日行程建議。<br>
-![AI規劃師示意圖](填入您的圖片網址)
-
----
-
-### 社群
-提供發文、留言、按讚與追蹤等互動功能。<br>
-![社群示意圖](填入您的圖片網址)
-
----
-
-### 集章
-支援打卡集章活動，並設有成就排行榜。<br>
-![集章示意圖](填入您的圖片網址)
-
----
-
-### 相機
-內建相機功能，可直接拍照或掃描 QR Code。<br>
-![相機示意圖](填入您的圖片網址)
-
----
-
-### 支出管理
-方便進行行程花費分帳與 QR Code 收款。<br>
-![支出管理示意圖](填入您的圖片網址)
-
----
-
-### 交通
-整合公車、台鐵、高鐵、阿里山森鐵與 YouBike 資訊。<br>
-![交通示意圖](填入您的圖片網址)
-
----
-
-### 天氣
-提供嘉義市與嘉義縣的七日天氣預報。<br>
-![天氣示意圖](填入您的圖片網址)
-
----
-
-### 通知
-即時接收社群互動與行程邀請通知。<br>
-![通知示意圖](填入您的圖片網址)
-
----
-
-### 個人頁
-可編輯個人資料，並查看收藏、追蹤名單與集章記錄。<br>
-![個人頁示意圖](填入您的圖片網址)
-
----
-
-### 設定
-管理語言、主題外觀以及推播通知開關。<br>
-![設定示意圖](填入您的圖片網址)
-
----
-
-### 管理後台
-供管理員使用，包含景點管理、廣播推播與資料匯入匯出功能。<br>
-![管理後台示意圖](填入您的圖片網址)
 
 ---
 
